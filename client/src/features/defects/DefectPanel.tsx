@@ -55,27 +55,129 @@ export function DefectPanel({
         specificationText,
         claimFeatures
       };
+
       const response = await runDefectCheck(request);
 
-      // Clear old defects for this case and add new ones
+      // === 缺陷保留策略 ===
+      // 1. 用户手动添加的缺陷（ID 格式为 3 部分）：全部保留
+      // 2. 用户编辑过的 AI 缺陷（ID 格式为 4 部分）：保留 编辑过的字段
+      // 
+      // 判断"已编辑"的标准：
+      // - severity 被修改（通过比较原始 AI 返回值）
+      // - description 被修改（通过比较原始 AI 返回值）
+      // - location 被添加或修改
+      // - resolved 状态被修改（从未解决变为已解决）
+      //
+      // 对于编辑过的 AI 缺陷，将用户编辑的字段 merge 到新返回的匹配缺陷上
+
+      // 用户添加的缺陷 ID 格式: defect-{caseId}-{timestamp} (无随机后缀，3部分)
+      // AI 生成的缺陷 ID 格式: defect-{caseId}-{timestamp}-{random} (有随机后缀，4部分)
+      const userAddedDefects = caseDefects.filter((d) => {
+        const parts = d.id.split("-");
+        return parts.length === 3;
+      });
+
+      // AI 生成的缺陷
+      const aiGeneratedDefects = caseDefects.filter((d) => {
+        const parts = d.id.split("-");
+        return parts.length === 4;
+      });
+
+      // 为 AI 返回的新缺陷创建映射（用于匹配和 merge）
+      // 使用 category + description 前 30 字符作为匹配键
+      const aiResponseMap = new Map<string, typeof response.defects[0]>();
+      for (const item of response.defects) {
+        const key = `${item.category}|${item.description.trim().slice(0, 30)}`;
+        aiResponseMap.set(key, item);
+      }
+
+      // 找出用户编辑过的 AI 缺陷
+      const editedAiDefects: FormalDefect[] = [];
+      for (const d of aiGeneratedDefects) {
+        const key = `${d.category}|${d.description.trim().slice(0, 30)}`;
+        const aiItem = aiResponseMap.get(key);
+        
+        if (aiItem) {
+          // 找到匹配的 AI 返回项，检查是否有编辑
+          const hasEdited = 
+            d.severity !== aiItem.severity ||
+            d.description !== aiItem.description ||
+            d.resolved === true ||  // 用户标记为已解决
+            d.location;  // 用户添加了 location
+          
+          if (hasEdited) {
+            editedAiDefects.push(d);
+          }
+        } else {
+          // 未找到匹配项，说明用户完全重写了 description，保留这个缺陷
+          editedAiDefects.push(d);
+        }
+      }
+
+      console.log("[DefectPanel] handleRun - defect preservation:", {
+        total: caseDefects.length,
+        userAdded: userAddedDefects.length,
+        aiGenerated: aiGeneratedDefects.length,
+        editedAi: editedAiDefects.length,
+        aiResponseCount: response.defects.length
+      });
+
+      // 清除所有旧缺陷
       const oldIds = caseDefects.map((d) => d.id);
       for (const id of oldIds) {
         useDefectsStore.getState().removeDefect(id);
       }
 
+      // 添加 AI 新返回的缺陷，并 merge 用户编辑过的字段
       for (const item of response.defects) {
+        const key = `${item.category}|${item.description.trim().slice(0, 30)}`;
+        
+        // 查找是否有匹配的用户编辑过的缺陷
+        const editedMatch = editedAiDefects.find(d => 
+          `${d.category}|${d.description.trim().slice(0, 30)}` === key
+        );
+
         const defect: FormalDefect = {
           id: `defect-${caseId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           caseId,
-          category: item.category,
-          description: item.description,
-          severity: item.severity,
-          resolved: false,
-          ...(item.location ? { location: item.location } : {}),
+          category: editedMatch?.category ?? item.category,
+          description: editedMatch?.description ?? item.description,
+          severity: editedMatch?.severity ?? item.severity,
+          resolved: editedMatch?.resolved ?? false,
+          ...(editedMatch?.location ? { location: editedMatch.location } : 
+              item.location ? { location: item.location } : {}),
           ...(item.previouslyRaised !== undefined ? { previouslyRaised: item.previouslyRaised } : {}),
           ...(item.overcomeStatus ? { overcomeStatus: item.overcomeStatus } : {})
         };
+        
+        if (editedMatch) {
+          console.log("[DefectPanel] merged edited defect:", {
+            originalKey: key,
+            newDefectId: defect.id,
+            mergedFields: {
+              severity: editedMatch.severity,
+              resolved: editedMatch.resolved,
+              location: editedMatch.location
+            }
+          });
+        }
+        
         addDefect(defect);
+      }
+
+      // 重新添加用户手动添加的缺陷（保留用户的手动编辑）
+      for (const userDefect of userAddedDefects) {
+        console.log("[DefectPanel] restoring user-added defect:", userDefect.id);
+        addDefect(userDefect);
+      }
+
+      // 重新添加未匹配到的编辑过的 AI 缺陷（用户完全重写的）
+      for (const editedDefect of editedAiDefects) {
+        const key = `${editedDefect.category}|${editedDefect.description.trim().slice(0, 30)}`;
+        if (!aiResponseMap.has(key)) {
+          console.log("[DefectPanel] restoring unmatched edited defect:", editedDefect.id);
+          addDefect(editedDefect);
+        }
       }
     } finally {
       setLoading(false);
@@ -249,7 +351,7 @@ export function DefectPanel({
         onConfirm={handleRun}
         onCancel={() => setShowConfirm(false)}
       >
-        重新运行将清除当前所有缺陷记录，您的修改将被覆盖。确定要继续吗？
+        重新运行将用 AI 新检测结果替换所有缺陷。您手动添加的缺陷和已编辑修改的缺陷将被保留。确定要继续吗？
       </ConfirmModal>
     </div>
   );
