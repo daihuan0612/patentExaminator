@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { SummaryResponse } from "../../agent/contracts";
+import { useDraftStore } from "../../store";
 
 interface SummaryPanelProps {
   caseId: string;
@@ -7,7 +8,8 @@ interface SummaryPanelProps {
 }
 
 export function SummaryPanel({ caseId, runSummary }: SummaryPanelProps) {
-  const [summary, setSummary] = useState<SummaryResponse | null>(null);
+  const { summaries, setSummary } = useDraftStore();
+  const summary = summaries[caseId] ?? null;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,7 +19,7 @@ export function SummaryPanel({ caseId, runSummary }: SummaryPanelProps) {
     setError(null);
     try {
       const result = await runSummary();
-      setSummary(result);
+      setSummary(caseId, result);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -31,6 +33,16 @@ export function SummaryPanel({ caseId, runSummary }: SummaryPanelProps) {
       <p className="summary-description">
         基于已确认的权利要求特征表、新颖性对照和创造性分析，生成带原文引用的审查意见简述。
       </p>
+      <div className="summary-diff-help" data-testid="summary-diff-help">
+        <details>
+          <summary><strong>审查意见简述与复审意见草稿有何区别？</strong></summary>
+          <ul>
+            <li><strong>审查意见简述（本页）</strong>：简要概述审查意见的核心要点，包含新颖性、创造性的主要结论和关键依据，适合快速了解整体情况或作为汇报材料。</li>
+            <li><strong>复审意见草稿（草稿页面）</strong>：完整的审查意见正文草稿，包含详细的事实认定、法律适用分析、原文引用、技术启示论证等，可直接用于起草正式审查意见通知书。</li>
+          </ul>
+          <p className="summary-diff-help-tip">建议：先生成"审查意见简述"确认整体方向，再到"草稿"页面生成完整正文。</p>
+        </details>
+      </div>
 
       {runSummary && (
         <button

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { ReferenceDocument, ClaimFeature } from "@shared/types/domain";
 import type { NoveltyRequest, NoveltyResponse } from "../../agent/contracts";
 import { useNoveltyStore } from "../../store";
@@ -24,6 +24,21 @@ export function NoveltyAgentTrigger({
 }: NoveltyAgentTriggerProps) {
   const { addComparison, setLoading, isLoading } = useNoveltyStore();
   const [selectedRefId, setSelectedRefId] = useState<string>("");
+
+  // 当删除文件时清除无效的 selectedRefId和相关 comparison
+  useEffect(() => {
+    if (selectedRefId && !references.find((r) => r.id === selectedRefId)) {
+      setSelectedRefId("");
+    }
+    // 清除引用已删除 reference 的 comparison
+    const refIds = new Set(references.map((r) => r.id));
+    const { comparisons, removeComparison } = useNoveltyStore.getState();
+    for (const c of comparisons) {
+      if (!refIds.has(c.referenceId)) {
+        removeComparison(c.id);
+      }
+    }
+  }, [references, selectedRefId]);
 
   const availableRefs = references.filter((r) => r.timelineStatus === "available");
   const unavailableRefs = references.filter((r) => r.timelineStatus !== "available");

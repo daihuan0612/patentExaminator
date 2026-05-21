@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { useDefectsStore } from "../../store";
 import type { DefectRequest, DefectResponse } from "../../agent/contracts";
 import type { FormalDefect } from "@shared/types/domain";
 import { InlineEdit } from "../../components/InlineEdit";
+import { ConfirmModal } from "../../components/ConfirmModal";
 
 interface DefectPanelProps {
   caseId: string;
@@ -32,12 +34,19 @@ export function DefectPanel({
 }: DefectPanelProps) {
   const { defects, addDefect, updateDefect, removeDefect, isLoading, setLoading } =
     useDefectsStore();
+  const [showConfirm, setShowConfirm] = useState(false);
 
   const caseDefects = defects.filter((d) => d.caseId === caseId);
   const unresolvedCount = caseDefects.filter((d) => !d.resolved).length;
 
   const handleRun = async () => {
     if (isLoading) return;
+    // 如果已有缺陷，显示确认对话框
+    if (caseDefects.length > 0 && !showConfirm) {
+      setShowConfirm(true);
+      return;
+    }
+    setShowConfirm(false);
     setLoading(true);
     try {
       const request: DefectRequest = {
@@ -231,6 +240,17 @@ export function DefectPanel({
       >
         {isLoading ? "检测中..." : caseDefects.length > 0 ? "重新运行复查" : "运行缺陷复查"}
       </button>
+
+      <ConfirmModal
+        isOpen={showConfirm}
+        title="确认重新运行复查"
+        confirmLabel="确认重新运行"
+        cancelLabel="取消"
+        onConfirm={handleRun}
+        onCancel={() => setShowConfirm(false)}
+      >
+        重新运行将清除当前所有缺陷记录，您的修改将被覆盖。确定要继续吗？
+      </ConfirmModal>
     </div>
   );
 }

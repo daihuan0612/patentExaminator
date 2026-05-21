@@ -160,7 +160,6 @@ function InventiveWrapper() {
     .join("\n");
   return (
     <InventiveStepPanel
-      key={`inventive-${caseId}-${claimNumber}-${existingAnalysis?.id ?? "new"}`}
       caseId={caseId ?? ""}
       claimNumber={claimNumber}
       features={features}
@@ -423,7 +422,7 @@ function ExportWrapper() {
   const { comparisons } = useNoveltyStore();
   const { analyses } = useInventiveStore();
   const { defects } = useDefectsStore();
-  const { reexamDrafts } = useDraftStore();
+  const { reexamDrafts, summaries } = useDraftStore();
 
   if (!currentCase) {
     return (
@@ -443,6 +442,7 @@ function ExportWrapper() {
   );
   const caseDefects = defects.filter((d) => d.caseId === caseId);
   const reexamDraft = reexamDrafts[caseId ?? ""] ?? undefined;
+  const summary = summaries[caseId ?? ""] ?? undefined;
 
   return (
     <ExportPanel
@@ -454,6 +454,7 @@ function ExportWrapper() {
       inventiveAnalysis={inventiveAnalysis}
       defects={caseDefects}
       reexamDraft={reexamDraft}
+      summary={summary}
     />
   );
 }

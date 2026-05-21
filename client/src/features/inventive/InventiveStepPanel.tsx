@@ -127,6 +127,10 @@ export function InventiveStepPanel({
 
   const handleSelectClosest = (refId: string) => {
     setSelectedClosestId(refId);
+    // 更新 analysis 中的 closestPriorArtId
+    if (analysis) {
+      updateAnalysis({ ...analysis, closestPriorArtId: refId });
+    }
   };
 
   const handleToggleDistinguishing = (code: string) => {
@@ -137,7 +141,11 @@ export function InventiveStepPanel({
 
   const handleSaveResponse = () => {
     if (!analysis) return;
-    updateAnalysis({ ...analysis, examinerResponse });
+    updateAnalysis({
+      ...analysis,
+      examinerResponse,
+      objectiveTechnicalProblem: techProblem
+    });
   };
 
   const handleUpdateEvidence = (index: number, patch: Partial<{ label: string; quote: string; confidence: string }>) => {
@@ -277,6 +285,17 @@ export function InventiveStepPanel({
                 placeholder="根据区别特征推导客观技术问题，AI 运行后自动填充，也可手动输入。"
                 rows={3}
               />
+              {!analysis && selectedDistinguishing.length > 0 && (
+                <button
+                  type="button"
+                  className="btn-derive-problem"
+                  onClick={handleRun}
+                  disabled={isLoading || availableRefs.length === 0}
+                  data-testid="btn-derive-tech-problem"
+                >
+                  {isLoading ? "推导中..." : "推导客观技术问题"}
+                </button>
+              )}
             </div>
           </div>
         </div>

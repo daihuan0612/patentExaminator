@@ -175,10 +175,10 @@ export function ProvidersConfigPanel() {
                   <label>Base URL</label>
                   <input
                     type="text"
-                    value={preset.baseUrl}
-                    readOnly
-                    disabled
-                    className="input-readonly"
+                    value={provider.baseUrl ?? preset.baseUrl}
+                    onChange={(e) => updateProvider(preset.id, { baseUrl: e.target.value })}
+                    placeholder={preset.baseUrl}
+                    className="input-text"
                     data-testid={`baseurl-${preset.id}`}
                   />
                 </div>

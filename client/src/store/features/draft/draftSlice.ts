@@ -1,9 +1,11 @@
 import { create } from "zustand";
-import type { ReexamDraftResponse } from "../../../agent/contracts";
+import type { ReexamDraftResponse, SummaryResponse } from "../../../agent/contracts";
 
 export interface DraftSlice {
   reexamDrafts: Record<string, ReexamDraftResponse>; // caseId → draft
+  summaries: Record<string, SummaryResponse>; // caseId → summary
   setReexamDraft: (caseId: string, draft: ReexamDraftResponse) => void;
+  setSummary: (caseId: string, summary: SummaryResponse) => void;
   clearDraftData: (caseId: string) => void;
 }
 
@@ -12,17 +14,25 @@ export const createDraftSlice = (
   _get: () => DraftSlice
 ): DraftSlice => ({
   reexamDrafts: {},
+  summaries: {},
 
   setReexamDraft: (caseId, draft) =>
     set((prev) => ({
       reexamDrafts: { ...prev.reexamDrafts, [caseId]: draft }
     })),
 
+  setSummary: (caseId, summary) =>
+    set((prev) => ({
+      summaries: { ...prev.summaries, [caseId]: summary }
+    })),
+
   clearDraftData: (caseId) =>
     set((prev) => {
-      const next = { ...prev.reexamDrafts };
-      delete next[caseId];
-      return { reexamDrafts: next };
+      const nextDrafts = { ...prev.reexamDrafts };
+      delete nextDrafts[caseId];
+      const nextSummaries = { ...prev.summaries };
+      delete nextSummaries[caseId];
+      return { reexamDrafts: nextDrafts, summaries: nextSummaries };
     })
 });
 
