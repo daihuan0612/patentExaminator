@@ -581,6 +581,7 @@ function mockInventive(request: InventiveRequest): InventiveResponse {
     closestPriorArtId: request.closestPriorArtId ?? request.availableReferences[0]?.referenceId,
     sharedFeatureCodes: sharedCodes,
     distinguishingFeatureCodes: diffCodes,
+    objectiveTechnicalProblem: `如何通过${diffCodes.join("、")}等技术特征的组合，解决现有技术中存在的效率低、成本高等问题`,
     motivationEvidence: motivation,
     candidateAssessment: assessment,
     cautions: request.applicantArguments

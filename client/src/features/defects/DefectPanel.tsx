@@ -149,11 +149,11 @@ export function DefectPanel({
     removeDefect(id);
   };
 
-  const handleAddDefect = () => {
+  const handleAddDefect = (category: string) => {
     const newDefect: FormalDefect = {
       id: `defect-${caseId}-${Date.now()}`,
       caseId,
-      category: "权利要求",
+      category,
       description: "",
       severity: "warning",
       resolved: false
@@ -275,7 +275,7 @@ export function DefectPanel({
               <button
                 type="button"
                 className="btn-add-item"
-                onClick={handleAddDefect}
+                onClick={() => handleAddDefect(category)}
                 data-testid="add-defect"
                 style={{ marginTop: 8 }}
               >
