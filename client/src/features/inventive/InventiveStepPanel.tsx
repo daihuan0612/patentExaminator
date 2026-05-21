@@ -3,6 +3,7 @@ import type { InventiveStepAnalysis, ReferenceDocument } from "@shared/types/dom
 import type { InventiveRequest, InventiveResponse } from "../../agent/contracts";
 import { useInventiveStore } from "../../store";
 import { InlineEdit } from "../../components/InlineEdit";
+import { updateInventive } from "../../lib/repositories/inventiveRepo";
 
 interface InventiveStepPanelProps {
   caseId: string;
@@ -161,20 +162,69 @@ export function InventiveStepPanel({
     );
   };
 
-  const handleSaveResponse = () => {
-    if (!analysis) return;
-    updateAnalysis({
+  const handleSaveResponse = async () => {
+    console.log("[InventiveStepPanel] handleSaveResponse called:", {
+      analysisExists: !!analysis,
+      analysisId: analysis?.id,
+      examinerResponseLength: examinerResponse.length,
+      techProblem,
+      currentMotivationEvidence: analysis?.motivationEvidence
+    });
+    if (!analysis) {
+      console.log("[InventiveStepPanel] handleSaveResponse: NO ANALYSIS - returning early");
+      return;
+    }
+    const updatedAnalysis = {
       ...analysis,
       examinerResponse,
       objectiveTechnicalProblem: techProblem
+    };
+    console.log("[InventiveStepPanel] handleSaveResponse: calling updateAnalysis with:", {
+      id: updatedAnalysis.id,
+      examinerResponse: updatedAnalysis.examinerResponse?.substring(0, 100) + "...",
+      objectiveTechnicalProblem: updatedAnalysis.objectiveTechnicalProblem,
+      motivationEvidenceCount: updatedAnalysis.motivationEvidence.length
     });
+    updateAnalysis(updatedAnalysis);
+    // Persist to IndexedDB
+    try {
+      await updateInventive(updatedAnalysis);
+      console.log("[InventiveStepPanel] handleSaveResponse: persisted to IndexedDB");
+    } catch (e) {
+      console.error("[InventiveStepPanel] handleSaveResponse: failed to persist to IndexedDB", e);
+    }
+    console.log("[InventiveStepPanel] handleSaveResponse: updateAnalysis called");
   };
 
-  const handleUpdateEvidence = (index: number, patch: Partial<{ label: string; quote: string; confidence: string }>) => {
-    if (!analysis) return;
+  const handleUpdateEvidence = async (index: number, patch: Partial<{ label: string; quote: string; confidence: string }>) => {
+    console.log("[InventiveStepPanel] handleUpdateEvidence called:", {
+      index,
+      patch,
+      analysisExists: !!analysis,
+      currentEvidenceCount: analysis?.motivationEvidence.length,
+      currentEvidence: analysis?.motivationEvidence[index]
+    });
+    if (!analysis) {
+      console.log("[InventiveStepPanel] handleUpdateEvidence: NO ANALYSIS - returning early");
+      return;
+    }
     const updated = [...analysis.motivationEvidence];
     updated[index] = { ...updated[index], ...patch } as typeof updated[number];
-    updateAnalysis({ ...analysis, motivationEvidence: updated });
+    console.log("[InventiveStepPanel] handleUpdateEvidence: calling updateAnalysis with updated evidence:", {
+      index,
+      newEvidence: updated[index],
+      totalEvidence: updated.length
+    });
+    const updatedAnalysis = { ...analysis, motivationEvidence: updated };
+    updateAnalysis(updatedAnalysis);
+    // Persist to IndexedDB
+    try {
+      await updateInventive(updatedAnalysis);
+      console.log("[InventiveStepPanel] handleUpdateEvidence: persisted to IndexedDB");
+    } catch (e) {
+      console.error("[InventiveStepPanel] handleUpdateEvidence: failed to persist to IndexedDB", e);
+    }
+    console.log("[InventiveStepPanel] handleUpdateEvidence: updateAnalysis called");
   };
 
   const handleDeleteEvidence = (index: number) => {

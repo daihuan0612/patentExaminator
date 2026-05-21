@@ -45,8 +45,17 @@ export function InlineEdit(props: Props) {
 
   const commit = () => {
     const trimmed = draft.trim();
+    console.log("[InlineEdit] commit called:", { 
+      draft, 
+      trimmed, 
+      originalValue: value,
+      willSave: trimmed && trimmed !== value 
+    });
     if (trimmed && trimmed !== value) {
+      console.log("[InlineEdit] calling onSave with:", trimmed);
       onSave(trimmed);
+    } else {
+      console.log("[InlineEdit] skipping save - value unchanged or empty");
     }
     setEditing(false);
   };
