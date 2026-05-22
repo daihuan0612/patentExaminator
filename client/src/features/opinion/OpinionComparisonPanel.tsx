@@ -80,11 +80,12 @@ export function OpinionComparisonPanel({
 
   const hasOfficeAction = !!officeActionText;
   const hasResponse = !!responseText;
+  const safeRejectionGrounds = rejectionGrounds ?? [];
   const hasRejectionGrounds = opinionResult
-    ? opinionResult.rejectionGrounds.length > 0
-    : rejectionGrounds.length > 0;
+    ? (opinionResult.rejectionGrounds?.length ?? 0) > 0
+    : safeRejectionGrounds.length > 0;
 
-  const grounds = opinionResult?.rejectionGrounds ?? rejectionGrounds;
+  const grounds = opinionResult?.rejectionGrounds ?? safeRejectionGrounds;
   const mappings = argumentResult?.mappings ?? [];
   const citedRefs = opinionResult?.citedReferences ?? [];
 

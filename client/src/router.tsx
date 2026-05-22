@@ -116,7 +116,7 @@ function NoveltyWrapper() {
   });
 
   const noveltyArgumentCodes = new Set(
-    officeActionAnalysis?.rejectionGrounds
+    (officeActionAnalysis?.rejectionGrounds ?? [])
       .filter((g) => g.category === "novelty")
       .map((g) => g.code)
   );
@@ -180,7 +180,7 @@ function InventiveWrapper() {
     (a) => a.caseId === caseId && a.id === `inventive-${caseId}-${claimNumber}`
   );
   const inventiveArgumentCodes = new Set(
-    officeActionAnalysis?.rejectionGrounds
+    (officeActionAnalysis?.rejectionGrounds ?? [])
       .filter((g) => g.category === "inventive")
       .map((g) => g.code)
   );
@@ -402,7 +402,7 @@ function OpinionComparisonWrapper() {
         });
         const argResult = await client.runArgumentAnalysis({
           caseId: caseId ?? "",
-          rejectionGrounds: opinionResult.rejectionGrounds,
+          rejectionGrounds: opinionResult.rejectionGrounds ?? [],
           responseText: responseDoc?.extractedText ?? "",
           ...(amendedDoc?.extractedText ? { amendedClaimsText: amendedDoc.extractedText } : {})
         });
