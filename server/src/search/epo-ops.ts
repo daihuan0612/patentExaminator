@@ -53,7 +53,7 @@ function buildCqlQuery(searchTerms: string): string {
     if (/^[A-H][0-9][0-9][A-Z]/.test(t)) {
       return `ipc any "${t}"`;
     }
-    return `ti any "${t}" OR ab any "${t}" OR clms any "${t}"`;
+    return `ti any "${t}" OR ab any "${t}" OR desc any "${t}"`;
   });
 
   if (conditions.length === 0) {

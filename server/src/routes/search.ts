@@ -10,6 +10,33 @@ import type { ChatRequest } from "../providers/ProviderAdapter.js";
 
 export const searchRouter = Router();
 
+function extractFallbackCandidates(rawText: string): SearchReferencesCandidate[] {
+  const candidates: SearchReferencesCandidate[] = [];
+  const objectPattern = /"title"\s*:\s*"([^"]+)"/g;
+  let match: RegExpExecArray | null;
+  while ((match = objectPattern.exec(rawText)) !== null) {
+    const title = match[1];
+    if (!title || title.length < 3) continue;
+    const remaining = rawText.slice(match.index);
+    const pubMatch = remaining.match(/"publicationNumber"\s*:\s*"([^"]+)"/);
+    const dateMatch = remaining.match(/"publicationDate"\s*:\s*"([^"]+)"/);
+    const summaryMatch = remaining.match(/"summary"\s*:\s*"([^"]*)"/);
+    const scoreMatch = remaining.match(/"relevanceScore"\s*:\s*(\d+(?:\.\d+)?)/);
+    const reasonMatch = remaining.match(/"recommendationReason"\s*:\s*"([^"]*)"/);
+    const urlMatch = remaining.match(/"sourceUrl"\s*:\s*"([^"]+)"/);
+    candidates.push({
+      title,
+      publicationNumber: pubMatch?.[1] ?? "",
+      ...(dateMatch?.[1] ? { publicationDate: dateMatch[1] } : {}),
+      summary: summaryMatch?.[1] ?? "",
+      relevanceScore: scoreMatch ? Number(scoreMatch[1]) : 0,
+      recommendationReason: reasonMatch?.[1] ?? "",
+      ...(urlMatch?.[1] ? { sourceUrl: urlMatch[1] } : {}),
+    });
+  }
+  return candidates.filter((c) => c.title && c.publicationNumber);
+}
+
 const searchRequestSchema = z.object({
   caseId: z.string(),
   claimText: z.string().min(1),
@@ -337,6 +364,19 @@ searchRouter.post("/search-references", async (req, res) => {
             logger.info("Final candidates", { count: candidates.length });
           } catch {
             logger.warn("Failed to parse repaired filter JSON", { partial: partial.slice(0, 200) });
+            // Fallback: extract individual candidates from raw text using regex
+            const fallbackCandidates = extractFallbackCandidates(filterRes.text);
+            if (fallbackCandidates.length > 0) {
+              candidates = fallbackCandidates.slice(0, request.maxResults);
+              logger.info("LLM filter repaired via fallback extraction", { count: candidates.length });
+            }
+          }
+        } else {
+          // No [ found at all, try regex fallback
+          const fallbackCandidates = extractFallbackCandidates(filterRes.text);
+          if (fallbackCandidates.length > 0) {
+            candidates = fallbackCandidates.slice(0, request.maxResults);
+            logger.info("LLM filter extracted via fallback (no brackets)", { count: candidates.length });
           }
         }
       } else {

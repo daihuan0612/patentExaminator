@@ -93,7 +93,7 @@ export class ProviderRegistry {
         const models = GEMINI_MODEL_FALLBACKS;
         for (const modelId of models) {
           try {
-            const response = await this.executeWithRetry(adapter, { ...req, modelId });
+            const response = await adapter.chat({ ...req, modelId });
             attempts.push({ providerId, ok: true });
             return { response, attempts };
           } catch (error) {
@@ -102,7 +102,6 @@ export class ProviderRegistry {
             if (errInfo.code === "auth-failed") {
               return { response: buildErrorResponse(errInfo), attempts };
             }
-            // quota-exceeded / other errors: try next model (different models may have separate quotas)
           }
         }
         continue;

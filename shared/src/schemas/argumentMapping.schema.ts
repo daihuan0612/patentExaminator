@@ -7,12 +7,22 @@ export const amendedClaimDetailSchema = z.object({
   changeDescription: z.string(),
 });
 
+const amendedClaimItemSchema = z.union([
+  amendedClaimDetailSchema,
+  z.string().transform((s) => ({
+    claimNumber: 0,
+    originalText: "",
+    amendedText: "",
+    changeDescription: s,
+  })),
+]);
+
 export const argumentMappingEntrySchema = z.object({
   rejectionGroundCode: z.string(),
   applicantArgument: z.string(),
   argumentSummary: z.string(),
   confidence: z.enum(["high", "medium", "low"]),
-  amendedClaims: z.array(amendedClaimDetailSchema).optional(),
+  amendedClaims: z.array(amendedClaimItemSchema).optional(),
   newEvidence: z.string().optional(),
 });
 
