@@ -2,7 +2,10 @@ import { z } from "zod";
 
 export const citationSchema = z.object({
   label: z.string(),
-  paragraph: z.string().optional(),
+  paragraph: z
+    .union([z.string(), z.number(), z.null(), z.undefined()])
+    .transform((v) => (v === undefined || v === null || v === "" ? undefined : String(v)))
+    .optional(),
   lineStart: z.number().int().optional(),
   lineEnd: z.number().int().optional(),
   quote: z.string().optional(),

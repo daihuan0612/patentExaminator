@@ -11,7 +11,10 @@ export const inventiveSchema = z.object({
       z.object({
         referenceId: z.string(),
         label: z.string(),
-        paragraph: z.string().optional(),
+        paragraph: z
+          .union([z.string(), z.number(), z.null(), z.undefined()])
+          .transform((v) => (v === undefined || v === null || v === "" ? undefined : String(v)))
+          .optional(),
         quote: z.string().optional(),
         confidence: z.enum(["high", "medium", "low"])
       })

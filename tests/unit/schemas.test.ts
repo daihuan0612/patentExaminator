@@ -48,6 +48,65 @@ describe("claimChartSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("should convert paragraph number to string", () => {
+    const result = claimChartSchema.safeParse({
+      claimNumber: 1,
+      features: [
+        {
+          featureCode: "A",
+          description: "一种装置",
+          specificationCitations: [
+            { label: "说明书第001段", paragraph: 5, confidence: "high" },
+            { label: "说明书第002段", paragraph: "0010", confidence: "medium" }
+          ],
+          citationStatus: "confirmed"
+        }
+      ]
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const feature = result.data.features[0];
+      expect(feature).toBeDefined();
+      if (feature) {
+        const citation0 = feature.specificationCitations[0];
+        const citation1 = feature.specificationCitations[1];
+        expect(citation0?.paragraph).toBe("5");
+        expect(citation1?.paragraph).toBe("0010");
+      }
+    }
+  });
+
+  it("should handle null and undefined paragraph values", () => {
+    const result = claimChartSchema.safeParse({
+      claimNumber: 1,
+      features: [
+        {
+          featureCode: "A",
+          description: "一种装置",
+          specificationCitations: [
+            { label: "说明书第001段", paragraph: null, confidence: "high" },
+            { label: "说明书第002段", paragraph: undefined, confidence: "medium" },
+            { label: "说明书第003段", confidence: "low" }
+          ],
+          citationStatus: "confirmed"
+        }
+      ]
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const feature = result.data.features[0];
+      expect(feature).toBeDefined();
+      if (feature) {
+        const citation0 = feature.specificationCitations[0];
+        const citation1 = feature.specificationCitations[1];
+        const citation2 = feature.specificationCitations[2];
+        expect(citation0?.paragraph).toBeUndefined();
+        expect(citation1?.paragraph).toBeUndefined();
+        expect(citation2?.paragraph).toBeUndefined();
+      }
+    }
+  });
 });
 
 describe("noveltySchema", () => {
