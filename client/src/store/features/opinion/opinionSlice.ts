@@ -5,6 +5,12 @@ import type {
   RejectionGround,
   RejectionCitedReference
 } from "@shared/types/domain";
+import {
+  saveOpinionAnalysis,
+  saveArgumentMappings,
+  deleteArgumentMappings,
+  clearOpinionData
+} from "../../../lib/repositories/opinionRepo.js";
 
 export interface OpinionSlice {
   officeActionAnalysis: OfficeActionAnalysis | null;
@@ -13,7 +19,9 @@ export interface OpinionSlice {
   isLoading: boolean;
 
   setOfficeActionAnalysis: (analysis: OfficeActionAnalysis) => void;
+  loadOfficeActionAnalysis: (analysis: OfficeActionAnalysis) => void; // Load from DB without re-saving
   setArgumentMappings: (mappings: ArgumentMapping[]) => void;
+  loadArgumentMappings: (mappings: ArgumentMapping[]) => void; // Load from DB without re-saving
   setUnmappedGrounds: (codes: string[]) => void;
   addArgumentMapping: (mapping: ArgumentMapping) => void;
   updateArgumentMapping: (code: string, patch: Partial<ArgumentMapping>) => void;
@@ -23,7 +31,7 @@ export interface OpinionSlice {
   addRejectionGround: (ground: RejectionGround) => void;
   addCitedRef: (ref: RejectionCitedReference) => void;
   removeCitedRef: (pubNumber: string) => void;
-  clearReexamData: () => void;
+  clearReexamData: (caseId?: string) => void;
   setLoading: (v: boolean) => void;
 }
 
@@ -36,88 +44,124 @@ export const createOpinionSlice = (
   unmappedGrounds: [],
   isLoading: false,
 
-  setOfficeActionAnalysis: (analysis) => set(() => ({ officeActionAnalysis: analysis })),
-  setArgumentMappings: (mappings) => set(() => ({ argumentMappings: mappings })),
+  setOfficeActionAnalysis: (analysis) => {
+    saveOpinionAnalysis(analysis).catch((e) => console.error("[OpinionSlice] saveOpinionAnalysis error:", e));
+    set(() => ({ officeActionAnalysis: analysis }));
+  },
+  loadOfficeActionAnalysis: (analysis) => {
+    // Load from DB without re-saving to IndexedDB
+    set(() => ({ officeActionAnalysis: analysis }));
+  },
+  setArgumentMappings: (mappings) => {
+    if (mappings.length > 0 && mappings[0]!.caseId) {
+      saveArgumentMappings(mappings).catch((e) => console.error("[OpinionSlice] saveArgumentMappings error:", e));
+    }
+    set(() => ({ argumentMappings: mappings }));
+  },
+  loadArgumentMappings: (mappings) => {
+    // Load from DB without re-saving to IndexedDB
+    set(() => ({ argumentMappings: mappings }));
+  },
   setUnmappedGrounds: (codes) => set(() => ({ unmappedGrounds: codes })),
 
-  addArgumentMapping: (mapping) =>
-    set((prev) => ({ argumentMappings: [...prev.argumentMappings, mapping] })),
+  addArgumentMapping: (mapping) => {
+    set((prev) => {
+      const newMappings = [...prev.argumentMappings, mapping];
+      saveArgumentMappings(newMappings).catch((e) => console.error("[OpinionSlice] saveArgumentMappings error:", e));
+      return { argumentMappings: newMappings };
+    });
+  },
 
   updateArgumentMapping: (code, patch) =>
-    set((prev) => ({
-      argumentMappings: prev.argumentMappings.map((m) =>
+    set((prev) => {
+      const newMappings = prev.argumentMappings.map((m) =>
         m.rejectionGroundCode === code ? { ...m, ...patch } : m
-      )
-    })),
+      );
+      if (newMappings.length > 0 && newMappings[0]!.caseId) {
+        saveArgumentMappings(newMappings).catch((e) => console.error("[OpinionSlice] saveArgumentMappings error:", e));
+      }
+      return { argumentMappings: newMappings };
+    }),
 
   removeArgumentMapping: (code) =>
-    set((prev) => ({
-      argumentMappings: prev.argumentMappings.filter((m) => m.rejectionGroundCode !== code)
-    })),
+    set((prev) => {
+      const newMappings = prev.argumentMappings.filter((m) => m.rejectionGroundCode !== code);
+      if (prev.argumentMappings.length > 0 && prev.argumentMappings[0]!.caseId) {
+        deleteArgumentMappings(prev.argumentMappings[0]!.caseId).catch((e) => console.error("[OpinionSlice] deleteArgumentMappings error:", e));
+        if (newMappings.length > 0) {
+          saveArgumentMappings(newMappings).catch((e) => console.error("[OpinionSlice] saveArgumentMappings error:", e));
+        }
+      }
+      return { argumentMappings: newMappings };
+    }),
 
   updateRejectionGround: (code, patch) =>
     set((prev) => {
       if (!prev.officeActionAnalysis) return {};
-      return {
-        officeActionAnalysis: {
-          ...prev.officeActionAnalysis,
-          rejectionGrounds: prev.officeActionAnalysis.rejectionGrounds.map((g) =>
-            g.code === code ? { ...g, ...patch } : g
-          )
-        }
+      const newAnalysis = {
+        ...prev.officeActionAnalysis,
+        rejectionGrounds: prev.officeActionAnalysis.rejectionGrounds.map((g) =>
+          g.code === code ? { ...g, ...patch } : g
+        )
       };
+      saveOpinionAnalysis(newAnalysis).catch((e) => console.error("[OpinionSlice] saveOpinionAnalysis error:", e));
+      return { officeActionAnalysis: newAnalysis };
     }),
 
   removeRejectionGround: (code) =>
     set((prev) => {
       if (!prev.officeActionAnalysis) return {};
-      return {
-        officeActionAnalysis: {
-          ...prev.officeActionAnalysis,
-          rejectionGrounds: prev.officeActionAnalysis.rejectionGrounds.filter(
-            (g) => g.code !== code
-          )
-        }
+      const newAnalysis = {
+        ...prev.officeActionAnalysis,
+        rejectionGrounds: prev.officeActionAnalysis.rejectionGrounds.filter(
+          (g) => g.code !== code
+        )
       };
+      saveOpinionAnalysis(newAnalysis).catch((e) => console.error("[OpinionSlice] saveOpinionAnalysis error:", e));
+      return { officeActionAnalysis: newAnalysis };
     }),
 
   addRejectionGround: (ground) =>
     set((prev) => {
       if (!prev.officeActionAnalysis) return {};
-      return {
-        officeActionAnalysis: {
-          ...prev.officeActionAnalysis,
-          rejectionGrounds: [...prev.officeActionAnalysis.rejectionGrounds, ground]
-        }
+      const newAnalysis = {
+        ...prev.officeActionAnalysis,
+        rejectionGrounds: [...prev.officeActionAnalysis.rejectionGrounds, ground]
       };
+      saveOpinionAnalysis(newAnalysis).catch((e) => console.error("[OpinionSlice] saveOpinionAnalysis error:", e));
+      return { officeActionAnalysis: newAnalysis };
     }),
 
   addCitedRef: (ref) =>
     set((prev) => {
       if (!prev.officeActionAnalysis) return {};
-      return {
-        officeActionAnalysis: {
-          ...prev.officeActionAnalysis,
-          citedReferences: [...prev.officeActionAnalysis.citedReferences, ref]
-        }
+      const newAnalysis = {
+        ...prev.officeActionAnalysis,
+        citedReferences: [...prev.officeActionAnalysis.citedReferences, ref]
       };
+      saveOpinionAnalysis(newAnalysis).catch((e) => console.error("[OpinionSlice] saveOpinionAnalysis error:", e));
+      return { officeActionAnalysis: newAnalysis };
     }),
 
   removeCitedRef: (pubNumber) =>
     set((prev) => {
       if (!prev.officeActionAnalysis) return {};
-      return {
-        officeActionAnalysis: {
-          ...prev.officeActionAnalysis,
-          citedReferences: prev.officeActionAnalysis.citedReferences.filter(
-            (r) => r.publicationNumber !== pubNumber
-          )
-        }
+      const newAnalysis = {
+        ...prev.officeActionAnalysis,
+        citedReferences: prev.officeActionAnalysis.citedReferences.filter(
+          (r) => r.publicationNumber !== pubNumber
+        )
       };
+      saveOpinionAnalysis(newAnalysis).catch((e) => console.error("[OpinionSlice] saveOpinionAnalysis error:", e));
+      return { officeActionAnalysis: newAnalysis };
     }),
 
-  clearReexamData: () =>
-    set(() => ({ officeActionAnalysis: null, argumentMappings: [], unmappedGrounds: [] })),
+  clearReexamData: (caseId) => {
+    if (caseId) {
+      clearOpinionData(caseId).catch((e) => console.error("[OpinionSlice] clearOpinionData error:", e));
+    }
+    set(() => ({ officeActionAnalysis: null, argumentMappings: [], unmappedGrounds: [] }));
+  },
   setLoading: (v) => set(() => ({ isLoading: v }))
 });
 

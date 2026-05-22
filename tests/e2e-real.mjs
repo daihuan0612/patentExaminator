@@ -62,12 +62,22 @@
  * → --only mock（运行所有 Mock 模式测试，秒级完成）
  *
  * 【Real 模式测试】修改 Provider/Gateway/Fallback 时运行（需 GEMINI_KEY）
- * ├── testRealProviderConnectivity - Gemini API 连通性
- * ├── testRealClaimChart_G1        - G1 Claim Chart 真实 AI 生成
- * ├── testRealNovelty_G1           - G1 新颖性对照真实 AI
- * ├── testRealInventive_G2         - G2 三步法真实 AI
- * ├── testRealFallbackMechanism    - 429 → fallback 切换
- * └── testRealTokenUsageReturned   - usage 字段验证
+ * ├── testRealProviderConnectivity  - Gemini API 连通性
+ * ├── testRealClaimChart_G1         - G1 Claim Chart 真实 AI 生成
+ * ├── testRealNovelty_G1            - G1 新颖性对照真实 AI
+ * ├── testRealInventive_G2          - G1 三步法真实 AI
+ * ├── testRealDefects_G1            - G1 缺陷检测真实 AI
+ * ├── testRealChat_G1               - G1 对话真实 AI
+ * ├── testRealInterpret_G1          - G1 文档解读真实 AI
+ * ├── testRealExtractCaseFields_G1  - G1 案件字段提取真实 AI
+ * ├── testRealOpinionAnalysis_G1    - G1 审查意见分析真实 AI
+ * ├── testRealArgumentAnalysis_G1   - G1 答辩理由映射真实 AI
+ * ├── testRealReexamDraft_G1        - G1 复审意见草稿真实 AI
+ * ├── testRealSummary_G1            - G1 摘要生成真实 AI
+ * ├── testRealTranslate_G1          - G1 翻译真实 AI
+ * ├── testRealClassifyDocuments_G1  - G1 文档分类真实 AI
+ * ├── testRealTokenUsageReturned    - usage 字段验证
+ * └── testRealSearchReferences_G1   - 真实搜索流程（需 Tavily Key）
  *
  * 【完整流程测试】修改流程编排/AgentClient 时运行
  * ├── testFullPipelineMock_G1      - G1: 案件→Chart→Novelty→Export
@@ -163,6 +173,106 @@ const BANNED_MODEL_PATTERNS = [
 
 const RESULTS = [];
 let currentModelIndex = 0;
+
+// ── Sample Data (LED Heatsink Mini) ──────────────────────────────────
+
+const SAMPLE_CLAIM = [
+  "权利要求1：一种LED灯具用复合散热装置，其特征在于，包括：",
+  "散热基板(A)，由铝合金材料制成，表面设有均匀分布的散热翅片；",
+  "导热界面层(B)，设置在散热基板与LED芯片之间，为石墨烯复合导热膜，厚度0.1mm-0.5mm；",
+  "风冷模块(C)，与散热翅片配合，包含离心风扇及导风罩。",
+  "",
+  "权利要求2：根据权利要求1所述的复合散热装置，其特征在于，所述散热翅片的间距为2-5mm，高度为10-30mm。",
+  "",
+  "权利要求3：根据权利要求1所述的复合散热装置，其特征在于，所述石墨烯复合导热膜包含5-15wt%的石墨烯和85-95wt%的有机硅树脂。",
+  "",
+  "权利要求4：根据权利要求1所述的复合散热装置，其特征在于，所述离心风扇转速为2000-8000rpm，风量为10-50CFM。",
+].join("\n");
+
+const SAMPLE_SPEC = [
+  "技术领域：本发明涉及LED照明技术领域，具体涉及一种LED灯具用复合散热装置。",
+  "",
+  "背景技术：LED灯具在工作过程中会产生大量热量，散热不良会导致光衰、色温漂移及寿命缩短。",
+  "传统散热方案多采用单一铝合金散热器配合自然对流，散热效率有限。",
+  "",
+  "发明内容：本发明提供一种LED灯具用复合散热装置，通过铝合金散热基板、石墨烯导热膜及离心风扇三者协同，大幅提升散热效率。",
+  "其中，散热基板由6063-T5铝合金一体化压铸成型，表面设有沿径向均匀分布的散热翅片，翅片间距2-5mm、高度10-30mm。",
+  "导热界面层为石墨烯复合导热膜，石墨烯含量5-15wt%，厚度0.1mm-0.5mm，导热系数可达800-1500W/(m·K)。",
+  "风冷模块包括离心风扇和导风罩，风扇转速2000-8000rpm，风量10-50CFM。",
+  "",
+  "具体实施方式：如图1所示，LED灯具复合散热装置包括散热基板1、LED芯片2、导热界面层3和风冷模块4。",
+  "散热基板1采用6063-T5铝合金通过压铸一体成型，基板上表面集成多个LED芯片2安装位。",
+  "导热界面层3设置在散热基板1上表面与LED芯片2之间，采用石墨烯复合导热膜。",
+  "风冷模块4安装在散热基板1侧方，包括离心风扇4a和导风罩4b。",
+].join("\n");
+
+const SAMPLE_REF_D1 = [
+  "公开号：CN201510012345A",
+  "公开日：2015-06-20",
+  "标题：一种LED灯具散热结构",
+  "",
+  "摘要：本发明公开了一种LED灯具散热结构，包括铝合金散热基板，基板上设有散热翅片，",
+  "LED芯片通过导热硅脂层安装于基板上表面。散热方式为自然对流。",
+  "",
+  "主要技术特征：",
+  "- 铝合金散热基板+散热翅片（自然对流）",
+  "- 导热连接材料：导热硅脂",
+  "- 散热方式：被动自然对流",
+].join("\n");
+
+const SAMPLE_REF_D2 = [
+  "公开号：US20200123456A1",
+  "公开日：2020-05-15",
+  "标题：High Efficiency Thermal Management System for LED Arrays",
+  "",
+  "摘要：A thermal management system using graphene-enhanced thermal interface material",
+  "between LED array and aluminum substrate. The TIM comprises 8-12wt% graphene nanoplatelets",
+  "dispersed in silicone matrix, achieving thermal conductivity of 600-1200W/(m·K).",
+  "",
+  "主要技术特征：",
+  "- 石墨烯增强导热界面材料",
+  "- 硅基基体+8-12wt%石墨烯纳米片",
+  "- 导热系数600-1200W/(m·K)",
+].join("\n");
+
+const SAMPLE_OA = [
+  "审查意见通知书",
+  "",
+  "申请号：CN202310008888A",
+  "发明名称：一种LED灯具用复合散热装置",
+  "",
+  "经审查，本申请存在以下缺陷：",
+  "",
+  "1. 权利要求1相对于对比文件1（CN201510012345A）不具备新颖性。",
+  "   对比文件1公开了铝合金散热基板+散热翅片（特征A），不具备新颖性（专利法第22条第2款）。",
+  "",
+  "2. 权利要求1-4相对于对比文件1和对比文件2（US20200123456A1）的组合不具备创造性。",
+  "   对比文件2公开了石墨烯复合导热膜用于LED散热（特征B），本领域技术人员有动机将其与对比文件1结合（专利法第22条第3款）。",
+  "",
+  "3. 权利要求1中\"离心风扇\"的表述不清楚，未限定风扇与散热翅片的具体配合方式（专利法第26条第4款）。",
+].join("\n");
+
+const SAMPLE_RESPONSE = [
+  "意见陈述书",
+  "",
+  "针对审查意见通知书，申请人陈述如下：",
+  "",
+  "1. 关于新颖性问题：本申请权利要求1的特征A在对比文件1中虽然公开，",
+  "   但本申请的散热翅片间距2-5mm、高度10-30mm具有特定技术效果，与对比文件1不同。",
+  "   申请人已将此技术特征补入权利要求1。",
+  "",
+  "2. 关于创造性问题：对比文件2虽然公开了石墨烯导热膜，但其应用于不同技术场景，",
+  "   且本申请的石墨烯含量5-15wt%与对比文件2的8-12wt%范围不同，",
+  "   本申请通过三者协同实现了超出预期的散热效果（导热系数800-1500W/(m·K)）。",
+  "",
+  "3. 关于不清楚问题：申请人已在说明书中补充了离心风扇与散热翅片的配合方式描述。",
+].join("\n");
+
+const SAMPLE_FEATURES = [
+  { featureCode: "A", description: "铝合金散热基板+散热翅片" },
+  { featureCode: "B", description: "石墨烯复合导热膜(0.1-0.5mm)" },
+  { featureCode: "C", description: "离心风扇+导风罩" },
+];
 
 // ── Test Utilities ───────────────────────────────────────────────────
 
@@ -421,6 +531,110 @@ function validateSummaryOutput(data) {
   if (typeof data.body !== "string" || data.body.length === 0) errors.push("missing or empty body");
   if (typeof data.legalCaution !== "string") errors.push("missing legalCaution");
   return { valid: errors.length === 0, errors };
+}
+
+function validateDefectsOutput(data) {
+  if (!data || typeof data !== "object") return { valid: false, errors: ["not an object"] };
+  const errors = [];
+  if (!Array.isArray(data.defects)) errors.push("defects must be array");
+  else {
+    const validSeverities = ["error", "warning", "info"];
+    const validCategories = ["新颖性", "创造性", "清楚性", "支持", "修改超范围", "其他"];
+    for (const d of data.defects) {
+      if (typeof d.code !== "string") errors.push(`defect missing code`);
+      if (typeof d.description !== "string") errors.push(`defect missing description`);
+      if (typeof d.category !== "string") errors.push(`defect missing category`);
+      if (!validSeverities.includes(d.severity)) errors.push(`invalid severity: ${d.severity}`);
+    }
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+function validateExtractCaseFieldsOutput(data) {
+  if (!data || typeof data !== "object") return { valid: false, errors: ["not an object"] };
+  const errors = [];
+  if (!Array.isArray(data.claims) || data.claims.length < 1) errors.push("claims must be non-empty array");
+  else {
+    for (const c of data.claims) {
+      if (typeof c.claimNumber !== "number") errors.push(`claim missing claimNumber`);
+      if (!["independent", "dependent"].includes(c.type)) errors.push(`invalid claim type: ${c.type}`);
+      if (typeof c.rawText !== "string" || c.rawText.length === 0) errors.push(`claim missing rawText`);
+    }
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+function validateInterpretOutput(data) {
+  if (!data || typeof data !== "object") return { valid: false, errors: ["not an object"] };
+  const errors = [];
+  if (typeof data.reply !== "string" || data.reply.length < 20) errors.push("reply too short or missing");
+  return { valid: errors.length === 0, errors };
+}
+
+// ── Shared Real AI Test Helper ───────────────────────────────────────
+
+async function runRealAiAgentTest(label, agent, prompt, metadata, onResponse) {
+  const body = {
+    agent,
+    providerPreference: ["gemini"],
+    modelId: GEMINI_MODEL_ID,
+    prompt,
+    sanitized: false,
+    metadata,
+  };
+
+  currentModelIndex = 0;
+  for (let attempt = 0; attempt < GEMINI_FALLBACK_MODELS.length; attempt++) {
+    body.modelId = attempt === 0 ? GEMINI_MODEL_ID : getFallbackModel();
+    const labelWithAttempt = attempt > 0 ? `${label} retry-${attempt}` : label;
+    if (attempt > 0) console.log(`  [${labelWithAttempt}] attempt ${attempt + 1}, model=${body.modelId}`);
+
+    try {
+      const res = await postJSON("/ai/run", body);
+      if (isAuthError(res.status)) {
+        log(label, false, "Auth failed (401), check GEMINI_KEY");
+        return false;
+      }
+
+      const data = await res.json();
+
+      if (!data.ok && data.error && isRetryableErrorText(data.error.message)) {
+        currentModelIndex++;
+        const waitMs = 5000 + attempt * 3000;
+        console.log(`  [Retryable] ${data.error.message}, switching model (wait ${waitMs}ms)...`);
+        await delay(waitMs);
+        continue;
+      }
+
+      log(`${label} ok`, data.ok === true, `ok=${data.ok}`);
+
+      if (data.tokenUsage) {
+        log(`${label} token usage`, typeof data.tokenUsage.input === "number",
+          `in=${data.tokenUsage.input}, out=${data.tokenUsage.output}`);
+      }
+
+      if (onResponse) onResponse(data);
+
+      if (data.outputJson) {
+        const text = typeof data.outputJson === "string" ? data.outputJson : JSON.stringify(data.outputJson);
+        log(`${label} output not empty`, text.length > 5,
+          `length=${text.length}`);
+      }
+
+      return data;
+    } catch (err) {
+      if (attempt < GEMINI_FALLBACK_MODELS.length - 1) {
+        currentModelIndex++;
+        const waitMs = 15000 + attempt * 5000;
+        console.log(`  [${labelWithAttempt}] error: ${err.message}, retrying in ${waitMs}ms...`);
+        await delay(waitMs);
+        continue;
+      }
+      log(label, false, err.message);
+      return null;
+    }
+  }
+  return null;
 }
 
 // ── Mock Request Builder ─────────────────────────────────────────────
@@ -1217,70 +1431,37 @@ async function testRealProviderConnectivity() {
 async function testRealClaimChart_G1() {
   if (!GEMINI_KEY) { log("Real ClaimChart G1", false, "GEMINI_KEY not set"); return; }
 
-  const prompt = `你是一位专利审查员。请分析以下权利要求并生成Claim Chart（权利要求特征拆解表）。
+  const prompt = [
+    "你是一位专利审查员。请分析以下权利要求并生成Claim Chart（权利要求特征拆解表）。",
+    "",
+    SAMPLE_CLAIM,
+    "",
+    "说明书摘要：",
+    SAMPLE_SPEC.slice(0, 2000),
+    "",
+    "请严格输出以下JSON格式（不要输出其他内容）：",
+    '{"claimNumber":1,"features":[{"featureCode":"A","description":"特征描述","specificationCitations":[{"label":"[0001]","confidence":"high"}],"citationStatus":"confirmed"}],"warnings":[],"pendingSearchQuestions":[],"legalCaution":"以上为候选事实整理，不构成法律结论。"}',
+  ].join("\n");
 
-权利要求1：一种LED灯具用复合散热装置，其特征在于，包括：
-散热基板(A)，由铝合金材料制成，表面设有均匀分布的散热翅片；
-导热界面层(B)，设置在散热基板与LED芯片之间，为石墨烯复合导热膜，厚度0.1mm-0.5mm；
-风冷模块(C)，与散热翅片配合，包含离心风扇及导风罩。
+  console.log("  [Real ClaimChart G1] attempt 1, model=" + GEMINI_MODEL_ID);
 
-请严格输出以下JSON格式（不要输出其他内容）：
-{"claimNumber":1,"features":[{"featureCode":"A","description":"特征描述","specificationCitations":[{"label":"[0001]","confidence":"high"}],"citationStatus":"confirmed"},{"featureCode":"B","description":"特征描述","specificationCitations":[{"label":"[0002]","confidence":"high"}],"citationStatus":"confirmed"},{"featureCode":"C","description":"特征描述","specificationCitations":[{"label":"[0003]","confidence":"high"}],"citationStatus":"confirmed"}],"warnings":[],"pendingSearchQuestions":[],"legalCaution":"以上为候选事实整理，不构成法律结论。"}`;
-
-  const body = {
-    agent: "claim-chart",
-    providerPreference: ["gemini"],
-    modelId: GEMINI_MODEL_ID,
-    prompt,
-    sanitized: false,
-    metadata: { caseId: "g1-led", moduleScope: "claim-chart", tokenEstimate: 200 },
-  };
-
-  currentModelIndex = 0;
-  for (let attempt = 0; attempt < GEMINI_FALLBACK_MODELS.length; attempt++) {
-    body.modelId = attempt === 0 ? GEMINI_MODEL_ID : getFallbackModel();
-    console.log(`  [Real ClaimChart] attempt ${attempt + 1}, model=${body.modelId}`);
-
-    try {
-      const res = await postJSON("/ai/run", body);
-      if (isAuthError(res.status)) {
-        log("Real ClaimChart G1", false, `Auth failed (401), check GEMINI_KEY`);
-        return;
-      }
-
-      const data = await res.json();
-      if (!data.ok && data.error && isRetryableErrorText(data.error.message)) {
-        currentModelIndex++;
-        console.log(`  [Retryable] ${data.error.message}, switching model...`);
-        await delay(5000);
-        continue;
-      }
-
-      log("Real ClaimChart G1 ok", data.ok === true, `ok=${data.ok}`);
-      if (data.outputJson) {
-        const result = validateClaimChartOutput(data.outputJson);
-        log("Real ClaimChart G1 schema", result.valid, result.errors.join("; "));
-        const features = data.outputJson.features || [];
-        log("Real ClaimChart G1 has features A,B,C",
-          features.some(f => f.featureCode === "A") &&
-          features.some(f => f.featureCode === "B") &&
-          features.some(f => f.featureCode === "C"),
-          `codes=${features.map(f => f.featureCode).join(",")}`);
-      }
-      if (data.tokenUsage) {
-        log("Real ClaimChart G1 token usage", typeof data.tokenUsage.input === "number",
-          `in=${data.tokenUsage.input}, out=${data.tokenUsage.output}`);
-      }
-      return;
-    } catch (err) {
-      if (attempt < GEMINI_FALLBACK_MODELS.length - 1) {
-        currentModelIndex++;
-        await delay(15000);
-        continue;
-      }
-      log("Real ClaimChart G1", false, err.message);
+  return runRealAiAgentTest(
+    "Real ClaimChart G1", "claim-chart", prompt,
+    { caseId: "g1-led", moduleScope: "claim-chart", tokenEstimate: 300 },
+    (data) => {
+      if (!data.outputJson) return;
+      const result = validateClaimChartOutput(data.outputJson);
+      log("Real ClaimChart G1 schema", result.valid, result.errors.join("; "));
+      const features = data.outputJson.features || [];
+      log("Real ClaimChart G1 has features A,B,C",
+        features.some(f => f.featureCode === "A") &&
+        features.some(f => f.featureCode === "B") &&
+        features.some(f => f.featureCode === "C"),
+        `codes=${features.map(f => f.featureCode).join(",")}`);
+      log("Real ClaimChart G1 has citationStatus", features.every(f =>
+        ["confirmed", "needs-review", "not-found"].includes(f.citationStatus)));
     }
-  }
+  );
 }
 
 // ── Real Mode: Novelty ───────────────────────────────────────────────
@@ -1288,59 +1469,30 @@ async function testRealClaimChart_G1() {
 async function testRealNovelty_G1() {
   if (!GEMINI_KEY) { log("Real Novelty G1", false, "GEMINI_KEY not set"); return; }
 
-  const prompt = `你是一位专利审查员。请对权利要求1进行新颖性对照分析。
+  const featuresText = SAMPLE_FEATURES.map(f => `  ${f.featureCode}: ${f.description}`).join("\n");
+  const prompt = [
+    `案件 ID: g1-led`,
+    `权利要求号: 1`,
+    `技术特征:`,
+    featuresText,
+    ``,
+    `对比文件 ID: g1-ref-d1`,
+    `对比文件内容:`,
+    SAMPLE_REF_D1,
+  ].join("\n");
 
-权利要求1：一种LED灯具用复合散热装置，特征A：铝合金散热基板+散热翅片；特征B：石墨烯复合导热膜(0.1-0.5mm)；特征C：离心风扇+导风罩。
-
-对比文件D1（CN201510012345A，公开日2015-06-20）：公开了铝合金散热基板+散热翅片（对应特征A），使用导热硅脂连接（非石墨烯膜），采用自然对流散热（无风扇）。
-
-请严格输出JSON格式（不要输出其他内容）：
-{"referenceId":"g1-ref-d1","claimNumber":1,"rows":[{"featureCode":"A","disclosureStatus":"clearly-disclosed","citations":[{"label":"D1","confidence":"high"}],"mismatchNotes":""},{"featureCode":"B","disclosureStatus":"not-found","citations":[],"mismatchNotes":"D1使用硅脂非石墨烯"},{"featureCode":"C","disclosureStatus":"not-found","citations":[],"mismatchNotes":"D1为自然对流非风扇"}],"differenceFeatureCodes":["B","C"],"pendingSearchQuestions":[],"legalCaution":"以上为候选事实整理，不构成新颖性法律结论。"}`;
-
-  const body = {
-    agent: "novelty",
-    providerPreference: ["gemini"],
-    modelId: GEMINI_MODEL_ID,
-    prompt,
-    expectedSchemaName: "novelty",
-    sanitized: false,
-    metadata: { caseId: "g1-led", moduleScope: "novelty", tokenEstimate: 250 },
-  };
-
-  currentModelIndex = 0;
-  for (let attempt = 0; attempt < GEMINI_FALLBACK_MODELS.length; attempt++) {
-    body.modelId = attempt === 0 ? GEMINI_MODEL_ID : getFallbackModel();
-
-    try {
-      const res = await postJSON("/ai/run", body);
-      if (isAuthError(res.status)) { log("Real Novelty G1", false, "Auth failed"); return; }
-
-      const data = await res.json();
-      if (!data.ok && data.error && isRetryableErrorText(data.error.message)) {
-        currentModelIndex++;
-        await delay(5000);
-        continue;
-      }
-
-      log("Real Novelty G1 ok", data.ok === true, `ok=${data.ok}`);
-      if (data.outputJson) {
-        const result = validateNoveltyOutput(data.outputJson);
-        log("Real Novelty G1 schema", result.valid, result.errors.join("; "));
-      }
-      if (data.tokenUsage) {
-        log("Real Novelty G1 token usage", typeof data.tokenUsage.input === "number",
-          `in=${data.tokenUsage.input}, out=${data.tokenUsage.output}`);
-      }
-      return;
-    } catch (err) {
-      if (attempt < GEMINI_FALLBACK_MODELS.length - 1) {
-        currentModelIndex++;
-        await delay(15000);
-        continue;
-      }
-      log("Real Novelty G1", false, err.message);
+  return runRealAiAgentTest(
+    "Real Novelty G1", "novelty", prompt,
+    { caseId: "g1-led", moduleScope: "novelty", tokenEstimate: 300 },
+    (data) => {
+      if (!data.outputJson) return;
+      const result = validateNoveltyOutput(data.outputJson);
+      log("Real Novelty G1 schema", result.valid, result.errors.join("; "));
+      log("Real Novelty G1 has differenceFeatureCodes",
+        Array.isArray(data.outputJson.differenceFeatureCodes),
+        `diff=${data.outputJson.differenceFeatureCodes?.join(",")}`);
     }
-  }
+  );
 }
 
 // ── Real Mode: Inventive ─────────────────────────────────────────────
@@ -1348,62 +1500,446 @@ async function testRealNovelty_G1() {
 async function testRealInventive_G2() {
   if (!GEMINI_KEY) { log("Real Inventive G2", false, "GEMINI_KEY not set"); return; }
 
-  const prompt = `你是一位专利审查员。请对以下权利要求进行创造性三步法分析。
+  const featuresText = SAMPLE_FEATURES.map(f => `  ${f.featureCode}: ${f.description}`).join("\n");
+  const availableRefs = [
+    { label: "D1", referenceId: "g1-ref-d1", excerpt: `${SAMPLE_REF_D1.slice(0, 500)}` },
+    { label: "D2", referenceId: "g1-ref-d2", excerpt: `${SAMPLE_REF_D2.slice(0, 500)}` },
+  ];
+  const refsText = availableRefs.map(r =>
+    `  ${r.label} (${r.referenceId}): ${r.excerpt}`
+  ).join("\n");
 
-权利要求1：一种锂离子电池快速充电控制方法：步骤a(A)以1C-3C恒流预充电至4.0V；步骤b(B)根据内阻实时检测动态调整充电电压，内阻每增10mΩ则充电电压降0.05V；步骤c(C)温度超45°C自动停充并警报。
+  const prompt = [
+    `案件 ID: g1-led`,
+    `权利要求号: 1`,
+    `技术特征:`,
+    featuresText,
+    ``,
+    `可用对比文件:`,
+    refsText,
+    ``,
+    `用户指定最接近现有技术: g1-ref-d1`,
+  ].join("\n");
 
-对比文件D1(CN201910056789A，2019-11-30)：公开恒流恒压充电(步骤A+C)，不含步骤B动态调压。
-对比文件D2(US20200123456A1，2020-05-15)：公开与步骤B参数一致的动态调压技术(内阻10mΩ→降0.05V)。
-
-请严格输出JSON格式：
-{"claimNumber":1,"closestPriorArtId":"D1","sharedFeatureCodes":["A","C"],"distinguishingFeatureCodes":["B"],"objectiveTechnicalProblem":"提高充电效率并降低极化损耗","motivationEvidence":[{"referenceId":"D2","label":"D2","confidence":"high"}],"candidateAssessment":"possibly-lacks-inventiveness","cautions":[],"legalCaution":"以上为候选事实整理，不构成创造性法律结论。"}`;
-
-  const body = {
-    agent: "inventive",
-    providerPreference: ["gemini"],
-    modelId: GEMINI_MODEL_ID,
-    prompt,
-    sanitized: false,
-    metadata: { caseId: "g2-battery", moduleScope: "inventive", tokenEstimate: 300 },
-  };
-
-  currentModelIndex = 0;
-  for (let attempt = 0; attempt < GEMINI_FALLBACK_MODELS.length; attempt++) {
-    body.modelId = attempt === 0 ? GEMINI_MODEL_ID : getFallbackModel();
-
-    try {
-      const res = await postJSON("/ai/run", body);
-      if (isAuthError(res.status)) { log("Real Inventive G2", false, "Auth failed"); return; }
-
-      const data = await res.json();
-      if (!data.ok && data.error && isRetryableErrorText(data.error.message)) {
-        currentModelIndex++;
-        await delay(5000);
-        continue;
-      }
-
-      log("Real Inventive G2 ok", data.ok === true, `ok=${data.ok}`);
-      if (data.outputJson) {
-        const result = validateInventiveOutput(data.outputJson);
-        log("Real Inventive G2 schema", result.valid, result.errors.join("; "));
-        log("Real Inventive G2 candidateAssessment",
-          typeof data.outputJson.candidateAssessment === "string",
-          `assessment=${data.outputJson.candidateAssessment}`);
-      }
-      if (data.tokenUsage) {
-        log("Real Inventive G2 token usage", typeof data.tokenUsage.input === "number",
-          `in=${data.tokenUsage.input}, out=${data.tokenUsage.output}`);
-      }
-      return;
-    } catch (err) {
-      if (attempt < GEMINI_FALLBACK_MODELS.length - 1) {
-        currentModelIndex++;
-        await delay(15000);
-        continue;
-      }
-      log("Real Inventive G2", false, err.message);
+  return runRealAiAgentTest(
+    "Real Inventive G2", "inventive", prompt,
+    { caseId: "g1-led", moduleScope: "inventive", tokenEstimate: 350 },
+    (data) => {
+      if (!data.outputJson) return;
+      const result = validateInventiveOutput(data.outputJson);
+      log("Real Inventive G2 schema", result.valid, result.errors.join("; "));
+      log("Real Inventive G2 candidateAssessment",
+        typeof data.outputJson.candidateAssessment === "string",
+        `assessment=${data.outputJson.candidateAssessment}`);
+      log("Real Inventive G2 has closestPriorArtId",
+        typeof data.outputJson.closestPriorArtId === "string",
+        `id=${data.outputJson.closestPriorArtId}`);
     }
-  }
+  );
+}
+
+// ── Real Mode: Defects ───────────────────────────────────────────────
+
+async function testRealDefects_G1() {
+  if (!GEMINI_KEY) { log("Real Defects G1", false, "GEMINI_KEY not set"); return; }
+
+  const featuresText = SAMPLE_FEATURES.map(f => `  ${f.featureCode}: ${f.description}`).join("\n");
+  const prompt = [
+    `案件 ID: g1-led`,
+    ``,
+    `权利要求文本:`,
+    SAMPLE_CLAIM,
+    ``,
+    `说明书文本:`,
+    SAMPLE_SPEC,
+    ``,
+    `技术特征:`,
+    featuresText,
+  ].join("\n");
+
+  return runRealAiAgentTest(
+    "Real Defects G1", "defects", prompt,
+    { caseId: "g1-led", moduleScope: "defects", tokenEstimate: 400 },
+    (data) => {
+      if (!data.outputJson) return;
+      const result = validateDefectsOutput(data.outputJson);
+      log("Real Defects G1 schema", result.valid, result.errors.join("; "));
+      log("Real Defects G1 has defects", Array.isArray(data.outputJson.defects),
+        `count=${data.outputJson.defects?.length || 0}`);
+    }
+  );
+}
+
+// ── Real Mode: Chat ──────────────────────────────────────────────────
+
+async function testRealChat_G1() {
+  if (!GEMINI_KEY) { log("Real Chat G1", false, "GEMINI_KEY not set"); return; }
+
+  const prompt = [
+    `案件 ID: g1-led`,
+    `当前模块: claim-chart`,
+    ``,
+    `=== 当前模块数据 ===`,
+    `权利要求特征: A:铝合金散热基板+散热翅片, B:石墨烯导热膜(0.1-0.5mm), C:离心风扇+导风罩`,
+    ``,
+    `=== 对话历史 ===`,
+    ``,
+    `=== 用户消息 ===`,
+    `请分析特征B(石墨烯导热膜)在散热装置中的作用和优势。`,
+  ].join("\n");
+
+  return runRealAiAgentTest(
+    "Real Chat G1", "chat", prompt,
+    { caseId: "g1-led", moduleScope: "claim-chart", tokenEstimate: 200 },
+    (data) => {
+      if (data.outputJson) {
+        log("Real Chat G1 has reply", typeof data.outputJson.reply === "string",
+          `length=${data.outputJson.reply?.length || 0}`);
+      }
+      if (data.rawText) {
+        log("Real Chat G1 rawText", typeof data.rawText === "string",
+          `length=${data.rawText.length}`);
+      }
+    }
+  );
+}
+
+// ── Real Mode: Interpret ─────────────────────────────────────────────
+
+async function testRealInterpret_G1() {
+  if (!GEMINI_KEY) { log("Real Interpret G1", false, "GEMINI_KEY not set"); return; }
+
+  const prompt = [
+    `你是一个专利审查助手。请对以下专利申请文件进行深度解读，从以下维度分析：`,
+    ``,
+    "1. 【技术领域】该专利属于哪个技术领域",
+    "2. 【核心技术方案】概括发明的技术方案",
+    "3. 【主要权利要求】列出独立权利要求的核心技术特征",
+    "4. 【关键实施例】概括关键实施例及其技术效果",
+    "5. 【创新点分析】该发明相对于现有技术的创新之处",
+    "6. 【潜在问题】可能存在的形式或实质性问题",
+    ``,
+    "请用中文回答，结构清晰，每个维度用标题分隔。",
+    "必须在开头明确写出当前解读文件名。",
+    "",
+    `案件 ID: g1-led`,
+    `文件 ID: doc-led-app`,
+    `文件名: 申请文件.pdf`,
+    "",
+    "=== 同案相关文件 ===",
+    "无",
+    "",
+    "=== 文档内容 ===",
+    SAMPLE_SPEC,
+  ].join("\n");
+
+  return runRealAiAgentTest(
+    "Real Interpret G1", "interpret", prompt,
+    { caseId: "g1-led", moduleScope: "interpret", tokenEstimate: 400 },
+    (data) => {
+      if (data.outputJson) {
+        const result = validateInterpretOutput(data.outputJson);
+        log("Real Interpret G1 schema", result.valid, result.errors.join("; "));
+        log("Real Interpret G1 reply length",
+          typeof data.outputJson.reply === "string" && data.outputJson.reply.length > 100,
+          `length=${data.outputJson.reply?.length || 0}`);
+      }
+      if (data.rawText) {
+        log("Real Interpret G1 rawText length",
+          typeof data.rawText === "string" && data.rawText.length > 100,
+          `length=${data.rawText.length}`);
+      }
+    }
+  );
+}
+
+// ── Real Mode: Extract Case Fields ───────────────────────────────────
+
+async function testRealExtractCaseFields_G1() {
+  if (!GEMINI_KEY) { log("Real ExtractCaseFields G1", false, "GEMINI_KEY not set"); return; }
+
+  const prompt = [
+    "你是一个专利文档信息提取助手。请从以下专利申请文件中提取案件基本信息和权利要求结构。",
+    "",
+    "请严格返回 JSON 格式，不要包含任何其他文字。字段无法确定时设为 null。",
+    "",
+    "返回格式:",
+    JSON.stringify({
+      title: "发明名称（字符串或 null）",
+      applicationNumber: "申请号（字符串或 null）",
+      applicant: "申请人（字符串或 null）",
+      applicationDate: "申请日，格式 YYYY-MM-DD（字符串或 null）",
+      priorityDate: "优先权日，格式 YYYY-MM-DD（字符串或 null）",
+      claims: [{
+        claimNumber: 1,
+        type: "independent",
+        dependsOn: [],
+        rawText: "权利要求全文"
+      }]
+    }, null, 2),
+    "",
+    "要求:",
+    "- 提取所有权利要求，识别独立权利要求和从属权利要求",
+    "- 从属权利要求的 dependsOn 填写其引用的权利要求编号列表",
+    "- 日期格式统一为 YYYY-MM-DD",
+    "",
+    `案件 ID: g1-led`,
+    "",
+    `=== 文件 1: 申请文件.pdf ===`,
+    SAMPLE_SPEC,
+  ].join("\n");
+
+  return runRealAiAgentTest(
+    "Real ExtractCaseFields G1", "extract-case-fields", prompt,
+    { caseId: "g1-led", moduleScope: "case", tokenEstimate: 350 },
+    (data) => {
+      if (!data.outputJson) return;
+      const result = validateExtractCaseFieldsOutput(data.outputJson);
+      log("Real ExtractCaseFields G1 schema", result.valid, result.errors.join("; "));
+      log("Real ExtractCaseFields G1 has title", typeof data.outputJson.title === "string",
+        `title=${data.outputJson.title?.slice(0, 40)}`);
+      log("Real ExtractCaseFields G1 has claims", Array.isArray(data.outputJson.claims),
+        `count=${data.outputJson.claims?.length || 0}`);
+    }
+  );
+}
+
+// ── Real Mode: Opinion Analysis ──────────────────────────────────────
+
+async function testRealOpinionAnalysis_G1() {
+  if (!GEMINI_KEY) { log("Real OpinionAnalysis G1", false, "GEMINI_KEY not set"); return; }
+
+  const prompt = [
+    `你是一位资深专利审查员，擅长分析审查意见通知书。`,
+    `案件 ID: g1-led`,
+    `文档 ID: oa-g1-led`,
+    ``,
+    `审查意见通知书文本:`,
+    SAMPLE_OA,
+    ``,
+    `请从以上审查意见通知书中提取驳回理由和引用文献，严格按以下 JSON 格式输出，不要输出其他内容：`,
+    `{`,
+    `  "documentId": "oa-g1-led",`,
+    `  "rejectionGrounds": [{`,
+    `    "code": "RG-1",`,
+    `    "category": "novelty|inventive|clarity|support|amendment|other",`,
+    `    "claimNumbers": [1],`,
+    `    "summary": "驳回理由摘要（50字以内）",`,
+    `    "legalBasis": "法律依据"`,
+    `  }],`,
+    `  "citedReferences": [{`,
+    `    "publicationNumber": "CN108123456A",`,
+    `    "rejectionGroundCodes": ["RG-1"],`,
+    `    "featureMapping": "特征描述"`,
+    `  }],`,
+    `  "legalCaution": "AI 分析法律风险提示"`,
+    `}`,
+    ``,
+    `注意：一个驳回理由可能对应多个权利要求，一个引用文献可能被多条驳回理由引用。`,
+  ].join("\n");
+
+  return runRealAiAgentTest(
+    "Real OpinionAnalysis G1", "opinion-analysis", prompt,
+    { caseId: "g1-led", moduleScope: "opinion-analysis", tokenEstimate: 300 },
+    (data) => {
+      if (!data.outputJson) return;
+      const result = validateOpinionAnalysisOutput(data.outputJson);
+      log("Real OpinionAnalysis G1 schema", result.valid, result.errors.join("; "));
+      log("Real OpinionAnalysis G1 has rejectionGrounds",
+        Array.isArray(data.outputJson.rejectionGrounds),
+        `count=${data.outputJson.rejectionGrounds?.length || 0}`);
+      log("Real OpinionAnalysis G1 has citedReferences",
+        Array.isArray(data.outputJson.citedReferences),
+        `count=${data.outputJson.citedReferences?.length || 0}`);
+    }
+  );
+}
+
+// ── Real Mode: Argument Analysis ─────────────────────────────────────
+
+async function testRealArgumentAnalysis_G1() {
+  if (!GEMINI_KEY) { log("Real ArgumentAnalysis G1", false, "GEMINI_KEY not set"); return; }
+
+  const prompt = [
+    `你是一位资深专利审查员，擅长分析意见陈述书中的答辩理由与驳回理由之间的对应关系。`,
+    `案件 ID: g1-led`,
+    ``,
+    `驳回理由清单:`,
+    `  RG-1 (新颖性): 权利要求1特征A被对比文件1公开`,
+    `  RG-2 (创造性): 权利要求1-4特征B被对比文件2公开，组合不具备创造性`,
+    `  RG-3 (不清楚): 离心风扇表述不清楚`,
+    ``,
+    `意见陈述书文本:`,
+    SAMPLE_RESPONSE,
+    ...(SAMPLE_CLAIM ? [``, `修改后权利要求:`, SAMPLE_CLAIM.slice(0, 4000)] : []),
+    ``,
+    `请将每条驳回理由与意见陈述书中的答辩内容进行映射，严格按以下 JSON 格式输出，不要输出其他内容：`,
+    `{`,
+    `  "mappings": [{`,
+    `    "rejectionGroundCode": "RG-1",`,
+    `    "applicantArgument": "答辩原文片段",`,
+    `    "argumentSummary": "答辩理由摘要",`,
+    `    "confidence": "high|medium|low",`,
+    `    "amendedClaims": [],`,
+    `    "newEvidence": ""`,
+    `  }],`,
+    `  "unmappedGrounds": [],`,
+    `  "legalCaution": "AI分析仅供参考"`,
+    `}`,
+  ].join("\n");
+
+  return runRealAiAgentTest(
+    "Real ArgumentAnalysis G1", "argument-analysis", prompt,
+    { caseId: "g1-led", moduleScope: "argument-mapping", tokenEstimate: 350 },
+    (data) => {
+      if (!data.outputJson) return;
+      const result = validateArgumentMappingOutput(data.outputJson);
+      log("Real ArgumentAnalysis G1 schema", result.valid, result.errors.join("; "));
+      log("Real ArgumentAnalysis G1 has mappings",
+        Array.isArray(data.outputJson.mappings),
+        `count=${data.outputJson.mappings?.length || 0}`);
+    }
+  );
+}
+
+// ── Real Mode: Reexam Draft ──────────────────────────────────────────
+
+async function testRealReexamDraft_G1() {
+  if (!GEMINI_KEY) { log("Real ReexamDraft G1", false, "GEMINI_KEY not set"); return; }
+
+  const prompt = [
+    `案件 ID: g1-led`,
+    `权利要求号: 1`,
+    ``,
+    `驳回理由清单:`,
+    `  RG-1 (新颖性): 权利要求1特征A被对比文件1公开`,
+    `  RG-2 (创造性): 权利要求1-4特征B被对比文件2公开，组合不具备创造性`,
+    `  RG-3 (不清楚): 离心风扇表述不清楚`,
+    ``,
+    `答辩映射:`,
+    `  RG-1: 散热翅片间距2-5mm具有特定技术效果 [medium]`,
+    `  RG-2: 石墨烯含量5-15wt%与8-12wt%不同 协同实现超出预期的散热效果 [medium]`,
+    `  RG-3: 已在说明书中补充配合方式描述 [high]`,
+  ].join("\n");
+
+  return runRealAiAgentTest(
+    "Real ReexamDraft G1", "reexam-draft", prompt,
+    { caseId: "g1-led", moduleScope: "draft", tokenEstimate: 300 },
+    (data) => {
+      if (!data.outputJson) return;
+      const result = validateReexamDraftOutput(data.outputJson);
+      log("Real ReexamDraft G1 schema", result.valid, result.errors.join("; "));
+      log("Real ReexamDraft G1 has responseItems",
+        Array.isArray(data.outputJson.responseItems),
+        `count=${data.outputJson.responseItems?.length || 0}`);
+      log("Real ReexamDraft G1 has overallAssessment",
+        typeof data.outputJson.overallAssessment === "string");
+    }
+  );
+}
+
+// ── Real Mode: Summary ───────────────────────────────────────────────
+
+async function testRealSummary_G1() {
+  if (!GEMINI_KEY) { log("Real Summary G1", false, "GEMINI_KEY not set"); return; }
+
+  const prompt = [
+    `案件基线: LED灯具用复合散热装置，申请号CN202310008888A`,
+    ``,
+    `Claim Chart（已确认特征）:`,
+    SAMPLE_FEATURES.map(f => `  ${f.featureCode}: ${f.description}`).join("\n"),
+    ``,
+    `新颖性对照（已审核记录）:`,
+    `  特征A: 对比文件D1公开了铝合金散热基板+散热翅片`,
+    `  特征B: 对比文件D1未公开石墨烯导热膜，使用导热硅脂`,
+    `  特征C: 对比文件D1未公开离心风扇，自然对流`,
+    ``,
+    `创造性分析:`,
+    `  最接近现有技术: D1`,
+    `  区别特征: B(石墨烯导热膜), C(离心风扇)`,
+    `  技术启示: D2公开了石墨烯导热膜用于LED散热`,
+  ].join("\n");
+
+  return runRealAiAgentTest(
+    "Real Summary G1", "summary", prompt,
+    { caseId: "g1-led", moduleScope: "summary", tokenEstimate: 300 },
+    (data) => {
+      if (!data.outputJson) return;
+      const result = validateSummaryOutput(data.outputJson);
+      log("Real Summary G1 schema", result.valid, result.errors.join("; "));
+      log("Real Summary G1 body non-empty",
+        typeof data.outputJson.body === "string" && data.outputJson.body.length > 0);
+      log("Real Summary G1 has aiNotes", typeof data.outputJson.aiNotes === "string");
+    }
+  );
+}
+
+// ── Real Mode: Translate ─────────────────────────────────────────────
+
+async function testRealTranslate_G1() {
+  if (!GEMINI_KEY) { log("Real Translate G1", false, "GEMINI_KEY not set"); return; }
+
+  return runRealAiAgentTest(
+    "Real Translate G1", "translate", SAMPLE_REF_D2,
+    { caseId: "g1-led", moduleScope: "translate", tokenEstimate: 250 },
+    (data) => {
+      if (!data.outputJson) return;
+      const result = validateTranslateOutput(data.outputJson);
+      log("Real Translate G1 schema", result.valid, result.errors.join("; "));
+      log("Real Translate G1 translatedText non-empty",
+        typeof data.outputJson.translatedText === "string" && data.outputJson.translatedText.length > 0);
+    }
+  );
+}
+
+// ── Real Mode: Classify Documents ────────────────────────────────────
+
+async function testRealClassifyDocuments_G1() {
+  if (!GEMINI_KEY) { log("Real ClassifyDocuments G1", false, "GEMINI_KEY not set"); return; }
+
+  const prompt = [
+    "你是一个专利文档分类助手。请分析以下文档列表，判断每个文档的角色。",
+    "",
+    "文档角色定义：",
+    "- application: 专利申请文件（说明书、权利要求书等）",
+    "- office-action: 审查意见通知书",
+    "- office-action-response: 意见陈述书/答辩文件",
+    "- reference: 对比文件/引用文献",
+    "",
+    `案件 ID: g1-led`,
+    "",
+    `=== 文件 0: 申请文件.pdf ===`,
+    SAMPLE_SPEC.slice(0, 1500),
+    "",
+    `=== 文件 1: 审查意见通知书 ===`,
+    SAMPLE_OA.slice(0, 1500),
+    "",
+    `=== 文件 2: 意见陈述书 ===`,
+    SAMPLE_RESPONSE.slice(0, 1500),
+    "",
+    `=== 文件 3: 对比文件D1 ===`,
+    SAMPLE_REF_D1.slice(0, 1000),
+    "",
+    "请输出 JSON 格式的文档分类结果：",
+    '{"classifications":[{"fileIndex":0,"fileName":"申请文件.pdf","role":"application","confidence":"high","reason":"包含技术领域、发明内容、实施方式等专利申请核心内容"}]}',
+  ].join("\n");
+
+  return runRealAiAgentTest(
+    "Real ClassifyDocuments G1", "classify-documents", prompt,
+    { caseId: "g1-led", moduleScope: "documents", tokenEstimate: 400 },
+    (data) => {
+      if (!data.outputJson) return;
+      const result = validateClassifyDocumentsOutput(data.outputJson);
+      log("Real ClassifyDocuments G1 schema", result.valid, result.errors.join("; "));
+      log("Real ClassifyDocuments G1 has classifications",
+        Array.isArray(data.outputJson.classifications),
+        `count=${data.outputJson.classifications?.length || 0}`);
+      const roles = data.outputJson.classifications?.map(c => c.role) || [];
+      log("Real ClassifyDocuments G1 roles",
+        roles.includes("application") && roles.includes("office-action"),
+        `roles=${roles.join(",")}`);
+    }
+  );
 }
 
 // ── Real Mode: Token Usage ───────────────────────────────────────────
@@ -1670,6 +2206,26 @@ async function main() {
       await delay(AI_RATE_LIMIT_DELAY);
       await maybe(testRealInventive_G2);
       await delay(AI_RATE_LIMIT_DELAY);
+      await maybe(testRealDefects_G1);
+      await delay(AI_RATE_LIMIT_DELAY);
+      await maybe(testRealChat_G1);
+      await delay(AI_RATE_LIMIT_DELAY);
+      await maybe(testRealInterpret_G1);
+      await delay(AI_RATE_LIMIT_DELAY);
+      await maybe(testRealExtractCaseFields_G1);
+      await delay(AI_RATE_LIMIT_DELAY);
+      await maybe(testRealOpinionAnalysis_G1);
+      await delay(AI_RATE_LIMIT_DELAY);
+      await maybe(testRealArgumentAnalysis_G1);
+      await delay(AI_RATE_LIMIT_DELAY);
+      await maybe(testRealReexamDraft_G1);
+      await delay(AI_RATE_LIMIT_DELAY);
+      await maybe(testRealSummary_G1);
+      await delay(AI_RATE_LIMIT_DELAY);
+      await maybe(testRealTranslate_G1);
+      await delay(AI_RATE_LIMIT_DELAY);
+      await maybe(testRealClassifyDocuments_G1);
+      await delay(AI_RATE_LIMIT_DELAY);
       await maybe(testRealTokenUsageReturned);
       await delay(2000);
 
@@ -1792,6 +2348,33 @@ async function main() {
 
         await maybe(testRealProviderConnectivity);
         await delay(2000);
+
+        await maybe(testRealClaimChart_G1);
+        await delay(AI_RATE_LIMIT_DELAY);
+        await maybe(testRealNovelty_G1);
+        await delay(AI_RATE_LIMIT_DELAY);
+        await maybe(testRealInventive_G2);
+        await delay(AI_RATE_LIMIT_DELAY);
+        await maybe(testRealDefects_G1);
+        await delay(AI_RATE_LIMIT_DELAY);
+        await maybe(testRealChat_G1);
+        await delay(AI_RATE_LIMIT_DELAY);
+        await maybe(testRealInterpret_G1);
+        await delay(AI_RATE_LIMIT_DELAY);
+        await maybe(testRealExtractCaseFields_G1);
+        await delay(AI_RATE_LIMIT_DELAY);
+        await maybe(testRealOpinionAnalysis_G1);
+        await delay(AI_RATE_LIMIT_DELAY);
+        await maybe(testRealArgumentAnalysis_G1);
+        await delay(AI_RATE_LIMIT_DELAY);
+        await maybe(testRealReexamDraft_G1);
+        await delay(AI_RATE_LIMIT_DELAY);
+        await maybe(testRealSummary_G1);
+        await delay(AI_RATE_LIMIT_DELAY);
+        await maybe(testRealTranslate_G1);
+        await delay(AI_RATE_LIMIT_DELAY);
+        await maybe(testRealClassifyDocuments_G1);
+        await delay(AI_RATE_LIMIT_DELAY);
 
         if (TAVILY_API_KEY) {
           await maybe(testRealSearchVerifyTavilyKey);

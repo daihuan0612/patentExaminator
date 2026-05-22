@@ -1,5 +1,12 @@
 import { create } from "zustand";
 import type { ChatMessage, ChatSession } from "@shared/types/domain";
+import {
+  createSession,
+  updateSession,
+  deleteSession,
+  createMessage,
+  deleteMessagesBySessionId
+} from "../../../lib/repositories/chatRepo.js";
 
 export interface ChatSlice {
   sessions: ChatSession[];
@@ -9,11 +16,13 @@ export interface ChatSlice {
   isLoading: boolean;
 
   setSessions: (sessions: ChatSession[]) => void;
+  loadSessions: (sessions: ChatSession[]) => void; // Load from DB without re-saving
   addSession: (session: ChatSession) => void;
   removeSession: (id: string) => void;
   renameSession: (id: string, title: string) => void;
 
   setMessages: (messages: ChatMessage[]) => void;
+  loadMessages: (messages: ChatMessage[]) => void; // Load from DB without re-saving
   addMessage: (message: ChatMessage) => void;
 
   setActiveSessionId: (id: string | null) => void;
@@ -31,21 +40,55 @@ export const createChatSlice = (
   isPanelOpen: false,
   isLoading: false,
 
-  setSessions: (sessions) => set(() => ({ sessions })),
-  addSession: (session) => set((prev) => ({ sessions: [...prev.sessions, session] })),
-  removeSession: (id) =>
+  setSessions: (sessions) => {
+    for (const session of sessions) {
+      createSession(session).catch((e) => console.error("[ChatSlice] createSession error:", e));
+    }
+    set(() => ({ sessions }));
+  },
+  loadSessions: (sessions) => {
+    // Load from DB without re-saving to IndexedDB
+    set(() => ({ sessions }));
+  },
+  addSession: (session) => {
+    createSession(session).catch((e) => console.error("[ChatSlice] createSession error:", e));
+    set((prev) => ({ sessions: [...prev.sessions, session] }));
+  },
+  removeSession: (id) => {
+    deleteSession(id).catch((e) => console.error("[ChatSlice] deleteSession error:", e));
+    deleteMessagesBySessionId(id).catch((e) => console.error("[ChatSlice] deleteMessagesBySessionId error:", e));
     set((prev) => ({
       sessions: prev.sessions.filter((s) => s.id !== id),
       messages: prev.messages.filter((m) => m.sessionId !== id),
       activeSessionId: prev.activeSessionId === id ? null : prev.activeSessionId
-    })),
+    }));
+  },
   renameSession: (id, title) =>
-    set((prev) => ({
-      sessions: prev.sessions.map((s) => (s.id === id ? { ...s, title, updatedAt: new Date().toISOString() } : s))
-    })),
+    set((prev) => {
+      const session = prev.sessions.find((s) => s.id === id);
+      if (session) {
+        const updatedSession = { ...session, title, updatedAt: new Date().toISOString() };
+        updateSession(updatedSession).catch((e) => console.error("[ChatSlice] updateSession error:", e));
+      }
+      return {
+        sessions: prev.sessions.map((s) => (s.id === id ? { ...s, title, updatedAt: new Date().toISOString() } : s))
+      };
+    }),
 
-  setMessages: (messages) => set(() => ({ messages })),
-  addMessage: (message) => set((prev) => ({ messages: [...prev.messages, message] })),
+  setMessages: (messages) => {
+    for (const msg of messages) {
+      createMessage(msg).catch((e) => console.error("[ChatSlice] createMessage error:", e));
+    }
+    set(() => ({ messages }));
+  },
+  loadMessages: (messages) => {
+    // Load from DB without re-saving to IndexedDB
+    set(() => ({ messages }));
+  },
+  addMessage: (message) => {
+    createMessage(message).catch((e) => console.error("[ChatSlice] createMessage error:", e));
+    set((prev) => ({ messages: [...prev.messages, message] }));
+  },
 
   setActiveSessionId: (id) => set(() => ({ activeSessionId: id })),
   setPanelOpen: (open) => set(() => ({ isPanelOpen: open })),

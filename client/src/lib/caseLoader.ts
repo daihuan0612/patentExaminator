@@ -8,6 +8,8 @@ import { readInventiveByCaseId } from "./repositories/inventiveRepo";
 import { getDefectsByCaseId } from "./repositories/defectRepo";
 import { getSessionsByCaseId, getMessagesBySessionId } from "./repositories/chatRepo";
 import { readInterpretSummaries } from "./repositories/interpretRepo";
+import { readOpinionAnalysis, readArgumentMappings } from "./repositories/opinionRepo";
+import { readReexamDraft, readSummary } from "./repositories/draftRepo";
 import {
   useCaseStore,
   useDocumentsStore,
@@ -17,7 +19,9 @@ import {
   useInventiveStore,
   useDefectsStore,
   useChatStore,
-  useInterpretStore
+  useInterpretStore,
+  useOpinionStore,
+  useDraftStore
 } from "../store";
 
 /**
@@ -29,7 +33,7 @@ export async function loadCaseById(caseId: string) {
   if (!theCase) return null;
 
   // Load all domain data in parallel
-  const [docs, refs, nodes, features, novelty, inventive, defects, sessions, interpretSummaries] = await Promise.all([
+  const [docs, refs, nodes, features, novelty, inventive, defects, sessions, interpretSummaries, opinionAnalysis, argumentMappings, reexamDraft, summary] = await Promise.all([
     readDocumentsByCaseId(caseId),
     readReferencesByCaseId(caseId),
     readClaimNodesByCaseId(caseId),
@@ -38,7 +42,11 @@ export async function loadCaseById(caseId: string) {
     readInventiveByCaseId(caseId),
     getDefectsByCaseId(caseId),
     getSessionsByCaseId(caseId),
-    readInterpretSummaries(caseId)
+    readInterpretSummaries(caseId),
+    readOpinionAnalysis(caseId),
+    readArgumentMappings(caseId),
+    readReexamDraft(caseId),
+    readSummary(caseId)
   ]);
 
   // Load chat messages for all sessions
@@ -52,22 +60,40 @@ export async function loadCaseById(caseId: string) {
     }
   }
 
-  // Hydrate Zustand stores
+  // Hydrate Zustand stores using load* methods to avoid re-saving to IndexedDB
   useCaseStore.getState().setCurrentCase(theCase);
   useDocumentsStore.getState().setDocuments(docs);
   useReferencesStore.getState().setReferences(refs as unknown as ReferenceDocument[]);
   useClaimsStore.getState().setClaimNodes(nodes);
-  // Use loadClaimFeatures to avoid triggering re-save to IndexedDB
   useClaimsStore.getState().loadClaimFeatures(features);
-  useNoveltyStore.getState().setComparisons(novelty);
-  useInventiveStore.getState().setAnalyses(inventive);
-  useDefectsStore.getState().setDefects(defects);
-  useChatStore.getState().setSessions(sessions);
-  useChatStore.getState().setMessages(allMessages);
+  
+  // Use load* methods to avoid re-saving to IndexedDB
+  useNoveltyStore.getState().loadComparisons(novelty);
+  useInventiveStore.getState().loadAnalyses(inventive);
+  useDefectsStore.getState().loadDefects(defects);
+  useChatStore.getState().loadSessions(sessions);
+  useChatStore.getState().loadMessages(allMessages);
   useChatStore.getState().setActiveSessionId(sessions[0]?.id ?? null);
-  // Load interpret summaries (use loadInterpretSummaries to avoid re-saving to DB)
+  
+  // Load interpret summaries
   if (Object.keys(interpretSummaries).length > 0) {
     useInterpretStore.getState().loadInterpretSummaries(caseId, interpretSummaries);
+  }
+  
+  // Load opinion data
+  if (opinionAnalysis) {
+    useOpinionStore.getState().loadOfficeActionAnalysis(opinionAnalysis);
+  }
+  if (argumentMappings.length > 0) {
+    useOpinionStore.getState().loadArgumentMappings(argumentMappings);
+  }
+  
+  // Load draft/summary data
+  if (reexamDraft) {
+    useDraftStore.getState().loadReexamDraft(caseId, reexamDraft);
+  }
+  if (summary) {
+    useDraftStore.getState().loadSummary(caseId, summary);
   }
 
   return theCase;

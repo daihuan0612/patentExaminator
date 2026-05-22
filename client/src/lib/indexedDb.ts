@@ -104,10 +104,18 @@ export interface PatentExaminerDB extends DBSchema {
     value: ArgumentMapping;
     indexes: { "by-caseId": string };
   };
+  reexamDrafts: {
+    key: string; // caseId
+    value: { id: string; [key: string]: unknown };
+  };
+  summaries: {
+    key: string; // caseId
+    value: { id: string; [key: string]: unknown };
+  };
 }
 
 const DB_NAME = "patent-examiner-v1";
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 export async function openPatentDB(): Promise<IDBPDatabase<PatentExaminerDB>> {
   return openDB<PatentExaminerDB>(DB_NAME, DB_VERSION, {
@@ -211,6 +219,16 @@ export async function openPatentDB(): Promise<IDBPDatabase<PatentExaminerDB>> {
       if (!db.objectStoreNames.contains("argumentMappings")) {
         const argStore = db.createObjectStore("argumentMappings", { keyPath: "id" });
         argStore.createIndex("by-caseId", "caseId");
+      }
+
+      // reexamDrafts
+      if (!db.objectStoreNames.contains("reexamDrafts")) {
+        db.createObjectStore("reexamDrafts", { keyPath: "id" });
+      }
+
+      // summaries
+      if (!db.objectStoreNames.contains("summaries")) {
+        db.createObjectStore("summaries", { keyPath: "id" });
       }
     }
   });

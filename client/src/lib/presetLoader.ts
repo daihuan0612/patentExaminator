@@ -81,8 +81,9 @@ export async function loadPresetCase(): Promise<string> {
     for (const msg of data.chatMessages) {
       await createMessage(msg);
     }
-    useChatStore.getState().setSessions(data.chatSessions);
-    useChatStore.getState().setMessages(data.chatMessages);
+    // Use load* methods since data was already written to IndexedDB above
+    useChatStore.getState().loadSessions(data.chatSessions);
+    useChatStore.getState().loadMessages(data.chatMessages);
     useChatStore.getState().setActiveSessionId(data.chatSessions[0]?.id ?? null);
   } else {
     let existingSessions: ChatSession[];
@@ -98,8 +99,9 @@ export async function loadPresetCase(): Promise<string> {
         allMessages.push(...msgs);
       } catch { /* skip */ }
     }
-    useChatStore.getState().setSessions(existingSessions);
-    useChatStore.getState().setMessages(allMessages);
+    // Use load* methods since data was already written to IndexedDB above
+    useChatStore.getState().loadSessions(existingSessions);
+    useChatStore.getState().loadMessages(allMessages);
     useChatStore.getState().setActiveSessionId(existingSessions[0]?.id ?? null);
   }
 
@@ -132,9 +134,10 @@ export async function loadPresetCase(): Promise<string> {
   }
   useClaimsStore.getState().setClaimNodes(data.claimNodes);
   useClaimsStore.getState().setClaimFeatures(data.claimFeatures);
-  useNoveltyStore.getState().setComparisons(data.noveltyComparisons);
-  useInventiveStore.getState().setAnalyses([data.inventiveAnalysis]);
-  useDefectsStore.getState().setDefects(data.defectCheck);
+  // Use load* methods since data was already written to IndexedDB above
+  useNoveltyStore.getState().loadComparisons(data.noveltyComparisons);
+  useInventiveStore.getState().loadAnalyses([data.inventiveAnalysis]);
+  useDefectsStore.getState().loadDefects(data.defectCheck);
 
   return theCase.id;
 }

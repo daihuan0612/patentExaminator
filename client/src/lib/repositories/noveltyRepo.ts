@@ -30,3 +30,11 @@ export async function deleteNovelty(id: string): Promise<void> {
   const db = await getDB();
   await db.delete("novelty", id);
 }
+
+export async function deleteNoveltyByCaseId(caseId: string): Promise<void> {
+  const db = await getDB();
+  const items = await db.getAllFromIndex("novelty", "by-caseId", caseId);
+  for (const item of items) {
+    await db.delete("novelty", item.id);
+  }
+}
