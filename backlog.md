@@ -1,5 +1,7 @@
 # Backlog
-44: 端到端业务流程全链路 non-UI 底层逻辑自动测试更新：像 43 这样直接报错的bug，类似的UI上直接报各种type undefine error map error的问题，查看所有的commit 历史，找出类似的这些问题，review这些问题的rootcause和fix，根据这些fix来完善现有的端到端业务流程全链路 non-UI 底层逻辑自动测试框架。目标是完全通过调用真实的AI API 和 samples/led-heatsink-mini 测试数据来自动测试覆盖住，根本不用延迟到非要在UI上看出来的时候。 全面深入仔细地排查一遍，类似这样的和UI相关的业务全流程全环节全链路功能，都要通过non-ui的底层逻辑功能自动测试覆盖住。
+45: regression: 设置界面无法打开。
+
+44: ~~端到端业务流程全链路 non-UI 底层逻辑自动测试更新~~ **Fixed: 2026-05-22** - 创建 shared/lib/responseValidator.ts 将 agent 类型映射到 Zod schemas；集成到 server AI route 在返回前验证结构化 agent 响应，无效 JSON 则丢弃 outputJson；AiRunResponse 新增 structureErrors 字段；新增 E2E 测试 testResponseStructureValidation（8 agent）+ testMalformedResponseHandling；防止 #36/#41/#43 pattern（未定义迭代错误）复发。(commit c869f28)
 
 43: ~~bug: http://localhost:6173/cases/case-1779412386053/claim-chart: 点击“生成权利要求特征表”后，报错：“TypeError: response.features is not iterable”~~ **Fixed: 2026-05-22** - ClaimChartActions 添加 response.features 数组防御性检查；AgentClient.callGateway 对 chat/interpret 以外的结构化 agent 在 AI 返回非 JSON 时抛出明确错误而非静默包装为 {reply}。(commit fda5ce7)
 
