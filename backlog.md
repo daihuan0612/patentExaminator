@@ -1,4 +1,30 @@
 # Backlog
+42: http://localhost:6173/cases/case-1779412386053/opinion-comparison：审查意见对照结果，每次刷新页面后，再调取历史案件的时候都无法恢复上次对照结果。都要重新运行一次解析和映射，费时费token。每一次的解析映射结果应该和案件一起存下来，除非以前从来没有对照过，否则都应该直接调取上一次的对照结果显示出来。
+
+41: bug: http://localhost:6173/cases/case-1779412386053/references:一点文献清单就报错“Unexpected Application Error!
+Cannot read properties of undefined (reading 'tip')
+TypeError: Cannot read properties of undefined (reading 'tip')
+    at TimelineStatusBadge (http://localhost:6173/src/components/TimelineStatusBadge.tsx:56:21)
+    at renderWithHooks (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=8747b269:11548:26)
+    at mountIndeterminateComponent (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=8747b269:14926:21)
+    at beginWork (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=8747b269:15914:22)
+    at beginWork$1 (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=8747b269:19753:22)
+    at performUnitOfWork (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=8747b269:19198:20)
+    at workLoopSync (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=8747b269:19137:13)
+    at renderRootSync (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=8747b269:19116:15)
+    at recoverFromConcurrentError (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=8747b269:18736:28)
+    at performSyncWorkOnRoot (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=8747b269:18879:28)
+💿 Hey developer 👋
+
+You can provide a way better UX than this when your app throws errors by providing your own ErrorBoundary or errorElement prop on your route.“
+
+
+40: 配置界面的provider 太多了，对每一个provider，要提供拖拽功能，让用户把经常用的想要配置的provider拽到top的位置，方便更新配置。
+
+39: 配置界面增加对Openrouter 作为 model provider的支持，API文档参考https://openrouter.ai/docs/quickstart
+
+38: ~~端到端业务流程全链路 non-UI 底层逻辑自动测试更新：像 36 这样的bug，完全可以通过调用真实的AI API 和 samples/led-heatsink-mini 测试数据 来自动测试覆盖住，检验返回的内容是否包含驳回理由、答辩意见等等，就能自动测试出来，根本不用延迟到非要在UI上看出来全为0的时候。 全面深入仔细地排查一遍，类似这样的和UI相关的业务全流程全环节全链路功能，都要通过non-ui的底层逻辑功能自动测试覆盖住。~~ **Fixed: 2026-05-22** - 新增 8 个 mock 测试函数（共 119→119 全过）：classify-documents agent 测试、opinion-analysis ↔ argument-analysis 交叉数据校验（rejectionGroundCode 一致性、ground 完整性、citedReferences 有效性）、复审全链路数据流测试（opinion→argument→draft 三阶段数据传递验证）、opinion-analysis/argument-mapping/reexam-draft Schema 深度校验（category/legalBasis/confidence/conclusion 字段合法性）。更新测试分类指南。
+
 37: ~~文档解读：现在解读的文本是markdown的raw格式，人类阅读很不友好，换成markdown preview模式，本地渲染一下，不要让AI API输出HTML，又慢又浪费token，就在本地将markdown raw text渲染成阅读舒适格式排版舒适的markdown preview mode或者HTML，倾向于markdown preview，格式排版都最友好。~~ **Fixed: 2026-05-22** - 引入 `marked` 库本地渲染 markdown→HTML；综合解读汇总直接渲染，单个文档解读增加 编辑/预览 切换按钮；添加完整 CSS 排版样式（h1-h4、p、ul/ol、code/pre、blockquote、table、hr）(724bdf4)。
 
 36: ~~opinion-comparison 数据不显示~~ **Fixed: 2026-05-22** - 一次修复：server AI 路由始终解析 JSON（37fe619）。二次修复（根本原因）：opinion/argument analysis 的 prompt 未包含 JSON 输出指令，AI 返回自然语言而非结构化数据，client 端 fallback 包装为 `{ reply: text }` 导致 rejectionGrounds/mappings 为 undefined。修复：buildOpinionAnalysisPrompt / buildArgumentAnalysisPrompt 添加完整 JSON Schema 输出指令（70c20f3）。

@@ -30,6 +30,11 @@
  * ├── testMockOpinionAnalysis_G1   - G1 → 驳回理由解析
  * ├── testMockArgumentAnalysis_G1  - G1 → 答辩映射
  * ├── testMockReexamDraft_G1       - G1 → 复审意见草稿
+ * ├── testReexamDataIntegrity_G1   - G1 → 审查意见+答辩数据交叉校验
+ * ├── testReexamFullPipelineDataFlow_G1 - G1 → 复审全链路数据流完整性
+ * ├── testSchemaOpinionAnalysis    - opinion-analysis Schema 校验
+ * ├── testSchemaArgumentMapping    - argument-analysis Schema 校验
+ * ├── testSchemaReexamDraft        - reexam-draft Schema 校验
  * └── testFullPipelineMock_Reexam_G1 - G1: 审查意见→答辩→复审草稿
  *
  * 【Search References 测试】修改 search/文献检索相关时运行
@@ -44,6 +49,9 @@
  *
  * 【Export 测试】修改 export/导出相关时运行
  * └── testMockExportHtml_G1        - G1 → HTML 结构 + legalCaution
+ *
+ * 【Document Classification 测试】修改 classify-documents/文档分类相关时运行
+ * └── testMockClassifyDocuments_G1  - G1 → 文档角色分类
  *
  * 【错误处理测试】修改 API Gateway/路由/错误处理时运行
  * ├── testInvalidAgent             - 非法 agent → 400
@@ -627,6 +635,236 @@ async function testMockTranslate_G1() {
 
   const translatedText = data.outputJson?.translatedText;
   log("Mock Translate G1 translatedText non-empty", typeof translatedText === "string" && translatedText.length > 0);
+}
+
+// ── Mock: Classify Documents ────────────────────────────────────────
+
+function validateClassifyDocumentsOutput(data) {
+  if (!data || typeof data !== "object") return { valid: false, errors: ["not an object"] };
+  const errors = [];
+  if (!Array.isArray(data.classifications) || data.classifications.length < 1) errors.push("classifications must be non-empty array");
+  else {
+    const validRoles = ["application", "office-action", "office-action-response", "amended-claims", "reference", "other"];
+    for (const c of data.classifications) {
+      if (typeof c.fileIndex !== "number") errors.push("classification missing fileIndex");
+      if (!validRoles.includes(c.role)) errors.push(`invalid role: ${c.role}`);
+      if (typeof c.confidence !== "string") errors.push("classification missing confidence");
+    }
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+async function testMockClassifyDocuments_G1() {
+  const res = await postJSON("/ai/run", mockRequest("classify-documents", "g1-led", "classify-documents"));
+  const data = await res.json();
+  log("Mock ClassifyDocuments G1 ok", data.ok === true, `ok=${data.ok}`);
+  log("Mock ClassifyDocuments G1 has outputJson", data.outputJson != null);
+
+  const result = validateClassifyDocumentsOutput(data.outputJson);
+  log("Mock ClassifyDocuments G1 schema valid", result.valid, result.errors.join("; "));
+
+  const classifications = data.outputJson?.classifications || [];
+  const roles = classifications.map(c => c.role);
+  log("Mock ClassifyDocuments G1 has application", roles.includes("application"), `roles=${roles.join(",")}`);
+  log("Mock ClassifyDocuments G1 has reference", roles.includes("reference"), `roles=${roles.join(",")}`);
+  log("Mock ClassifyDocuments G1 has office-action", roles.includes("office-action"), `roles=${roles.join(",")}`);
+}
+
+// ── Reexam Data Integrity: Cross-Agent Verification ──────────────────
+
+async function testReexamDataIntegrity_G1() {
+  console.log("  [DataIntegrity] Verifying opinion-analysis ↔ argument-analysis cross-reference...");
+
+  const oaRes = await postJSON("/ai/run", mockRequest("opinion-analysis", "g1-led", "opinion-analysis"));
+  const oaData = await oaRes.json();
+  const oaOk = oaData.ok && validateOpinionAnalysisOutput(oaData.outputJson).valid;
+  log("DataIntegrity OpinionAnalysis loaded", oaOk);
+
+  const argRes = await postJSON("/ai/run", mockRequest("argument-analysis", "g1-led", "argument-mapping"));
+  const argData = await argRes.json();
+  const argOk = argData.ok && validateArgumentMappingOutput(argData.outputJson).valid;
+  log("DataIntegrity ArgumentAnalysis loaded", argOk);
+
+  if (!oaOk || !argOk) {
+    log("DataIntegrity G1 skipped", false, "prerequisite data not valid");
+    return;
+  }
+
+  const grounds = oaData.outputJson.rejectionGrounds;
+  const mappings = argData.outputJson.mappings;
+  const groundCodes = new Set(grounds.map(g => g.code));
+
+  let allCodesValid = true;
+  for (const m of mappings) {
+    if (!groundCodes.has(m.rejectionGroundCode)) {
+      allCodesValid = false;
+      console.log(`    [DATA BUG] mapping references non-existent ground: ${m.rejectionGroundCode}, available: ${[...groundCodes].join(",")}`);
+    }
+  }
+  log("DataIntegrity all mapping codes exist in grounds", allCodesValid,
+    `mapped: ${mappings.map(m => m.rejectionGroundCode).join(",")}, grounds: ${[...groundCodes].join(",")}`);
+
+  let allGroundsComplete = true;
+  for (const g of grounds) {
+    if (!g.category || !g.legalBasis || !Array.isArray(g.claimNumbers) || g.claimNumbers.length === 0) {
+      allGroundsComplete = false;
+      console.log(`    [DATA BUG] incomplete ground: code=${g.code}, category=${g.category}, legalBasis=${g.legalBasis}, claims=${g.claimNumbers}`);
+    }
+  }
+  log("DataIntegrity all rejection grounds complete", allGroundsComplete,
+    `grounds: ${grounds.map(g => `${g.code}(cat=${g.category},law=${g.legalBasis},claims=${g.claimNumbers?.join(",")})`).join(" | ")}`);
+
+  const citedRefs = oaData.outputJson.citedReferences || [];
+  let allRefsValid = true;
+  for (const ref of citedRefs) {
+    if (!Array.isArray(ref.rejectionGroundCodes)) {
+      allRefsValid = false;
+      continue;
+    }
+    for (const code of ref.rejectionGroundCodes) {
+      if (!groundCodes.has(code)) {
+        allRefsValid = false;
+        console.log(`    [DATA BUG] citedRef references non-existent ground: ${code}`);
+      }
+    }
+  }
+  log("DataIntegrity citedReferences codes valid", allRefsValid,
+    `refs: ${citedRefs.map(r => `${r.publicationNumber}→[${r.rejectionGroundCodes?.join(",")}]`).join(" | ")}`);
+
+  log("DataIntegrity G1 complete", allCodesValid && allGroundsComplete && allRefsValid);
+}
+
+// ── Reexam Full Pipeline Data Flow ───────────────────────────────────
+
+async function testReexamFullPipelineDataFlow_G1() {
+  console.log("  [DataFlow] Verifying reexam pipeline end-to-end data flow...");
+
+  const oaRes = await postJSON("/ai/run", mockRequest("opinion-analysis", "g1-led", "opinion-analysis"));
+  const oaData = await oaRes.json();
+  const oaValid = oaData.ok && validateOpinionAnalysisOutput(oaData.outputJson).valid;
+  log("DataFlow OpinionAnalysis", oaValid);
+
+  const argRes = await postJSON("/ai/run", mockRequest("argument-analysis", "g1-led", "argument-mapping"));
+  const argData = await argRes.json();
+  const argValid = argData.ok && validateArgumentMappingOutput(argData.outputJson).valid;
+  log("DataFlow ArgumentAnalysis", argValid);
+
+  const draftRes = await postJSON("/ai/run", mockRequest("reexam-draft", "g1-led", "draft"));
+  const draftData = await draftRes.json();
+  const draftValid = draftData.ok && validateReexamDraftOutput(draftData.outputJson).valid;
+  log("DataFlow ReexamDraft", draftValid);
+
+  if (!oaValid || !argValid || !draftValid) {
+    log("DataFlow G1 skipped", false, "prerequisite data not valid");
+    return;
+  }
+
+  const responseItems = draftData.outputJson.responseItems;
+  const groundCodes = new Set(oaData.outputJson.rejectionGrounds.map(g => g.code));
+
+  let itemsRefValid = true;
+  for (const item of responseItems) {
+    if (!item.rejectionGroundCode) {
+      itemsRefValid = false;
+      console.log(`    [DATA FLOW BUG] draft responseItem missing rejectionGroundCode`);
+      continue;
+    }
+    if (!groundCodes.has(item.rejectionGroundCode)) {
+      itemsRefValid = false;
+      console.log(`    [DATA FLOW BUG] draft responseItem references unknown code: ${item.rejectionGroundCode}`);
+    }
+    if (!item.applicantArgument && !item.applicantArgumentSummary) {
+      itemsRefValid = false;
+      console.log(`    [DATA FLOW BUG] draft responseItem missing argument for ${item.rejectionGroundCode}`);
+    }
+  }
+  log("DataFlow draft responseItems reference valid codes", itemsRefValid,
+    `items: ${responseItems.map(i => `${i.rejectionGroundCode}`).join(",")}`);
+
+  const coveredCodes = new Set(responseItems.map(i => i.rejectionGroundCode));
+  let allGroundsCovered = true;
+  for (const code of groundCodes) {
+    if (!coveredCodes.has(code)) {
+      allGroundsCovered = false;
+      console.log(`    [DATA FLOW BUG] rejection ground ${code} has no draft response item`);
+    }
+  }
+  log("DataFlow all rejection grounds have response items", allGroundsCovered,
+    `grounds: ${[...groundCodes].join(",")}, covered: ${[...coveredCodes].join(",")}`);
+
+  const unmappedGrounds = argData.outputJson.unmappedGrounds || [];
+  let unmappedValid = true;
+  for (const code of unmappedGrounds) {
+    if (!groundCodes.has(code)) {
+      unmappedValid = false;
+      console.log(`    [DATA FLOW BUG] unmapped ground code ${code} not in rejection grounds`);
+    }
+  }
+  log("DataFlow unmapped grounds valid", unmappedValid,
+    `unmapped: [${unmappedGrounds.join(",")}]`);
+
+  log("DataFlow G1 complete", itemsRefValid && allGroundsCovered && unmappedValid);
+}
+
+// ── Schema: Opinion Analysis ─────────────────────────────────────────
+
+async function testSchemaOpinionAnalysis() {
+  const res = await postJSON("/ai/run", mockRequest("opinion-analysis", "g1-led", "opinion-analysis"));
+  const data = await res.json();
+  const result = validateOpinionAnalysisOutput(data.outputJson);
+  log("Schema opinionAnalysis valid", result.valid, result.errors.join("; "));
+
+  if (result.valid) {
+    const grounds = data.outputJson.rejectionGrounds;
+    const categories = new Set(grounds.map(g => g.category));
+    const validCategories = ["novelty", "inventive", "clarity", "support", "amendment", "other"];
+    const catsOk = [...categories].every(c => validCategories.includes(c));
+    log("Schema opinionAnalysis valid categories", catsOk, `categories=${[...categories].join(",")}`);
+
+    const laws = grounds.map(g => g.legalBasis);
+    log("Schema opinionAnalysis all have legalBasis", laws.every(l => typeof l === "string" && l.length > 0),
+      `laws=${laws.join(",")}`);
+  }
+}
+
+// ── Schema: Argument Mapping ─────────────────────────────────────────
+
+async function testSchemaArgumentMapping() {
+  const res = await postJSON("/ai/run", mockRequest("argument-analysis", "g1-led", "argument-mapping"));
+  const data = await res.json();
+  const result = validateArgumentMappingOutput(data.outputJson);
+  log("Schema argumentMapping valid", result.valid, result.errors.join("; "));
+
+  if (result.valid) {
+    const mappings = data.outputJson.mappings;
+    const confidences = mappings.map(m => m.confidence);
+    log("Schema argumentMapping valid confidences",
+      confidences.every(c => ["high", "medium", "low"].includes(c)),
+      `confidences=${confidences.join(",")}`);
+
+    const hasArgs = mappings.every(m => typeof m.applicantArgument === "string" && m.applicantArgument.length > 0);
+    log("Schema argumentMapping all have applicantArgument", hasArgs);
+  }
+}
+
+// ── Schema: Reexam Draft ─────────────────────────────────────────────
+
+async function testSchemaReexamDraft() {
+  const res = await postJSON("/ai/run", mockRequest("reexam-draft", "g1-led", "draft"));
+  const data = await res.json();
+  const result = validateReexamDraftOutput(data.outputJson);
+  log("Schema reexamDraft valid", result.valid, result.errors.join("; "));
+
+  if (result.valid) {
+    const items = data.outputJson.responseItems;
+    const validConclusions = ["argument-accepted", "argument-partially-accepted", "argument-rejected", "needs-further-review"];
+    const allValid = items.every(i => validConclusions.includes(i.conclusion));
+    log("Schema reexamDraft valid conclusions", allValid,
+      `conclusions=${items.map(i => i.conclusion).join(",")}`);
+
+    const hasExaminerNotes = items.every(i => typeof i.examinerResponse === "string" && i.examinerResponse.length > 0);
+    log("Schema reexamDraft all have examinerResponse", hasExaminerNotes);
+  }
 }
 
 // ── Figure Extraction ────────────────────────────────────────────────
@@ -1342,6 +1580,12 @@ async function main() {
       await maybe(testMockReexamDraft_G1);
       await maybe(testMockSummary_G1);
       await maybe(testMockTranslate_G1);
+      await maybe(testMockClassifyDocuments_G1);
+
+      // Reexamination Data Integrity & Pipeline
+      console.log("\n--- Reexamination Data Integrity ---");
+      await maybe(testReexamDataIntegrity_G1);
+      await maybe(testReexamFullPipelineDataFlow_G1);
 
       // Figure Extraction
       console.log("\n--- Figure Extraction ---");
@@ -1361,6 +1605,9 @@ async function main() {
       await maybe(testSchemaClaimChart);
       await maybe(testSchemaNovelty);
       await maybe(testSchemaInventive);
+      await maybe(testSchemaOpinionAnalysis);
+      await maybe(testSchemaArgumentMapping);
+      await maybe(testSchemaReexamDraft);
 
       // Error handling
       console.log("\n--- Error Handling ---");
