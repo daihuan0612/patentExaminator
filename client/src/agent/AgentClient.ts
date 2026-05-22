@@ -20,6 +20,7 @@ import type {
   TranslateResponse,
   InterpretRequest,
   InterpretResponse,
+  InterpretDocumentType,
   OpinionAnalysisRequest,
   OpinionAnalysisResponse,
   ArgumentAnalysisRequest,
@@ -235,7 +236,7 @@ export class AgentClient {
     options?: AgentRunOptions
   ): Promise<InterpretResponse> {
     if (this.mode === "mock") {
-      return { reply: "（演示模式）文档解读功能需要在真实模式下使用 AI 服务。" };
+      return mockInterpret(request);
     }
     const prompt = buildInterpretPrompt(request);
     return this.callGateway<InterpretResponse>("interpret", prompt, {
@@ -633,24 +634,66 @@ function buildChatPrompt(request: ChatRequest): string {
   return parts.join("\n");
 }
 
+const INTERPRET_TEMPLATES: Record<InterpretDocumentType, { title: string; instructions: string[] }> = {
+  application: {
+    title: "专利申请文件解读",
+    instructions: [
+      "1. 【技术领域】该专利属于哪个技术领域",
+      "2. 【核心技术方案】概括发明的技术方案",
+      "3. 【主要权利要求】列出独立权利要求的核心技术特征",
+      "4. 【关键实施例】概括关键实施例及其技术效果",
+      "5. 【创新点分析】该发明相对于现有技术的创新之处",
+      "6. 【潜在问题】可能存在的形式或实质性问题"
+    ]
+  },
+  "office-action": {
+    title: "审查意见通知书解读",
+    instructions: [
+      "1. 【通知书基本信息】发文日、通知书编号、审查员姓名（如有）",
+      "2. 【审查结论】整体审查结论概述",
+      "3. 【驳回理由清单】逐条列出驳回理由及其法律依据",
+      "4. 【引用对比文件】列出引用的对比文件及其公开号、公开日",
+      "5. 【权利要求对应关系】每项驳回理由涉及的权利要求号",
+      "6. 【申请人答复期限】答复截止日期及注意事项"
+    ]
+  },
+  "office-action-response": {
+    title: "意见陈述书解读",
+    instructions: [
+      "1. 【陈述书基本信息】提交日、对应审查意见通知书编号",
+      "2. 【答复策略概述】申请人采取的整体答复策略",
+      "3. 【权利要求修改情况】是否修改权利要求，修改内容及依据",
+      "4. 【争辩要点】逐条回应驳回理由的核心论点",
+      "5. 【新增证据或论证】是否有新的技术证据或论证",
+      "6. 【未解决问题】审查员可能继续质疑的问题点"
+    ]
+  }
+};
+
 function buildInterpretPrompt(request: InterpretRequest): string {
+  const template = INTERPRET_TEMPLATES[request.documentType] ?? INTERPRET_TEMPLATES.application;
+
   return [
-    "你是一个专利审查助手。请对以下专利申请文件进行深度解读，从以下维度分析：",
+    `你是一个专利审查助手。请对以下${template.title}进行深度解读，从以下维度分析：`,
     "",
-    "1. 【技术领域】该专利属于哪个技术领域",
-    "2. 【核心技术方案】概括发明的技术方案",
-    "3. 【主要权利要求】列出独立权利要求的核心技术特征",
-    "4. 【关键实施例】概括关键实施例及其技术效果",
-    "5. 【创新点分析】该发明相对于现有技术的创新之处",
-    "6. 【潜在问题】可能存在的形式或实质性问题",
+    ...template.instructions,
     "",
     "请用中文回答，结构清晰，每个维度用标题分隔。",
     "",
     `案件 ID: ${request.caseId}`,
     "",
-    "=== 专利文档内容 ===",
+    "=== 文档内容 ===",
     request.documentText.slice(0, 12000)
   ].join("\n");
+}
+
+function mockInterpret(request: InterpretRequest): InterpretResponse {
+  const template = INTERPRET_TEMPLATES[request.documentType] ?? INTERPRET_TEMPLATES.application;
+  const docTypeLabel = template.title;
+
+  return {
+    reply: `【${docTypeLabel} · 演示模式】\n\n这是演示模式的解读结果。\n\n实际使用时，AI 将根据文档内容为您提供详细的分析和建议。\n\n请切换到真实模式以使用完整的文档解读功能。`
+  };
 }
 
 function buildOpinionAnalysisPrompt(request: OpinionAnalysisRequest): string {

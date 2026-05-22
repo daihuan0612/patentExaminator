@@ -502,7 +502,8 @@ describe("Agent Pipeline: Interpret (Mock)", () => {
     const client = makeMockClient();
     const resp = await client.runInterpret({
       caseId: CASE_ID,
-      documentText: MOCK_SPEC_TEXT
+      documentText: MOCK_SPEC_TEXT,
+      documentType: "application"
     });
 
     expect(resp.reply).toBeTruthy();
@@ -510,6 +511,30 @@ describe("Agent Pipeline: Interpret (Mock)", () => {
 
     useInterpretStore.getState().setInterpretSummary(CASE_ID, resp.reply);
     expect(useInterpretStore.getState().interpretSummaries[CASE_ID]).toBe(resp.reply);
+  });
+
+  it("runInterpret → 审查意见通知书类型 → 使用对应模板", async () => {
+    const client = makeMockClient();
+    const resp = await client.runInterpret({
+      caseId: CASE_ID,
+      documentText: "审查意见通知书内容...",
+      documentType: "office-action"
+    });
+
+    expect(resp.reply).toBeTruthy();
+    expect(resp.reply).toContain("审查意见通知书解读");
+  });
+
+  it("runInterpret → 意见陈述书类型 → 使用对应模板", async () => {
+    const client = makeMockClient();
+    const resp = await client.runInterpret({
+      caseId: CASE_ID,
+      documentText: "意见陈述书内容...",
+      documentType: "office-action-response"
+    });
+
+    expect(resp.reply).toBeTruthy();
+    expect(resp.reply).toContain("意见陈述书解读");
   });
 });
 

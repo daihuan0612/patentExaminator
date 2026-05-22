@@ -4,15 +4,24 @@ import { detectLanguage, LANGUAGE_LABELS } from "../../lib/languageDetect";
 import type { DocumentFigure } from "@shared/types/domain";
 import { FigureExtractPanel } from "./FigureExtractPanel";
 
+export type InterpretDocumentType = "application" | "office-action" | "office-action-response";
+
+export const DOCUMENT_TYPE_LABELS: Record<InterpretDocumentType, string> = {
+  "application": "专利申请文件",
+  "office-action": "审查意见通知书",
+  "office-action-response": "意见陈述书"
+};
+
 interface InterpretPanelProps {
   caseId: string;
   documentText?: string;
   figures?: DocumentFigure[];
-  runInterpret: (prompt: string) => Promise<string>;
+  documentType?: InterpretDocumentType;
+  runInterpret: (prompt: string, documentType: InterpretDocumentType) => Promise<string>;
   runTranslate?: (text: string) => Promise<string>;
 }
 
-export function InterpretPanel({ caseId, documentText, figures, runInterpret, runTranslate }: InterpretPanelProps) {
+export function InterpretPanel({ caseId, documentText, figures, documentType = "application", runInterpret, runTranslate }: InterpretPanelProps) {
   const { interpretSummaries, setInterpretSummary } = useInterpretStore();
   const persistedSummary = interpretSummaries[caseId] ?? "";
   const [isLoading, setIsLoading] = useState(false);
@@ -84,7 +93,7 @@ export function InterpretPanel({ caseId, documentText, figures, runInterpret, ru
     setIsLoading(true);
     setError(null);
     try {
-      const response = await runInterpret(textToInterpret);
+      const response = await runInterpret(textToInterpret, documentType);
       setSummary(response);
       setInterpretSummary(caseId, response);
     } catch (err) {

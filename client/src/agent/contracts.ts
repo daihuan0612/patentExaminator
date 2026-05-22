@@ -173,9 +173,12 @@ export interface SearchReferencesResponse {
   error?: string;
 }
 
+export type InterpretDocumentType = "application" | "office-action" | "office-action-response";
+
 export interface InterpretRequest {
   caseId: string;
   documentText: string;
+  documentType: InterpretDocumentType;
 }
 
 export interface InterpretResponse {

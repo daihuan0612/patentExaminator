@@ -214,9 +214,9 @@ function InterpretWrapper() {
     <InterpretPanel
       caseId={caseId ?? ""}
       documentText={docText}
-      runInterpret={async (text: string) => {
+      runInterpret={async (text: string, documentType: "application" | "office-action" | "office-action-response") => {
         const client = new AgentClient(settings.mode, "/api", settings);
-        const response = await client.runInterpret({ caseId: caseId ?? "", documentText: text });
+        const response = await client.runInterpret({ caseId: caseId ?? "", documentText: text, documentType });
         return response.reply;
       }}
       runTranslate={async (text: string) => {
@@ -425,7 +425,7 @@ function OpinionComparisonWrapper() {
       }}
       onArgumentComplete={(result) => {
         const now = new Date().toISOString();
-        const mappings: ArgumentMapping[] = result.mappings.map((mapping, index) => ({
+        const mappings: ArgumentMapping[] = (result?.mappings ?? []).map((mapping, index) => ({
           id: `argument-${caseId ?? "case"}-${mapping.rejectionGroundCode}-${index}`,
           caseId: caseId ?? "",
           rejectionGroundCode: mapping.rejectionGroundCode,
@@ -438,7 +438,7 @@ function OpinionComparisonWrapper() {
           ...(mapping.newEvidence ? { newEvidence: mapping.newEvidence } : {})
         }));
         setArgumentMappings(mappings);
-        if (result.unmappedGrounds) setUnmappedGrounds(result.unmappedGrounds);
+        if (result?.unmappedGrounds) setUnmappedGrounds(result.unmappedGrounds);
         updateWorkflowState("argument-mapped");
       }}
     />
