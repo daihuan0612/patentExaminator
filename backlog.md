@@ -1,4 +1,9 @@
 # Backlog
+
+36: ~~http://localhost:6173/cases/case-1779412386053/opinion-comparison：点击"一键解析"后，没有任何审查意见对照信息，全都显示0. server端看到AI API的调用是成功的："[server] [2026-05-22T05:07:12.991Z] INFO AI run succeeded {"agent":"opinion-analysis","provider":"bedrock","durationMs":22785,"tokenUsage":{"input":904,"output":1646,"total":2550}}
+[server] [2026-05-22T05:07:30.270Z] INFO AI run succeeded {"agent":"argument-analysis","provider":"bedrock","durationMs":17271,"tokenUsage":{"input":1842,"output":1050,"total":2892}}"。~~ **Fixed: 2026-05-22** - 根因：server/src/routes/ai.ts 中 outputJson 只有在 expectedSchemaName 存在时才解析，但 AgentClient 没有传递该字段。修复：始终尝试解析 JSON 响应，并处理 markdown 代码块包裹的情况。
+
+
 35: new feature: chat pannel 默认折叠起来，别打开。
 
 33: http://localhost:6173/cases/case-1779410645036/references：对比文件没有作为文献清单被自动load。AI 检索功能也消失不见了。

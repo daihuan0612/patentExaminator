@@ -119,14 +119,18 @@ aiRouter.post("/ai/run", async (req, res) => {
       return;
     }
 
-    // Try to parse as JSON if expectedSchemaName is set
+    // Try to parse as JSON - always attempt for structured responses
     let outputJson: unknown = undefined;
-    if (request.expectedSchemaName) {
-      try {
-        outputJson = JSON.parse(response.text);
-      } catch {
-        outputJson = undefined;
+    try {
+      // Strip markdown code fences if present
+      let text = response.text.trim();
+      if (text.startsWith("```")) {
+        text = text.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/, "").trim();
       }
+      outputJson = JSON.parse(text);
+    } catch {
+      // Not valid JSON, leave as raw text
+      outputJson = undefined;
     }
 
     logger.info("AI run succeeded", {
