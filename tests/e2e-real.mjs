@@ -2085,16 +2085,16 @@ async function testRealSearchRateLimit() {
 // ── Search: EPO OPS ──────────────────────────────────────────────────
 
 async function testEpoSetupCheck() {
-  const hasEnv = process.env.EPO_CONSUMER_KEY && process.env.EPO_CONSUMER_SECRET;
+  const hasEnv = process.env.EPO_CONSUMER_KEY && process.env.EPO_CONSUMER_SECRET_KEY;
   log("EPO env configured", !!hasEnv,
-    hasEnv ? "Consumer Key + Secret found in .env" : "Set EPO_CONSUMER_KEY and EPO_CONSUMER_SECRET in .env for real tests");
+    hasEnv ? "Consumer Key + Secret found in .env" : "Set EPO_CONSUMER_KEY and EPO_CONSUMER_SECRET_KEY in .env for real tests");
 }
 
 async function testEpoSearchWithEnv() {
   const consumerKey = process.env.EPO_CONSUMER_KEY;
-  const consumerSecret = process.env.EPO_CONSUMER_SECRET;
+  const consumerSecret = process.env.EPO_CONSUMER_SECRET_KEY;
   if (!consumerKey || !consumerSecret) {
-    log("EPO real search", false, "EPO_CONSUMER_KEY/EPO_CONSUMER_SECRET not set");
+    log("EPO real search", false, "EPO_CONSUMER_KEY/EPO_CONSUMER_SECRET_KEY not set");
     return;
   }
 
@@ -2124,15 +2124,15 @@ async function testEpoSearchWithEnv() {
 
 async function testEpoVerifyKey() {
   const consumerKey = process.env.EPO_CONSUMER_KEY;
-  const consumerSecret = process.env.EPO_CONSUMER_SECRET;
+  const consumerSecret = process.env.EPO_CONSUMER_SECRET_KEY;
   if (!consumerKey || !consumerSecret) {
-    log("EPO key verify", false, "EPO_CONSUMER_KEY/EPO_CONSUMER_SECRET not set");
+    log("EPO key verify", false, "EPO_CONSUMER_KEY/EPO_CONSUMER_SECRET_KEY not set");
     return;
   }
 
   try {
     const res = await postJSON("/verify-search-key", {
-      provider: "epo",
+      providerId: "epo",
       apiKey: `${consumerKey}:${consumerSecret}`
     });
     const data = await res.json();
@@ -2381,6 +2381,14 @@ async function main() {
           await delay(2000);
           await maybe(testRealSearchVerifySerpKey);
           await delay(2000);
+        }
+
+        if (process.env.EPO_CONSUMER_KEY && process.env.EPO_CONSUMER_SECRET_KEY) {
+          console.log("\n--- EPO OPS Tests ---");
+          await maybe(testEpoSetupCheck);
+          await maybe(testEpoVerifyKey);
+          await delay(2000);
+          await maybe(testEpoSearchWithEnv);
         }
       } else {
         console.log("\n--- Real Mode (skipped, no GEMINI_KEY) ---");
