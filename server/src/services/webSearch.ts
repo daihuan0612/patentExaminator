@@ -1,4 +1,5 @@
 import { logger } from "../lib/logger.js";
+import { searchEpo } from "../search/epo-ops.js";
 
 export interface SearchResult {
   title: string;
@@ -43,6 +44,7 @@ export async function searchPatents(
     queryList.map((q) => {
       const searchFn = providerId === "tavily" ? searchTavily
         : providerId === "serpapi" ? searchSerpApi
+        : providerId === "epo" ? searchEpoAdapter
         : config?.baseUrl ? (k: string, n: number, a: string) => searchCustom(k, n, a, config.baseUrl!)
         : null;
       if (!searchFn) return Promise.resolve([] as SearchResult[]);
@@ -245,6 +247,23 @@ async function searchCustom(
     content: r.content,
     score: r.score ?? 0
   }));
+}
+
+/**
+ * EPO OPS adapter — apiKey is "consumerKey:consumerSecret" colon-delimited.
+ */
+async function searchEpoAdapter(
+  query: string,
+  maxResults: number,
+  apiKey: string
+): Promise<SearchResult[]> {
+  const colonIdx = apiKey.indexOf(":");
+  if (colonIdx === -1) {
+    throw new Error("EPO OPS 需要 Consumer Key 和 Consumer Secret，格式为 key:secret");
+  }
+  const consumerKey = apiKey.slice(0, colonIdx);
+  const consumerSecret = apiKey.slice(colonIdx + 1);
+  return searchEpo(query, maxResults, consumerKey, consumerSecret);
 }
 
 /**

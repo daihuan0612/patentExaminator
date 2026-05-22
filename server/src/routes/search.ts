@@ -43,7 +43,10 @@ searchRouter.post("/search-references", async (req, res) => {
   const searchProviderId = request.searchProviderId || "tavily";
   const envKeyMap: Record<string, string | undefined> = {
     tavily: process.env.TAVILY_API_KEY,
-    serpapi: process.env.SerpAPI_KEY
+    serpapi: process.env.SerpAPI_KEY,
+    epo: process.env.EPO_CONSUMER_KEY && process.env.EPO_CONSUMER_SECRET
+      ? `${process.env.EPO_CONSUMER_KEY}:${process.env.EPO_CONSUMER_SECRET}`
+      : undefined
   };
   const searchApiKey = request.searchApiKey || envKeyMap[searchProviderId];
   if (!searchApiKey) {
@@ -420,7 +423,7 @@ searchRouter.post("/search-references", async (req, res) => {
 
 // Verify search API key validity
 const verifyKeySchema = z.object({
-  providerId: z.enum(["tavily", "serpapi", "custom"]),
+  providerId: z.enum(["tavily", "serpapi", "custom", "epo"]),
   apiKey: z.string().min(1),
   baseUrl: z.string().optional()
 });
@@ -459,6 +462,29 @@ searchRouter.post("/verify-search-key", async (req, res) => {
       } else {
         const text = await response.text().catch(() => "");
         res.json({ ok: false, providerId, error: `Key 无效 (${response.status}): ${text.slice(0, 100)}` });
+      }
+    } else if (providerId === "epo") {
+      const colonIdx = apiKey.indexOf(":");
+      if (colonIdx === -1) {
+        res.json({ ok: false, providerId, error: "EPO OPS 需要 Consumer Key:Consumer Secret 格式" });
+        return;
+      }
+      const consumerKey = apiKey.slice(0, colonIdx);
+      const consumerSecret = apiKey.slice(colonIdx + 1);
+      const credentials = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
+      const response = await fetch("https://ops.epo.org/3.2/auth/accesstoken", {
+        method: "POST",
+        headers: {
+          "Authorization": `Basic ${credentials}`,
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: "grant_type=client_credentials"
+      });
+      if (response.ok) {
+        res.json({ ok: true, providerId, message: "EPO OPS Consumer Key/Secret 有效" });
+      } else {
+        const text = await response.text().catch(() => "");
+        res.json({ ok: false, providerId, error: `EPO 认证失败 (${response.status}): ${text.slice(0, 100)}` });
       }
     } else if (providerId === "custom" && baseUrl) {
       const url = new URL(baseUrl);

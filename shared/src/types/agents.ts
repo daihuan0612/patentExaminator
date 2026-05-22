@@ -34,7 +34,7 @@ export interface AgentAssignment {
   maxTokens: number;
 }
 
-export type SearchProviderId = "tavily" | "serpapi" | "custom";
+export type SearchProviderId = "tavily" | "serpapi" | "custom" | "epo";
 
 export interface SearchProviderConnection {
   providerId: SearchProviderId;
@@ -85,5 +85,6 @@ export const PRESET_MODEL_PROVIDERS: PresetModelProvider[] = [
 
 export const PRESET_SEARCH_PROVIDERS: PresetSearchProvider[] = [
   { id: "tavily", displayName: "Tavily", desc: "免费额度 1000 次/月，注册地址: app.tavily.com", baseUrl: "https://api.tavily.com", keyPlaceholder: "tvly-..." },
-  { id: "serpapi", displayName: "SerpAPI", desc: "Google 专利搜索 API，免费额度 100 次/月", baseUrl: "https://serpapi.com", keyPlaceholder: "your-serpapi-key" }
+  { id: "serpapi", displayName: "SerpAPI", desc: "Google 专利搜索 API，免费额度 100 次/月", baseUrl: "https://serpapi.com", keyPlaceholder: "your-serpapi-key" },
+  { id: "epo", displayName: "EPO OPS", desc: "欧洲专利局官方 API (OPS v3.2)，结构化专利数据", baseUrl: "https://ops.epo.org/3.2", keyPlaceholder: "Consumer Key / Consumer Secret" }
 ];

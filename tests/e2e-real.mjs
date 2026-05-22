@@ -1546,6 +1546,66 @@ async function testRealSearchRateLimit() {
   }
 }
 
+// ── Search: EPO OPS ──────────────────────────────────────────────────
+
+async function testEpoSetupCheck() {
+  const hasEnv = process.env.EPO_CONSUMER_KEY && process.env.EPO_CONSUMER_SECRET;
+  log("EPO env configured", !!hasEnv,
+    hasEnv ? "Consumer Key + Secret found in .env" : "Set EPO_CONSUMER_KEY and EPO_CONSUMER_SECRET in .env for real tests");
+}
+
+async function testEpoSearchWithEnv() {
+  const consumerKey = process.env.EPO_CONSUMER_KEY;
+  const consumerSecret = process.env.EPO_CONSUMER_SECRET;
+  if (!consumerKey || !consumerSecret) {
+    log("EPO real search", false, "EPO_CONSUMER_KEY/EPO_CONSUMER_SECRET not set");
+    return;
+  }
+
+  try {
+    const body = {
+      caseId: "g1-led-epo",
+      claimText: "一种LED散热装置，包括散热基板和多个散热翅片。",
+      features: [{ featureCode: "A", description: "LED散热装置" }],
+      maxResults: 3,
+      searchProviderId: "epo",
+      searchApiKey: `${consumerKey}:${consumerSecret}`,
+      providerPreference: ["gemini"],
+      modelId: GEMINI_MODEL_ID,
+      llmApiKey: GEMINI_KEY
+    };
+
+    const res = await postJSON("/search-references", body);
+    const data = await res.json();
+    log("EPO real search ok", data.ok === true, `ok=${data.ok}, candidates=${data.candidates?.length ?? 0}`);
+    if (data.error) {
+      log("EPO real search error info", true, data.error);
+    }
+  } catch (err) {
+    log("EPO real search", false, err.message);
+  }
+}
+
+async function testEpoVerifyKey() {
+  const consumerKey = process.env.EPO_CONSUMER_KEY;
+  const consumerSecret = process.env.EPO_CONSUMER_SECRET;
+  if (!consumerKey || !consumerSecret) {
+    log("EPO key verify", false, "EPO_CONSUMER_KEY/EPO_CONSUMER_SECRET not set");
+    return;
+  }
+
+  try {
+    const res = await postJSON("/verify-search-key", {
+      provider: "epo",
+      apiKey: `${consumerKey}:${consumerSecret}`
+    });
+    const data = await res.json();
+    log("EPO key verify", data.ok === true, `ok=${data.ok}, msg=${data.message || data.error || ""}`);
+  } catch (err) {
+    log("EPO key verify", false, err.message);
+  }
+}
+
 // ── Main ─────────────────────────────────────────────────────────────
 
 async function main() {
@@ -1621,6 +1681,12 @@ async function main() {
       await maybe(testRealSearchRateLimit);
       await delay(SEARCH_RATE_LIMIT_DELAY);
       await maybe(testRealSearchReferences_G1);
+
+      console.log("\n--- EPO OPS Tests ---");
+      await maybe(testEpoSetupCheck);
+      await maybe(testEpoVerifyKey);
+      await delay(2000);
+      await maybe(testEpoSearchWithEnv);
 
     } else {
       // ========== Mock Mode Tests (Default) ==========
@@ -1698,6 +1764,10 @@ async function main() {
       console.log("\n--- Response Structure Validation ---");
       await maybe(testResponseStructureValidation);
       await maybe(testMalformedResponseHandling);
+
+      // EPO OPS
+      console.log("\n--- EPO OPS Configuration ---");
+      await maybe(testEpoSetupCheck);
 
       // Full pipeline
       console.log("\n--- Full Pipeline ---");
