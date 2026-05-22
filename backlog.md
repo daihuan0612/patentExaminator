@@ -1,4 +1,8 @@
 # Backlog
+44: 端到端业务流程全链路 non-UI 底层逻辑自动测试更新：像 43 这样直接报错的bug，类似的UI上直接报各种type undefine error map error的问题，查看所有的commit 历史，找出类似的这些问题，review这些问题的rootcause和fix，根据这些fix来完善现有的端到端业务流程全链路 non-UI 底层逻辑自动测试框架。目标是完全通过调用真实的AI API 和 samples/led-heatsink-mini 测试数据来自动测试覆盖住，根本不用延迟到非要在UI上看出来的时候。 全面深入仔细地排查一遍，类似这样的和UI相关的业务全流程全环节全链路功能，都要通过non-ui的底层逻辑功能自动测试覆盖住。
+
+43: bug: http://localhost:6173/cases/case-1779412386053/claim-chart: 点击“生成权利要求特征表”后，报错：“TypeError: response.features is not iterable” 
+
 42: http://localhost:6173/cases/case-1779412386053/opinion-comparison：审查意见对照结果，每次刷新页面后，再调取历史案件的时候都无法恢复上次对照结果。都要重新运行一次解析和映射，费时费token。每一次的解析映射结果应该和案件一起存下来，除非以前从来没有对照过，否则都应该直接调取上一次的对照结果显示出来。
 
 41: bug: http://localhost:6173/cases/case-1779412386053/references:一点文献清单就报错“Unexpected Application Error!
@@ -15,11 +19,11 @@ TypeError: Cannot read properties of undefined (reading 'tip')
     at recoverFromConcurrentError (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=8747b269:18736:28)
     at performSyncWorkOnRoot (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=8747b269:18879:28)
 💿 Hey developer 👋
-
 You can provide a way better UX than this when your app throws errors by providing your own ErrorBoundary or errorElement prop on your route.“
+~~bug: TimelineStatusBadge 组件崩溃~~ **Fixed: 2026-05-22** - 当 classifyReferenceDate() 返回 undefined（baselineDate 未设置时），TimelineStatusBadge 组件访问 STATUS_CONFIG[status].tip 导致 TypeError。修复：添加 fallback 到 UNKNOWN_CONFIG，防御性处理 undefined 状态。新增 9 个单元测试覆盖所有状态场景（commit dd7a737）。
 
 
-40: 配置界面的provider 太多了，对每一个provider，要提供拖拽功能，让用户把经常用的想要配置的provider拽到top的位置，方便更新配置。
+40: ~~配置界面的provider 太多了，对每一个provider，要提供拖拽功能，让用户把经常用的想要配置的provider拽到top的位置，方便更新配置。~~ **Fixed: 2026-05-22** - 在 ProvidersConfigPanel 中添加 provider 卡片拖拽排序功能：`sortedProviders` 按 localStorage 中的 `pex-provider-order` 排序；provider 卡片添加 `draggable` 属性及 `onDragStart/onDragOver/onDrop/onDragEnd` 事件处理；拖拽后自动更新 localStorage 持久化排序；CSS 添加 `cursor: grab` 和拖拽时的 `box-shadow` 视觉反馈。全部 217 单元测试 + 119 E2E 测试通过。
 
 39: ~~配置界面增加对Openrouter 作为 model provider的支持，API文档参考https://openrouter.ai/docs/quickstart~~ **Fixed: 2026-05-22** - 新增 `server/src/providers/openrouter.ts`（OpenAI 兼容适配器，默认支持 GPT-4o/Claude/Gemini/DeepSeek/Qwen 等 10 个模型）；`ProviderId` 类型添加 `"openrouter"`；`PRESET_MODEL_PROVIDERS` 添加 OpenRouter 条目（baseUrl: `https://openrouter.ai/api/v1`）；`ProviderRegistry` 注册 OpenRouter；`modelCatalog` 添加 10 个常用 OpenRouter 模型。全部 217 单元测试 + 119 E2E 测试通过。
 

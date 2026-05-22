@@ -1119,6 +1119,13 @@
   border-radius: var(--pex-radius-xl);
   padding: 16px;
   background: #fff;
+  cursor: grab;
+  transition: box-shadow 0.2s, opacity 0.2s;
+}
+
+.provider-card:active {
+  cursor: grabbing;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
 .provider-card--disabled {

@@ -6,6 +6,7 @@ import { fetchModels } from "../../lib/api";
 import { DEFAULT_MODELS, getModelMeta } from "../../lib/modelCatalog";
 
 const PROVIDER_EXPANDED_KEY = "pex-provider-expanded";
+const PROVIDER_ORDER_KEY = "pex-provider-order";
 
 function loadExpandedState(): Record<string, boolean> {
   try {
@@ -27,6 +28,27 @@ function saveExpandedState(state: Record<string, boolean>) {
   }
 }
 
+function loadProviderOrder(): ProviderId[] {
+  try {
+    const saved = localStorage.getItem(PROVIDER_ORDER_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+function saveProviderOrder(order: ProviderId[]) {
+  try {
+    localStorage.setItem(PROVIDER_ORDER_KEY, JSON.stringify(order));
+  } catch {
+    // ignore
+  }
+}
+
 export function ProvidersConfigPanel() {
   const { settings, setSettings } = useSettingsStore();
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -36,6 +58,18 @@ export function ProvidersConfigPanel() {
   const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({});
   const dragItem = useRef<{ providerId: string; index: number } | null>(null);
   const dragOverItem = useRef<{ providerId: string; index: number } | null>(null);
+  const dragProviderItem = useRef<{ index: number } | null>(null);
+  const dragProviderOver = useRef<{ index: number } | null>(null);
+  const [providerOrder, setProviderOrder] = useState<ProviderId[]>(loadProviderOrder);
+
+  const sortedProviders = [...PRESET_MODEL_PROVIDERS].sort((a, b) => {
+    const aIdx = providerOrder.indexOf(a.id);
+    const bIdx = providerOrder.indexOf(b.id);
+    if (aIdx === -1 && bIdx === -1) return 0;
+    if (aIdx === -1) return 1;
+    if (bIdx === -1) return -1;
+    return aIdx - bIdx;
+  });
 
   // Load expanded state from localStorage on mount
   useEffect(() => {
@@ -140,6 +174,38 @@ export function ProvidersConfigPanel() {
     dragOverItem.current = null;
   };
 
+  const handleProviderDragStart = (index: number) => {
+    dragProviderItem.current = { index };
+  };
+
+  const handleProviderDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    dragProviderOver.current = { index };
+  };
+
+  const handleProviderDrop = () => {
+    if (!dragProviderItem.current || !dragProviderOver.current) return;
+    if (dragProviderItem.current.index === dragProviderOver.current.index) return;
+
+    const fromIndex = dragProviderItem.current.index;
+    const toIndex = dragProviderOver.current.index;
+    const newOrder = sortedProviders.map((p) => p.id);
+    const [moved] = newOrder.splice(fromIndex, 1);
+    if (moved !== undefined) {
+      newOrder.splice(toIndex, 0, moved);
+    }
+
+    setProviderOrder(newOrder);
+    saveProviderOrder(newOrder);
+    dragProviderItem.current = null;
+    dragProviderOver.current = null;
+  };
+
+  const handleProviderDragEnd = () => {
+    dragProviderItem.current = null;
+    dragProviderOver.current = null;
+  };
+
   const handleSaveKey = (id: string) => {
     updateProvider(id, { apiKeyRef: keyInput });
     setEditingKey(null);
@@ -174,7 +240,7 @@ export function ProvidersConfigPanel() {
       </p>
 
       <div className="provider-cards">
-        {PRESET_MODEL_PROVIDERS.map((preset) => {
+        {sortedProviders.map((preset, index) => {
           const provider = ensureProvider(preset.id);
           const isLoading = loadingModels === preset.id;
           const error = modelError[preset.id];
@@ -188,6 +254,11 @@ export function ProvidersConfigPanel() {
               key={preset.id}
               className={`provider-card ${provider.enabled ? "" : "provider-card--disabled"} ${isExpanded ? "provider-card--expanded" : "provider-card--collapsed"}`}
               data-testid={`provider-${preset.id}`}
+              draggable
+              onDragStart={() => handleProviderDragStart(index)}
+              onDragOver={(e) => handleProviderDragOver(e, index)}
+              onDrop={handleProviderDrop}
+              onDragEnd={handleProviderDragEnd}
             >
               <div className="provider-card__header">
                 <button
