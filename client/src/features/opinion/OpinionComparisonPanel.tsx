@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { OpinionAnalysisResponse, ArgumentAnalysisResponse } from "../../agent/contracts";
 import type { RejectionGround, ArgumentMapping } from "@shared/types/domain";
 import { useOpinionStore } from "../../store";
@@ -101,6 +101,19 @@ export function OpinionComparisonPanel({
     ?? (mappings.length > 0
       ? grounds.filter((g) => !mappingByCode.has(g.code)).map((g) => g.code)
       : []);
+
+  // Sync initial results when they become available (e.g., loaded from IndexedDB after mount)
+  useEffect(() => {
+    if (initialOpinionResult && !opinionResult) {
+      setOpinionResult(initialOpinionResult);
+    }
+  }, [initialOpinionResult, opinionResult]);
+
+  useEffect(() => {
+    if (initialArgumentResult && !argumentResult) {
+      setArgumentResult(initialArgumentResult);
+    }
+  }, [initialArgumentResult, argumentResult]);
 
   const handleDeleteGround = (code: string) => {
     removeRejectionGround(code);

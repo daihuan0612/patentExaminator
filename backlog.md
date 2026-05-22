@@ -1,4 +1,7 @@
 # Backlog
+
+46: bug: http://localhost:6173/cases/case-1779412386053/opinion-comparison: 审查意见对照 : 第一次打开的时候，只有驳回理由，没有答辩理由和映射；切换到其他环节再立刻回到审查意见对照页面，答辩理由和映射就都出来。
+
 45: ~~regression: 设置界面无法打开。~~ **Fixed: 2026-05-22** - 经排查：项目构建成功、单元测试全部通过（10/10）、前端服务器响应正常、浏览器控制台无 JavaScript 错误、SettingsPage 及所有子组件代码正常、路由配置正确。用户报告的端口占用警告 (`EADDRINUSE`) 与设置界面无关。设置页面 `/settings` 功能正常。
 
 44: ~~端到端业务流程全链路 non-UI 底层逻辑自动测试更新~~ **Fixed: 2026-05-22** - 创建 shared/lib/responseValidator.ts 将 agent 类型映射到 Zod schemas；集成到 server AI route 在返回前验证结构化 agent 响应，无效 JSON 则丢弃 outputJson；AiRunResponse 新增 structureErrors 字段；新增 E2E 测试 testResponseStructureValidation（8 agent）+ testMalformedResponseHandling；防止 #36/#41/#43 pattern（未定义迭代错误）复发。(commit c869f28)
