@@ -1359,6 +1359,10 @@ Supabase（后端服务）
 
 ## 15. 变更记录
 
+| 日期 | 变更摘要 | 影响范围 | 关联 commit |
+|------|---------|---------|------------|
+| 2026-05-22 | bug #36 修复：server AI 路由始终尝试解析 JSON 响应（移除 expectedSchemaName 前置条件），处理 markdown 代码块包裹 | `server/src/routes/ai.ts` | 37fe619 |
+
 2026-05-22 | bug #39 文档解读改为案件级多文件分组解读，结果按 documentId 持久化并在历史案件恢复时回填 | `client/src/features/interpret/InterpretPanel.tsx`、`client/src/router.tsx`、`client/src/store/features/interpret/interpretSlice.ts`、`client/src/lib/repositories/interpretRepo.ts`、`client/src/lib/caseLoader.ts` | 待提交
 
 | 版本 | 日期 | 变更摘要 |
