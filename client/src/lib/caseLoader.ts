@@ -57,7 +57,8 @@ export async function loadCaseById(caseId: string) {
   useDocumentsStore.getState().setDocuments(docs);
   useReferencesStore.getState().setReferences(refs as unknown as ReferenceDocument[]);
   useClaimsStore.getState().setClaimNodes(nodes);
-  useClaimsStore.getState().setClaimFeatures(features);
+  // Use loadClaimFeatures to avoid triggering re-save to IndexedDB
+  useClaimsStore.getState().loadClaimFeatures(features);
   useNoveltyStore.getState().setComparisons(novelty);
   useInventiveStore.getState().setAnalyses(inventive);
   useDefectsStore.getState().setDefects(defects);

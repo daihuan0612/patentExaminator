@@ -46,3 +46,15 @@ export async function deleteClaimFeature(id: string): Promise<void> {
   const db = await getDB();
   await db.delete("claimCharts", id);
 }
+
+/**
+ * Delete all claim features for a case.
+ * Used when clearing case data or re-generating claim chart.
+ */
+export async function deleteClaimFeaturesByCaseId(caseId: string): Promise<void> {
+  const db = await getDB();
+  const features = await db.getAllFromIndex("claimCharts", "by-caseId", caseId);
+  for (const feature of features) {
+    await db.delete("claimCharts", feature.id);
+  }
+}
