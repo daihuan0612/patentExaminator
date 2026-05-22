@@ -8,6 +8,7 @@ import { DeepseekAdapter } from "./deepseek.js";
 import { GeminiAdapter } from "./gemini.js";
 import { QwenAdapter } from "./qwen.js";
 import { BedrockAdapter } from "./bedrock.js";
+import { OpenRouterAdapter } from "./openrouter.js";
 
 const MIMO_MODEL_FALLBACKS = ["MiMo-V2.5-Pro", "MiMo-V2.5", "MiMo-V2-Pro", "MiMo-V2-Omni"];
 const GEMINI_MODEL_FALLBACKS = ["gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-pro"];
@@ -34,6 +35,7 @@ export class ProviderRegistry {
     this.register(new GeminiAdapter());
     this.register(new QwenAdapter());
     this.register(new BedrockAdapter());
+    this.register(new OpenRouterAdapter());
   }
 
   register(adapter: ProviderAdapter): void {

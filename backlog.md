@@ -21,7 +21,7 @@ You can provide a way better UX than this when your app throws errors by providi
 
 40: 配置界面的provider 太多了，对每一个provider，要提供拖拽功能，让用户把经常用的想要配置的provider拽到top的位置，方便更新配置。
 
-39: 配置界面增加对Openrouter 作为 model provider的支持，API文档参考https://openrouter.ai/docs/quickstart
+39: ~~配置界面增加对Openrouter 作为 model provider的支持，API文档参考https://openrouter.ai/docs/quickstart~~ **Fixed: 2026-05-22** - 新增 `server/src/providers/openrouter.ts`（OpenAI 兼容适配器，默认支持 GPT-4o/Claude/Gemini/DeepSeek/Qwen 等 10 个模型）；`ProviderId` 类型添加 `"openrouter"`；`PRESET_MODEL_PROVIDERS` 添加 OpenRouter 条目（baseUrl: `https://openrouter.ai/api/v1`）；`ProviderRegistry` 注册 OpenRouter；`modelCatalog` 添加 10 个常用 OpenRouter 模型。全部 217 单元测试 + 119 E2E 测试通过。
 
 38: ~~端到端业务流程全链路 non-UI 底层逻辑自动测试更新：像 36 这样的bug，完全可以通过调用真实的AI API 和 samples/led-heatsink-mini 测试数据 来自动测试覆盖住，检验返回的内容是否包含驳回理由、答辩意见等等，就能自动测试出来，根本不用延迟到非要在UI上看出来全为0的时候。 全面深入仔细地排查一遍，类似这样的和UI相关的业务全流程全环节全链路功能，都要通过non-ui的底层逻辑功能自动测试覆盖住。~~ **Fixed: 2026-05-22** - 新增 8 个 mock 测试函数（共 119→119 全过）：classify-documents agent 测试、opinion-analysis ↔ argument-analysis 交叉数据校验（rejectionGroundCode 一致性、ground 完整性、citedReferences 有效性）、复审全链路数据流测试（opinion→argument→draft 三阶段数据传递验证）、opinion-analysis/argument-mapping/reexam-draft Schema 深度校验（category/legalBasis/confidence/conclusion 字段合法性）。更新测试分类指南。
 

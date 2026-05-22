@@ -44,6 +44,18 @@ export const DEFAULT_MODELS: Record<ProviderId, ModelInfo[]> = {
     { id: "anthropic.claude-3-haiku-20240307-v1:0", recommendation: "Claude 3 Haiku", inputTokenLimit: 200000, outputTokenLimit: 4096 },
     { id: "meta.llama3-2-3b-instruct-v1:0", recommendation: "Llama 3.2 3B (轻量)", inputTokenLimit: 131072, outputTokenLimit: 2048 },
     { id: "meta.llama3-2-1b-instruct-v1:0", recommendation: "Llama 3.2 1B (最小)", inputTokenLimit: 131072, outputTokenLimit: 2048 }
+  ],
+  openrouter: [
+    { id: "openai/gpt-4o", recommendation: "OpenAI GPT-4o (推荐)", inputTokenLimit: 128000, outputTokenLimit: 16384 },
+    { id: "openai/gpt-4o-mini", recommendation: "GPT-4o Mini (快速经济)", inputTokenLimit: 128000, outputTokenLimit: 16384 },
+    { id: "anthropic/claude-3.5-sonnet", recommendation: "Claude 3.5 Sonnet", inputTokenLimit: 200000, outputTokenLimit: 8192 },
+    { id: "anthropic/claude-3-haiku", recommendation: "Claude 3 Haiku (快速)", inputTokenLimit: 200000, outputTokenLimit: 4096 },
+    { id: "google/gemini-2.5-pro", recommendation: "Gemini 2.5 Pro (最强推理)", inputTokenLimit: 1048576, outputTokenLimit: 65536 },
+    { id: "google/gemini-2.5-flash", recommendation: "Gemini 2.5 Flash (快速)", inputTokenLimit: 1048576, outputTokenLimit: 8192 },
+    { id: "deepseek/deepseek-chat", recommendation: "DeepSeek V3", inputTokenLimit: 128000, outputTokenLimit: 8192 },
+    { id: "deepseek/deepseek-r1", recommendation: "DeepSeek R1 (推理)", inputTokenLimit: 128000, outputTokenLimit: 8192 },
+    { id: "meta-llama/llama-4-maverick", recommendation: "Llama 4 Maverick", inputTokenLimit: 128000, outputTokenLimit: 8192 },
+    { id: "qwen/qwen3-235b-a22b", recommendation: "Qwen3 旗舰 MoE", inputTokenLimit: 131072, outputTokenLimit: 8192 },
   ]
 };
 
