@@ -14,6 +14,8 @@ import { searchReferencesFilterSchema } from "../schemas/searchReferences.schema
 export interface ValidationResult {
   valid: boolean;
   errors: string[];
+  /** Zod-parsed (and transformed) payload when valid */
+  data?: unknown;
 }
 
 const STRUCTURED_AGENT_SCHEMAS: Record<string, ZodSchema> = {
@@ -36,17 +38,17 @@ export function isStructuredAgent(agent: string): boolean {
 
 export function validateAgentResponse(agent: string, json: unknown): ValidationResult {
   if (TEXT_AGENTS.has(agent)) {
-    return { valid: true, errors: [] };
+    return { valid: true, errors: [], data: json };
   }
 
   const schema = STRUCTURED_AGENT_SCHEMAS[agent];
   if (!schema) {
-    return { valid: true, errors: [] };
+    return { valid: true, errors: [], data: json };
   }
 
   const result = schema.safeParse(json);
   if (result.success) {
-    return { valid: true, errors: [] };
+    return { valid: true, errors: [], data: result.data };
   }
 
   return {

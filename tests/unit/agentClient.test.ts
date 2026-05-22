@@ -71,6 +71,66 @@ describe("AgentClient (mock mode)", () => {
     expect(result.features[0]!.source).toBe("ai");
     expect(result.warnings).toEqual(["功能语言"]);
   });
+
+  it("real mode normalizes numeric paragraph in citations", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          outputJson: {
+            claimNumber: 1,
+            features: [
+              {
+                featureCode: "A",
+                description: "基板",
+                specificationCitations: [
+                  { label: "[0005]", paragraph: 5, confidence: "high" }
+                ],
+                citationStatus: "confirmed"
+              }
+            ],
+            warnings: [],
+            pendingSearchQuestions: [],
+            legalCaution: "test"
+          }
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    const client = new AgentClient("real", "http://localhost:3000/api");
+    const result = await client.runClaimChart({
+      caseId: "case-1",
+      claimText: "一种装置",
+      claimNumber: 1,
+      specificationText: "spec"
+    });
+
+    expect(result.features[0]!.specificationCitations[0]?.paragraph).toBe("5");
+  });
+
+  it("real mode throws when gateway returns structureErrors", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          structureErrors: ["features.0.featureCode: Invalid"],
+          rawText: "{}"
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    const client = new AgentClient("real", "http://localhost:3000/api");
+    await expect(
+      client.runClaimChart({
+        caseId: "case-1",
+        claimText: "test",
+        claimNumber: 1,
+        specificationText: "test"
+      })
+    ).rejects.toThrow(/结构校验失败/);
+  });
 });
 
 describe("estimateTokens", () => {

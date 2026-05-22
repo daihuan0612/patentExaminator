@@ -145,6 +145,8 @@ aiRouter.post("/ai/run", async (req, res) => {
         });
         structureErrors = validation.errors;
         outputJson = undefined;
+      } else if (validation.data !== undefined) {
+        outputJson = validation.data;
       }
     }
 

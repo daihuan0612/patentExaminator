@@ -455,6 +455,31 @@ export class AgentClient {
   }
 }
 
+function normalizeSpecificationCitations(
+  raw: unknown
+): ClaimFeature["specificationCitations"] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((item) => {
+    const cite = item as Record<string, unknown>;
+    const paragraph = cite.paragraph;
+    const normalized: ClaimFeature["specificationCitations"][number] = {
+      documentId: typeof cite.documentId === "string" ? cite.documentId : "",
+      label: String(cite.label ?? ""),
+      confidence:
+        cite.confidence === "high" || cite.confidence === "medium" || cite.confidence === "low"
+          ? cite.confidence
+          : "medium"
+    };
+    if (paragraph !== undefined && paragraph !== null && paragraph !== "") {
+      normalized.paragraph = String(paragraph);
+    }
+    if (typeof cite.quote === "string") normalized.quote = cite.quote;
+    if (typeof cite.lineStart === "number") normalized.lineStart = cite.lineStart;
+    if (typeof cite.lineEnd === "number") normalized.lineEnd = cite.lineEnd;
+    return normalized;
+  });
+}
+
 function buildClaimChartPrompt(request: ClaimChartRequest): string {
   const specExcerpt = request.specificationText.slice(0, 8000);
   return [
@@ -538,9 +563,7 @@ function mapClaimChartOutput(
         typeof feat.claimNumber === "number" ? feat.claimNumber : claimNumber,
       featureCode: code,
       description: String(feat.description ?? ""),
-      specificationCitations: Array.isArray(feat.specificationCitations)
-        ? (feat.specificationCitations as ClaimFeature["specificationCitations"])
-        : [],
+      specificationCitations: normalizeSpecificationCitations(feat.specificationCitations),
       citationStatus,
       source: "ai" as const
     };
