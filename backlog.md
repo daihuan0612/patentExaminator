@@ -1,5 +1,65 @@
 # Backlog
 
+37: bug-fix: 自动测试有个failure：“❯ tests/unit/agentClient.test.ts (6 tests | 1 failed) 5013ms
+   × AgentClient (mock mode) > real mode attempts gateway call 5007ms
+     → Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/agentClient.test.ts > AgentClient (mock mode) > real mode attempts gateway call
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".”。 AI说“测试有一个超时失败，但这是已有的网络测试问题（`agentClient.test.ts` 中的 "real mode attempts gateway call" 测试），与我的修复无关。这是因为它尝试实际调用 API 但没有 mock，导致超时。
+”。 fix it。
+
+36： http://localhost:6173/cases/case-1779410645036/export：导出时报错：“Unexpected Application Error!
+Cannot read properties of undefined (reading 'length')
+TypeError: Cannot read properties of undefined (reading 'length')
+    at ExportPanel (http://localhost:6173/src/features/export/ExportPanel.tsx:134:39)
+    at renderWithHooks (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=90cec3fb:11548:26)
+    at mountIndeterminateComponent (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=90cec3fb:14926:21)
+    at beginWork (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=90cec3fb:15914:22)
+    at beginWork$1 (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=90cec3fb:19753:22)
+    at performUnitOfWork (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=90cec3fb:19198:20)
+    at workLoopSync (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=90cec3fb:19137:13)
+    at renderRootSync (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=90cec3fb:19116:15)
+    at recoverFromConcurrentError (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=90cec3fb:18736:28)
+    at performSyncWorkOnRoot (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=90cec3fb:18879:28)
+💿 Hey developer 👋”
+
+You can provide a way better UX than this when your app throws errors by providing your own ErrorBoundary or errorElement prop on your route.
+
+
+35: http://localhost:6173/cases/case-1779410645036/draft：生成草稿时报错：“Unexpected Application Error!
+Cannot read properties of undefined (reading 'map')
+TypeError: Cannot read properties of undefined (reading 'map')
+    at DraftMaterialPanel (http://localhost:6173/src/features/draft/DraftMaterialPanel.tsx:120:37)
+    at renderWithHooks (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=90cec3fb:11548:26)
+    at updateFunctionComponent (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=90cec3fb:14582:28)
+    at beginWork (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=90cec3fb:15924:22)
+    at beginWork$1 (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=90cec3fb:19753:22)
+    at performUnitOfWork (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=90cec3fb:19198:20)
+    at workLoopSync (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=90cec3fb:19137:13)
+    at renderRootSync (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=90cec3fb:19116:15)
+    at recoverFromConcurrentError (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=90cec3fb:18736:28)
+    at performConcurrentWorkOnRoot (http://localhost:6173/node_modules/.vite/deps/chunk-KUXXGULC.js?v=90cec3fb:18684:30)
+💿 Hey developer 👋
+
+You can provide a way better UX than this when your app throws errors by providing your own ErrorBoundary or errorElement prop on your route.”
+
+
+34: http://localhost:6173/cases/case-1779410645036/claim-chart：“生成权利表”按钮为灰色不可用。
+
+32: http://localhost:6173/cases/case-1779410645036/interpret：文档解读应该显示上一次的自动保存的结果，如果为空才自动触发AI解读；现在的bug是即使不为空也触发AI自动解读，浪费token。
+
+**状态：** ✅ 已完成 (88502e0)
+
+33: http://localhost:6173/cases/case-1779410645036/references：对比文件没有作为文献清单被自动load。AI 检索功能也消失不见了。
+
+31: bug: http://localhost:6173/cases/case-1779410645036/opinion-comparison：在真实模式下使用 sample data /Users/wukun/Documents/tmp/patentExaminator/samples/led-heatsink-mini 遇到的问题：点击“一键全解析”按钮后报错：“审查意见解析：Cannot read properties of undefined (reading 'map')
+答辩理由映射：Cannot read properties of undefined (reading 'map')”; 
+点击按钮“重新解析”报错”答辩理由映射：Cannot read properties of undefined (reading 'map')“
+
 
 30: http://localhost:6173/cases/preset-demo-001/claim-chart： 权利要求特征表，进入的时候已经有3个特征，“特征代码	特征描述	引用状态	来源	操作
 A	一种LED散热装置，包括基板，所述基板为铝合金材质	已确认	mock	编辑✕
