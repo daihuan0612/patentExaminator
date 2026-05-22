@@ -1,6 +1,6 @@
 # Backlog
 
-46: bug: http://localhost:6173/cases/case-1779412386053/opinion-comparison: 审查意见对照 : 第一次打开的时候，只有驳回理由，没有答辩理由和映射；切换到其他环节再立刻回到审查意见对照页面，答辩理由和映射就都出来。
+46: ~~bug: http://localhost:6173/cases/case-1779412386053/opinion-comparison: 审查意见对照 : 第一次打开的时候，只有驳回理由，没有答辩理由和映射；切换到其他环节再立刻回到审查意见对照页面，答辩理由和映射就都出来。~~ **Fixed: 2026-05-22** - `OpinionComparisonPanel` 组件的 `useState` 初始化在父组件 `OpinionComparisonWrapper` 的 `useEffect` 异步加载数据完成前就执行了，导致初始值为 null。修复：添加两个 `useEffect` 监听 `initialOpinionResult` 和 `initialArgumentResult` props 变化，当从 null 变为有值时同步到内部状态。
 
 45: ~~regression: 设置界面无法打开。~~ **Fixed: 2026-05-22** - 经排查：项目构建成功、单元测试全部通过（10/10）、前端服务器响应正常、浏览器控制台无 JavaScript 错误、SettingsPage 及所有子组件代码正常、路由配置正确。用户报告的端口占用警告 (`EADDRINUSE`) 与设置界面无关。设置页面 `/settings` 功能正常。
 
