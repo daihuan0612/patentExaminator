@@ -1,9 +1,17 @@
 import type { TimelineStatus } from "@shared/types/domain";
 
 interface TimelineStatusBadgeProps {
-  status: TimelineStatus;
+  status: TimelineStatus | undefined;
   dataTestId?: string;
 }
+
+// 默认配置，用于无效 status 的 fallback
+const DEFAULT_CONFIG = {
+  label: "未知",
+  color: "#757575",
+  bg: "#f5f5f5",
+  tip: "时间轴状态未知"
+} as const;
 
 const STATUS_CONFIG: Record<TimelineStatus, { label: string; color: string; bg: string; tip: string }> = {
   available: {
@@ -39,12 +47,13 @@ const STATUS_CONFIG: Record<TimelineStatus, { label: string; color: string; bg: 
 };
 
 export function TimelineStatusBadge({ status, dataTestId }: TimelineStatusBadgeProps) {
-  const config = STATUS_CONFIG[status];
+  // 防御性编程：当 status 无效时使用默认配置
+  const config = status ? STATUS_CONFIG[status] : DEFAULT_CONFIG;
 
   return (
     <span
       className="timeline-status-badge"
-      data-testid={dataTestId ?? `badge-timeline-${status}`}
+      data-testid={dataTestId ?? `badge-timeline-${status ?? "unknown"}`}
       title={config.tip}
       style={{
         display: "inline-block",
