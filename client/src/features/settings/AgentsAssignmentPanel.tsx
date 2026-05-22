@@ -24,7 +24,8 @@ const PROVIDER_NAMES: Record<ProviderId, string> = {
   minimax: "MiniMax",
   deepseek: "DeepSeek",
   qwen: "Qwen",
-  bedrock: "Bedrock"
+  bedrock: "Bedrock",
+  openrouter: "OpenRouter"
 };
 
 export function AgentsAssignmentPanel() {

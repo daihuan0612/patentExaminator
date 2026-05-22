@@ -1,4 +1,5 @@
 import { createBrowserRouter, Navigate, Outlet, useParams } from "react-router-dom";
+import { useEffect } from "react";
 import { AppShell } from "./components/AppShell";
 import { ShellPlaceholder } from "./components/ShellPlaceholder";
 import { NewCasePage } from "./features/case/NewCasePage";
@@ -31,6 +32,12 @@ import { useSettingsStore } from "./store";
 import { useOpinionStore } from "./store";
 import { AgentClient } from "./agent/AgentClient";
 import type { ArgumentMapping, OfficeActionAnalysis } from "@shared/types/domain";
+import {
+  readOpinionAnalysis,
+  readArgumentMappings,
+  saveOpinionAnalysis,
+  saveArgumentMappings
+} from "./lib/repositories/opinionRepo";
 
 export function RootLayout() {
   return (
@@ -368,6 +375,30 @@ export function OpinionComparisonWrapper() {
     (d) => d.caseId === caseId && d.role === "application" && d.fileName.includes("修改")
   );
 
+  // Load opinion data from IndexedDB on mount
+  useEffect(() => {
+    if (!caseId) return;
+    
+    async function loadOpinionData() {
+      try {
+        // Only load from IndexedDB if not already in memory store
+        const storedAnalysis = await readOpinionAnalysis(caseId!);
+        if (storedAnalysis && !officeActionAnalysis) {
+          setOfficeActionAnalysis(storedAnalysis);
+        }
+        
+        const storedMappings = await readArgumentMappings(caseId!);
+        if (storedMappings.length > 0 && argumentMappings.length === 0) {
+          setArgumentMappings(storedMappings);
+        }
+      } catch (err) {
+        console.error("[OpinionComparisonWrapper] Failed to load from IndexedDB:", err);
+      }
+    }
+    
+    loadOpinionData();
+  }, [caseId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const initialOpinionResult = officeActionAnalysis
     ? {
         documentId: officeActionAnalysis.documentId,
@@ -448,6 +479,10 @@ export function OpinionComparisonWrapper() {
         };
         setOfficeActionAnalysis(analysis);
         updateWorkflowState("opinion-analyzed");
+        // Persist to IndexedDB
+        saveOpinionAnalysis(analysis).catch((err) => {
+          console.error("[OpinionComparisonWrapper] Failed to save opinion analysis:", err);
+        });
       }}
       onArgumentComplete={(result) => {
         const now = new Date().toISOString();
@@ -466,6 +501,10 @@ export function OpinionComparisonWrapper() {
         setArgumentMappings(mappings);
         if (result?.unmappedGrounds) setUnmappedGrounds(result.unmappedGrounds);
         updateWorkflowState("argument-mapped");
+        // Persist to IndexedDB
+        saveArgumentMappings(mappings).catch((err) => {
+          console.error("[OpinionComparisonWrapper] Failed to save argument mappings:", err);
+        });
       }}
     />
   );

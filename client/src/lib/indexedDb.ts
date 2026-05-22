@@ -9,7 +9,9 @@ import type {
   InventiveStepAnalysis,
   FormalDefect,
   ChatMessage,
-  ChatSession
+  ChatSession,
+  OfficeActionAnalysis,
+  ArgumentMapping
 } from "@shared/types/domain";
 import type { FeedbackItem } from "@shared/types/feedback";
 import type { AppSettings } from "@shared/types/agents";
@@ -92,10 +94,20 @@ export interface PatentExaminerDB extends DBSchema {
     key: string;
     value: AppSettings & { id: string };
   };
+  opinionAnalyses: {
+    key: string;
+    value: OfficeActionAnalysis;
+    indexes: { "by-caseId": string };
+  };
+  argumentMappings: {
+    key: string;
+    value: ArgumentMapping;
+    indexes: { "by-caseId": string };
+  };
 }
 
 const DB_NAME = "patent-examiner-v1";
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 export async function openPatentDB(): Promise<IDBPDatabase<PatentExaminerDB>> {
   return openDB<PatentExaminerDB>(DB_NAME, DB_VERSION, {
@@ -187,6 +199,18 @@ export async function openPatentDB(): Promise<IDBPDatabase<PatentExaminerDB>> {
       // settings
       if (!db.objectStoreNames.contains("settings")) {
         db.createObjectStore("settings", { keyPath: "id" });
+      }
+
+      // opinionAnalyses
+      if (!db.objectStoreNames.contains("opinionAnalyses")) {
+        const opinionStore = db.createObjectStore("opinionAnalyses", { keyPath: "id" });
+        opinionStore.createIndex("by-caseId", "caseId");
+      }
+
+      // argumentMappings
+      if (!db.objectStoreNames.contains("argumentMappings")) {
+        const argStore = db.createObjectStore("argumentMappings", { keyPath: "id" });
+        argStore.createIndex("by-caseId", "caseId");
       }
     }
   });
