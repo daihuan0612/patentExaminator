@@ -29,7 +29,12 @@ export function InterpretPanel({ caseId, documentText, figures, runInterpret, ru
 
   useEffect(() => {
     setSummary(persistedSummary);
-    autoTriggered.current = false;
+    // 只有当 persistedSummary 为空时才重置 autoTriggered，避免重复自动解读
+    if (!persistedSummary) {
+      autoTriggered.current = false;
+    } else {
+      autoTriggered.current = true;
+    }
   }, [caseId]);
 
   useEffect(() => {
