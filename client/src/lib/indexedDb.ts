@@ -20,6 +20,10 @@ export interface PatentExaminerDB extends DBSchema {
     value: PatentCase;
     indexes: { "by-updatedAt": string };
   };
+  interpretSummaries: {
+    key: string; // caseId
+    value: { caseId: string; summary: string; updatedAt: string };
+  };
   documents: {
     key: string;
     value: SourceDocument;
@@ -89,7 +93,7 @@ export interface PatentExaminerDB extends DBSchema {
 }
 
 const DB_NAME = "patent-examiner-v1";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 export async function openPatentDB(): Promise<IDBPDatabase<PatentExaminerDB>> {
   return openDB<PatentExaminerDB>(DB_NAME, DB_VERSION, {
@@ -98,6 +102,11 @@ export async function openPatentDB(): Promise<IDBPDatabase<PatentExaminerDB>> {
       if (!db.objectStoreNames.contains("cases")) {
         const caseStore = db.createObjectStore("cases", { keyPath: "id" });
         caseStore.createIndex("by-updatedAt", "updatedAt");
+      }
+
+      // interpretSummaries
+      if (!db.objectStoreNames.contains("interpretSummaries")) {
+        db.createObjectStore("interpretSummaries", { keyPath: "caseId" });
       }
 
       // documents

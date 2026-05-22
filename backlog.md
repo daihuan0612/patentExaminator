@@ -1,24 +1,24 @@
 # Backlog
 
-39: 文档解读：现在的文档解读似乎只解读申请文件，但在复审场景中需要解读所有其他类型的文件，比如审查意见书，答辩书，对比文件。需要分门别类而又相互联系地、全面深入仔细地、抽丝剥茧地、深入浅出地解读所有这些文件。
+38: 文档解读：刷新页面后，从案件历史里面调阅出以前的案件，但是文档解读却是空白的。上次的文档解读内容丢失了，没有保存和恢复，反而要重新调用AI API来解读，浪费token。
 
 **状态：** ✅ 已完成
 
-**实现方式：**
-1. 扩展 `InterpretRequest` 添加 `documentType` 参数，支持三种文档类型：
-   - `application` - 专利申请文件（默认）
-   - `office-action` - 审查意见通知书
-   - `office-action-response` - 意见陈述书
-2. 修改 `AgentClient.buildInterpretPrompt` 根据 `documentType` 选择对应的分析模板
-3. 添加 `mockInterpret` 函数支持 Mock 模式下返回文档类型对应的演示文本
-4. 更新 `InterpretPanel` 组件接口支持 `documentType` 参数
-5. 更新 `interpret.prompt.md` 添加复审场景的专用解读模板：
-   - 审查意见通知书：通知书基本信息、审查结论、驳回理由清单、引用对比文件、答复期限
-   - 意见陈述书：陈述书基本信息、答复策略概述、权利要求修改情况、争辩要点、未解决问题
+**修复方式：**
+1. 在 `IndexedDB` schema 中添加 `interpretSummaries` object store（DB_VERSION 升级到 4）
+2. 创建 `interpretRepo.ts` 提供 `saveInterpretSummary`、`readInterpretSummary`、`deleteInterpretSummary` 数据库操作
+3. 修改 `interpretSlice.ts`：
+   - `setInterpretSummary` 在更新 Zustand store 后同步写入 IndexedDB
+   - 新增 `loadInterpretSummary` 方法用于从数据库加载（不触发二次保存）
+   - `clearInterpretData` 同时删除 IndexedDB 中的记录
+4. 修改 `caseLoader.ts` 的 `loadCaseById` 在加载案件时恢复 interpret 数据
 
 ---
 
-38: 文档解读：刷新页面后，从案件历史里面调阅出以前的案件，但是文档解读却是空白的。上次的文档解读内容丢失了，没有保存和恢复，反而要重新调用AI API来解读，浪费token。
+39: bug-fix: 文档解读：现在的文档解读只解读申请文件，没有解读所有其他类型的文件，比如审查意见书，答辩书，对比文件。需要分门别类而又相互联系地、全面深入仔细地、抽丝剥茧地、深入浅出地解读所有这些文件。而且每个文件的解读都要列出被解读的文件名，让用户知道解读了哪些文件。
+
+
+
 
 37: bug-fix: 自动测试有个failure：“❯ tests/unit/agentClient.test.ts (6 tests | 1 failed) 5013ms
 

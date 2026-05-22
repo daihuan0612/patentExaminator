@@ -7,6 +7,7 @@ import { readNoveltyByCaseId } from "./repositories/noveltyRepo";
 import { readInventiveByCaseId } from "./repositories/inventiveRepo";
 import { getDefectsByCaseId } from "./repositories/defectRepo";
 import { getSessionsByCaseId, getMessagesBySessionId } from "./repositories/chatRepo";
+import { readInterpretSummary } from "./repositories/interpretRepo";
 import {
   useCaseStore,
   useDocumentsStore,
@@ -15,7 +16,8 @@ import {
   useNoveltyStore,
   useInventiveStore,
   useDefectsStore,
-  useChatStore
+  useChatStore,
+  useInterpretStore
 } from "../store";
 
 /**
@@ -27,7 +29,7 @@ export async function loadCaseById(caseId: string) {
   if (!theCase) return null;
 
   // Load all domain data in parallel
-  const [docs, refs, nodes, features, novelty, inventive, defects, sessions] = await Promise.all([
+  const [docs, refs, nodes, features, novelty, inventive, defects, sessions, interpretSummary] = await Promise.all([
     readDocumentsByCaseId(caseId),
     readReferencesByCaseId(caseId),
     readClaimNodesByCaseId(caseId),
@@ -35,7 +37,8 @@ export async function loadCaseById(caseId: string) {
     readNoveltyByCaseId(caseId),
     readInventiveByCaseId(caseId),
     getDefectsByCaseId(caseId),
-    getSessionsByCaseId(caseId)
+    getSessionsByCaseId(caseId),
+    readInterpretSummary(caseId)
   ]);
 
   // Load chat messages for all sessions
@@ -61,6 +64,10 @@ export async function loadCaseById(caseId: string) {
   useChatStore.getState().setSessions(sessions);
   useChatStore.getState().setMessages(allMessages);
   useChatStore.getState().setActiveSessionId(sessions[0]?.id ?? null);
+  // Load interpret summary (use loadInterpretSummary to avoid re-saving to DB)
+  if (interpretSummary) {
+    useInterpretStore.getState().loadInterpretSummary(caseId, interpretSummary);
+  }
 
   return theCase;
 }
