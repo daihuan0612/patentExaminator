@@ -153,7 +153,9 @@ const BASE = process.env.TEST_BASE || "http://localhost:3000/api";
 const GEMINI_KEY = process.env.GEMINI_KEY;
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
 const SERP_API_KEY = process.env.SerpAPI_KEY;
+const BEDROCK_API_KEY = process.env.Bedrock_API_KEY;
 const GEMINI_MODEL_ID = process.env.GEMINI_MODEL_ID || "gemini-3.1-flash-lite-preview";
+const BEDROCK_FALLBACK_MODEL_ID = process.env.BEDROCK_FALLBACK_MODEL_ID || "qwen.qwen3-vl-235b-a22b-instruct";
 const AI_RATE_LIMIT_DELAY = Number(process.env.GEMINI_RATE_LIMIT_DELAY) || 8000;
 const SEARCH_RATE_LIMIT_DELAY = Number(process.env.SEARCH_RATE_LIMIT_DELAY) || 15000;
 
@@ -638,11 +640,50 @@ async function runRealAiAgentTest(label, agent, prompt, metadata, onResponse) {
         await delay(waitMs);
         continue;
       }
-      log(label, false, err.message);
-      return null;
+      console.log(`  [${labelWithAttempt}] all Gemini models exhausted: ${err.message}`);
     }
   }
-  return null;
+
+  if (!BEDROCK_API_KEY) {
+    log(`${label} Bedrock fallback`, false, "BEDROCK_API_KEY not set");
+    return null;
+  }
+
+  console.log(`  [${label}] switching to Bedrock: ${BEDROCK_FALLBACK_MODEL_ID}`);
+  try {
+    const bedrockBody = {
+      ...body,
+      providerPreference: ["bedrock"],
+      modelId: BEDROCK_FALLBACK_MODEL_ID,
+    };
+    const res = await postJSON("/ai/run", bedrockBody);
+    const data = await res.json();
+
+    if (!data.ok) {
+      log(`${label} Bedrock fallback`, false, data.error?.message || "unknown error");
+      return null;
+    }
+
+    log(`${label} ok (Bedrock)`, true, `model=${BEDROCK_FALLBACK_MODEL_ID}`);
+
+    if (data.tokenUsage) {
+      log(`${label} token usage`, typeof data.tokenUsage.input === "number",
+        `in=${data.tokenUsage.input}, out=${data.tokenUsage.output}`);
+    }
+
+    if (onResponse) onResponse(data);
+
+    if (data.outputJson) {
+      const text = typeof data.outputJson === "string" ? data.outputJson : JSON.stringify(data.outputJson);
+      log(`${label} output not empty`, text.length > 5,
+        `length=${text.length}`);
+    }
+
+    return data;
+  } catch (err) {
+    log(`${label} Bedrock fallback`, false, err.message);
+    return null;
+  }
 }
 
 // ── Mock Request Builder ─────────────────────────────────────────────
