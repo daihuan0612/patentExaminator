@@ -483,8 +483,20 @@ export function InterpretPanel({
                             ? "已生成解读，点击展开查看和编辑。"
                             : state.isLoading
                               ? "AI 解读中，完成后可展开查看。"
-                              : "尚未展开查看解读。"}
+                              : state.error
+                                ? "解读失败，请重试。"
+                                : "尚未开始解读。"}
                         </span>
+                        {!state.isLoading && (
+                          <button
+                            type="button"
+                            onClick={() => void doInterpret(doc)}
+                            disabled={!doc.text}
+                            data-testid={`btn-reinterpret-collapsed-${doc.id}`}
+                          >
+                            重新解读
+                          </button>
+                        )}
                       </div>
                     )}
                   </article>
