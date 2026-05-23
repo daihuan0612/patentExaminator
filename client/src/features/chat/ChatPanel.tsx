@@ -8,6 +8,11 @@ import { createSession, createMessage, deleteSession, deleteMessagesBySessionId,
 import type { ChatMessage, ChatSession, ModuleScope } from "@shared/types/domain";
 import type { ChatRequest } from "../../agent/contracts";
 
+const DEBUG = true;
+function log(...args: unknown[]) {
+  if (DEBUG) console.log("[ChatPanel]", ...args);
+}
+
 const MODULE_LABELS: Record<string, string> = {
   baseline: "案件基本信息",
   documents: "文档导入",
@@ -69,60 +74,86 @@ export function ChatPanel() {
 
   // Load sessions + messages from IndexedDB on mount / caseId change
   useEffect(() => {
+    log("useEffect triggered, caseId:", caseId);
     if (!caseId) return;
     let cancelled = false;
     (async () => {
       try {
+        log("Loading sessions from IndexedDB for caseId:", caseId);
         // First, get all sessions
         const storedSessions = await getSessionsByCaseId(caseId);
+        log("Loaded sessions:", storedSessions.length);
         if (cancelled) return;
         loadSessions(storedSessions);
+        log("Called loadSessions");
 
         // Load messages for each session
         const allMessages: typeof messages = [];
         for (const s of storedSessions) {
+          log("Loading messages for session:", s.id);
           const msgs = await getMessagesBySessionId(s.id);
+          log("Loaded messages:", msgs.length, "for session:", s.id);
           allMessages.push(...msgs);
         }
+        log("Total messages loaded:", allMessages.length);
         if (!cancelled) {
           loadMessages(allMessages);
+          log("Called loadMessages");
         }
       } catch (error) {
-        console.error('ChatPanel: Failed to load chat history from IndexedDB', error);
+        console.error('[ChatPanel] Failed to load chat history from IndexedDB', error);
         // Fallback: use in-memory store only if IndexedDB fails
       }
     })();
-    return () => { cancelled = true; };
+    return () => { 
+      log("useEffect cleanup, cancelled:", cancelled);
+      cancelled = true; 
+    };
   }, [caseId]);
 
   // All sessions for current case (not filtered by module — user controls session lifecycle)
-  const caseSessions = useMemo(
-    () => sessions.filter((s) => s.caseId === caseId),
-    [sessions, caseId]
-  );
+  const caseSessions = useMemo(() => {
+    const result = sessions.filter((s) => s.caseId === caseId);
+    log("caseSessions computed:", result.length, "sessions for caseId:", caseId);
+    return result;
+  }, [sessions, caseId]);
 
   // Active session: prefer activeSessionId, fallback to first case session
   const effectiveSessionId = useMemo(() => {
     if (activeSessionId && caseSessions.some((s) => s.id === activeSessionId)) {
+      log("effectiveSessionId using activeSessionId:", activeSessionId);
       return activeSessionId;
     }
-    return caseSessions[0]?.id ?? null;
+    const fallback = caseSessions[0]?.id ?? null;
+    log("effectiveSessionId fallback:", fallback);
+    return fallback;
   }, [activeSessionId, caseSessions]);
 
   // Messages for active session
-  const sessionMessages = useMemo(
-    () => messages.filter((m) => m.sessionId === effectiveSessionId),
-    [messages, effectiveSessionId]
-  );
+  const sessionMessages = useMemo(() => {
+    const result = messages.filter((m) => m.sessionId === effectiveSessionId);
+    log("sessionMessages computed:", result.length, "messages for sessionId:", effectiveSessionId);
+    return result;
+  }, [messages, effectiveSessionId]);
 
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [sessionMessages.length]);
 
-  if (!caseId || !currentCase) return null;
+  if (!caseId) {
+    log("Early return: caseId is null");
+    return null;
+  }
+  if (!currentCase) {
+    log("Early return: currentCase is null - this may cause chat history not to load!");
+    // Note: We still return null, but the useEffect should have already run
+    // to load chat sessions from IndexedDB
+    return null;
+  }
 
   const handleNewSession = async () => {
+    log("handleNewSession called");
     const now = new Date().toISOString();
     const session: ChatSession = {
       id: `chat-${caseId}-${moduleScope}-${Date.now()}`,
@@ -132,18 +163,26 @@ export function ChatPanel() {
       createdAt: now,
       updatedAt: now
     };
+    log("Creating session:", session.id);
     addSession(session);
     setActiveSessionId(session.id);
-    try { await createSession(session); } catch { /* test env */ }
+    try { 
+      await createSession(session); 
+      log("Session saved to IndexedDB:", session.id);
+    } catch (e) { 
+      log("createSession error:", e);
+    }
   };
 
   const handleSend = async () => {
     const text = input.trim();
     if (!text || isLoading) return;
 
+    log("handleSend called, text:", text.substring(0, 50) + "...");
     // Auto-create session if none exists
     let sessionId = effectiveSessionId;
     if (!sessionId) {
+      log("No session, creating new one");
       const now = new Date().toISOString();
       const session: ChatSession = {
         id: `chat-${caseId}-${moduleScope}-${Date.now()}`,
@@ -156,7 +195,12 @@ export function ChatPanel() {
       addSession(session);
       sessionId = session.id;
       setActiveSessionId(session.id);
-      try { await createSession(session); } catch { /* test env */ }
+      try { 
+        await createSession(session); 
+        log("Session saved to IndexedDB:", session.id);
+      } catch (e) { 
+        log("createSession error:", e);
+      }
     }
 
     setInput("");
@@ -171,8 +215,14 @@ export function ChatPanel() {
       content: text,
       createdAt: new Date().toISOString()
     };
+    log("Adding user message:", userMsg.id);
     addMessage(userMsg);
-    try { await createMessage(userMsg); } catch { /* test env */ }
+    try { 
+      await createMessage(userMsg); 
+      log("User message saved to IndexedDB:", userMsg.id);
+    } catch (e) { 
+      log("createMessage error:", e);
+    }
 
     // Call AI
     setLoading(true);
@@ -195,6 +245,7 @@ export function ChatPanel() {
         history
       };
 
+      log("Calling AI...");
       const response = await client.runChat(request);
 
       let replyContent = response.reply;
@@ -211,8 +262,14 @@ export function ChatPanel() {
         content: replyContent,
         createdAt: new Date().toISOString()
       };
+      log("Adding assistant message:", assistantMsg.id);
       addMessage(assistantMsg);
-      try { await createMessage(assistantMsg); } catch { /* test env */ }
+      try { 
+        await createMessage(assistantMsg); 
+        log("Assistant message saved to IndexedDB:", assistantMsg.id);
+      } catch (e) { 
+        log("createMessage error:", e);
+      }
     } catch (err) {
       const errorMsg: ChatMessage = {
         id: `msg-${Date.now()}-error`,
@@ -272,6 +329,7 @@ export function ChatPanel() {
   };
 
   const handleDeleteSession = async (id: string) => {
+    log("handleDeleteSession:", id);
     removeSession(id);
     await deleteSession(id);
     await deleteMessagesBySessionId(id);

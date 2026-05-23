@@ -8,6 +8,11 @@ import {
   deleteMessagesBySessionId
 } from "../../../lib/repositories/chatRepo.js";
 
+const DEBUG = true;
+function log(...args: unknown[]) {
+  if (DEBUG) console.log("[chatSlice]", ...args);
+}
+
 export interface ChatSlice {
   sessions: ChatSession[];
   messages: ChatMessage[];
@@ -41,6 +46,7 @@ export const createChatSlice = (
   isLoading: false,
 
   setSessions: (sessions) => {
+    log("setSessions called with", sessions.length, "sessions");
     for (const session of sessions) {
       createSession(session).catch((e) => console.error("[ChatSlice] createSession error:", e));
     }
@@ -48,13 +54,16 @@ export const createChatSlice = (
   },
   loadSessions: (sessions) => {
     // Load from DB without re-saving to IndexedDB
+    log("loadSessions called with", sessions.length, "sessions");
     set(() => ({ sessions }));
   },
   addSession: (session) => {
+    log("addSession called:", session.id);
     createSession(session).catch((e) => console.error("[ChatSlice] createSession error:", e));
     set((prev) => ({ sessions: [...prev.sessions, session] }));
   },
   removeSession: (id) => {
+    log("removeSession called:", id);
     deleteSession(id).catch((e) => console.error("[ChatSlice] deleteSession error:", e));
     deleteMessagesBySessionId(id).catch((e) => console.error("[ChatSlice] deleteMessagesBySessionId error:", e));
     set((prev) => ({
@@ -76,6 +85,7 @@ export const createChatSlice = (
     }),
 
   setMessages: (messages) => {
+    log("setMessages called with", messages.length, "messages");
     for (const msg of messages) {
       createMessage(msg).catch((e) => console.error("[ChatSlice] createMessage error:", e));
     }
@@ -83,14 +93,19 @@ export const createChatSlice = (
   },
   loadMessages: (messages) => {
     // Load from DB without re-saving to IndexedDB
+    log("loadMessages called with", messages.length, "messages");
     set(() => ({ messages }));
   },
   addMessage: (message) => {
+    log("addMessage called:", message.id);
     createMessage(message).catch((e) => console.error("[ChatSlice] createMessage error:", e));
     set((prev) => ({ messages: [...prev.messages, message] }));
   },
 
-  setActiveSessionId: (id) => set(() => ({ activeSessionId: id })),
+  setActiveSessionId: (id) => {
+    log("setActiveSessionId called:", id);
+    set(() => ({ activeSessionId: id }));
+  },
   setPanelOpen: (open) => set(() => ({ isPanelOpen: open })),
   setLoading: (v) => set(() => ({ isLoading: v }))
 });
