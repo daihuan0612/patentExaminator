@@ -136,6 +136,7 @@ export function InterpretPanel({
   const persistedSummaries = interpretSummaries[caseId] ?? {};
   const [cardStates, setCardStates] = useState<Record<string, DocumentCardState>>({});
   const [expandedDocuments, setExpandedDocuments] = useState<ExpandedStateMap>({});
+  const [isCombinedReinterpreting, setIsCombinedReinterpreting] = useState(false);
   const autoTriggered = useRef<Record<string, boolean>>({});
   const translateTriggered = useRef<Record<string, boolean>>({});
 
@@ -348,6 +349,26 @@ export function InterpretPanel({
                 className="interpret-summary interpret-summary--combined interpret-summary--rendered"
                 dangerouslySetInnerHTML={{ __html: renderMarkdown(summarySections) }}
               />
+              <div className="interpret-main__actions">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsCombinedReinterpreting(true);
+                    try {
+                      // Re-run interpretation for each document
+                      await Promise.all(
+                        documents.map(doc => doInterpret(doc))
+                      );
+                    } finally {
+                      setIsCombinedReinterpreting(false);
+                    }
+                  }}
+                  disabled={isCombinedReinterpreting}
+                  data-testid="btn-reinterpret-combined"
+                >
+                  {isCombinedReinterpreting ? "重新解读中…" : "重新解读"}
+                </button>
+              </div>
             </section>
           )}
 
