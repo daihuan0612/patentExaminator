@@ -15,7 +15,7 @@ const GEMINI_MODEL_FALLBACKS = ["gemini-2.5-flash-lite", "gemini-2.0-flash-lite"
 
 const BACKOFF_DELAYS = [500, 1500, 3000];
 const MAX_RETRIES = 2;
-const MAX_TOTAL_ATTEMPTS = 5;
+const MAX_TOTAL_ATTEMPTS = 8;
 const TIMEOUT_MS = 60_000;
 
 export interface AttemptRecord {

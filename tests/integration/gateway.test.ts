@@ -67,6 +67,52 @@ class FailingAdapter implements ProviderAdapter {
   }
 }
 
+interface CallBehavior {
+  text?: string;
+  errorStatus?: number;
+  isAbortError?: boolean;
+  isNetworkError?: boolean;
+}
+
+class SequenceAdapter implements ProviderAdapter {
+  id: ProviderId = "gemini";
+  defaultBaseUrl = "https://mock.api";
+  private callCount = 0;
+
+  constructor(id: ProviderId, private behaviors: CallBehavior[]) {
+    this.id = id;
+  }
+
+  supportedModels(): string[] { return ["mock"]; }
+
+  async chat(_req: ChatRequest): Promise<ChatResponse> {
+    const behavior = this.behaviors[this.callCount % this.behaviors.length]!;
+    this.callCount++;
+
+    if (behavior.isAbortError) {
+      const error = new Error("The operation was aborted");
+      error.name = "AbortError";
+      throw error;
+    }
+
+    if (behavior.errorStatus) {
+      const error = new Error(`HTTP ${behavior.errorStatus}`);
+      (error as Error & { status: number }).status = behavior.errorStatus;
+      throw error;
+    }
+
+    if (behavior.isNetworkError) {
+      throw new Error("fetch failed: connect ECONNREFUSED");
+    }
+
+    return { text: behavior.text ?? "success", rawResponse: {} };
+  }
+
+  async listModels(): Promise<string[]> { return ["mock"]; }
+
+  getCallCount(): number { return this.callCount; }
+}
+
 describe("ProviderRegistry", () => {
   let registry: ProviderRegistry;
 
@@ -181,8 +227,220 @@ describe("ProviderRegistry", () => {
 
     expect(response.error).toBeDefined();
     expect(response.error!.code).toBe("max-attempts-reached");
-    expect(attempts.length).toBeLessThanOrEqual(5);
+    expect(attempts.length).toBeLessThanOrEqual(8);
   }, 30000);
+
+  // ── Gemini Model Fallback Tests ──
+
+  it("FW-001: Gemini model fallback chain (4 models fail, 5th succeeds)", async () => {
+    const geminiAdapter = new SequenceAdapter("gemini", [
+      { errorStatus: 503 },
+      { errorStatus: 429 },
+      { errorStatus: 500 },
+      { isNetworkError: true },
+      { text: "fallback-success" },
+    ]);
+    registry.register(geminiAdapter);
+
+    const { response, attempts } = await registry.runWithFallback(
+      ["gemini"],
+      { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "test-key" }
+    );
+
+    expect(response.text).toBe("fallback-success");
+    expect(attempts.length).toBe(5);
+    expect(attempts[0]!.ok).toBe(false);
+    expect(attempts[1]!.ok).toBe(false);
+    expect(attempts[2]!.ok).toBe(false);
+    expect(attempts[3]!.ok).toBe(false);
+    expect(attempts[4]!.ok).toBe(true);
+    expect(attempts[0]!.errorCode).toBe("server-error");
+    expect(attempts[1]!.errorCode).toBe("quota-exceeded");
+    expect(attempts[2]!.errorCode).toBe("server-error");
+    expect(attempts[3]!.errorCode).toBe("network-error");
+    // All 5 are gemini (model fallback within same provider)
+    expect(attempts.every((a) => a.providerId === "gemini")).toBe(true);
+  });
+
+  it("FW-002: Gemini model fallback on network error (no HTTP status)", async () => {
+    const geminiAdapter = new SequenceAdapter("gemini", [
+      { isNetworkError: true },
+      { isNetworkError: true },
+      { text: "recovered" },
+    ]);
+    registry.register(geminiAdapter);
+
+    const { response, attempts } = await registry.runWithFallback(
+      ["gemini"],
+      { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "test-key" }
+    );
+
+    expect(response.text).toBe("recovered");
+    expect(attempts.length).toBe(3);
+    expect(attempts[0]!.errorCode).toBe("network-error");
+    expect(attempts[1]!.errorCode).toBe("network-error");
+    expect(attempts[2]!.ok).toBe(true);
+  });
+
+  it("FW-003: Gemini model fallback on 429 quota (switches model, no same-model retry)", async () => {
+    const geminiAdapter = new SequenceAdapter("gemini", [
+      { errorStatus: 429 },
+      { errorStatus: 429 },
+      { text: "quota-recovered" },
+    ]);
+    registry.register(geminiAdapter);
+
+    const { response, attempts } = await registry.runWithFallback(
+      ["gemini"],
+      { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "test-key" }
+    );
+
+    expect(response.text).toBe("quota-recovered");
+    expect(attempts.length).toBe(3);
+    expect(attempts[0]!.errorCode).toBe("quota-exceeded");
+    expect(attempts[1]!.errorCode).toBe("quota-exceeded");
+    expect(attempts[2]!.ok).toBe(true);
+  });
+
+  it("FW-004: Gemini auth error (401) stops entire fallback chain immediately", async () => {
+    const geminiAdapter = new SequenceAdapter("gemini", [
+      { errorStatus: 503 },
+      { errorStatus: 401 },
+      { text: "should-not-reach" },
+    ]);
+    const kimiAdapter = new MockAdapter([{ text: "kimi-success", rawResponse: {} }]);
+    kimiAdapter.id = "kimi";
+    registry.register(geminiAdapter);
+    registry.register(kimiAdapter);
+
+    const { response, attempts } = await registry.runWithFallback(
+      ["gemini", "kimi"],
+      { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "bad-key" }
+    );
+
+    expect(response.error).toBeDefined();
+    expect(response.error!.code).toBe("auth-failed");
+    expect(attempts.length).toBe(2);
+    expect(attempts[0]!.errorCode).toBe("server-error");
+    expect(attempts[1]!.errorCode).toBe("auth-failed");
+    // kimi should NOT have been tried
+    expect(attempts.every((a) => a.providerId === "gemini")).toBe(true);
+  });
+
+  it("FW-005: All Gemini models fail → max-attempts-reached (no provider fallback room)", async () => {
+    const geminiAdapter = new FailingAdapter(503);
+    geminiAdapter.id = "gemini";
+    const bedrockAdapter = new FailingAdapter(503);
+    bedrockAdapter.id = "bedrock";
+    const kimiAdapter = new FailingAdapter(503);
+    kimiAdapter.id = "kimi";
+    const glmAdapter = new FailingAdapter(503);
+    glmAdapter.id = "glm";
+    const deepseekAdapter = new FailingAdapter(503);
+    deepseekAdapter.id = "deepseek";
+    registry.register(geminiAdapter);
+    registry.register(bedrockAdapter);
+    registry.register(kimiAdapter);
+    registry.register(glmAdapter);
+    registry.register(deepseekAdapter);
+
+    const { response, attempts } = await registry.runWithFallback(
+      ["gemini", "bedrock", "kimi", "glm", "deepseek"],
+      { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "test-key" }
+    );
+
+    expect(response.error).toBeDefined();
+    expect(response.error!.code).toBe("max-attempts-reached");
+    // Gemini 5 + Bedrock 1 + Kimi 1 + GLM 1 + DeepSeek 1 = 9, exceeds MAX_TOTAL_ATTEMPTS=8
+    expect(attempts.length).toBe(8);
+    expect(attempts.filter((a) => a.providerId === "gemini").length).toBe(5);
+    expect(attempts.some((a) => a.providerId === "bedrock")).toBe(true);
+  }, 120000);
+
+  it("FW-009: Gemini 5 models fail → Bedrock (qwen) takes over successfully", async () => {
+    const geminiAdapter = new FailingAdapter(503);
+    geminiAdapter.id = "gemini";
+    const bedrockAdapter = new MockAdapter([{ text: "qwen-qwen3-vl-success", rawResponse: {} }]);
+    bedrockAdapter.id = "bedrock";
+    registry.register(geminiAdapter);
+    registry.register(bedrockAdapter);
+
+    const { response, attempts } = await registry.runWithFallback(
+      ["gemini", "bedrock"],
+      { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "test-key" }
+    );
+
+    expect(response.text).toBe("qwen-qwen3-vl-success");
+    expect(attempts.length).toBe(6);
+    expect(attempts.slice(0, 5).every((a) => a.providerId === "gemini" && !a.ok)).toBe(true);
+    expect(attempts[5]!.providerId).toBe("bedrock");
+    expect(attempts[5]!.ok).toBe(true);
+  });
+
+  // ── executeWithRetry Layer Tests (non-Gemini providers) ──
+
+  it("FW-006: executeWithRetry retries on server error (5xx) within same provider", async () => {
+    const adapter = new SequenceAdapter("kimi", [
+      { errorStatus: 500 },
+      { errorStatus: 503 },
+      { text: "retry-success" },
+    ]);
+    registry.register(adapter);
+
+    const { response, attempts } = await registry.runWithFallback(
+      ["kimi"],
+      { modelId: "test", messages: [{ role: "user", content: "test" }], apiKey: "test-key" }
+    );
+
+    expect(response.text).toBe("retry-success");
+    // 1 initial + 2 retries = 3 internal calls, but only 1 attempt record
+    expect(attempts.length).toBe(1);
+    expect(attempts[0]!.ok).toBe(true);
+    expect(adapter.getCallCount()).toBe(3);
+  });
+
+  it("FW-007: executeWithRetry retries on AbortError (timeout) within same provider", async () => {
+    const adapter = new SequenceAdapter("kimi", [
+      { isAbortError: true },
+      { isAbortError: true },
+      { text: "timeout-recovered" },
+    ]);
+    registry.register(adapter);
+
+    const { response, attempts } = await registry.runWithFallback(
+      ["kimi"],
+      { modelId: "test", messages: [{ role: "user", content: "test" }], apiKey: "test-key" }
+    );
+
+    expect(response.text).toBe("timeout-recovered");
+    expect(attempts.length).toBe(1);
+    expect(attempts[0]!.ok).toBe(true);
+    expect(adapter.getCallCount()).toBe(3);
+  });
+
+  it("FW-008: executeWithRetry does NOT retry on 429 (quota), bubbles up for provider fallback", async () => {
+    const kimiAdapter = new SequenceAdapter("kimi", [
+      { errorStatus: 429 },
+    ]);
+    const glmAdapter = new MockAdapter([{ text: "glm-success", rawResponse: {} }]);
+    glmAdapter.id = "glm";
+    registry.register(kimiAdapter);
+    registry.register(glmAdapter);
+
+    const { response, attempts } = await registry.runWithFallback(
+      ["kimi", "glm"],
+      { modelId: "test", messages: [{ role: "user", content: "test" }], apiKey: "test-key" }
+    );
+
+    expect(response.text).toBe("glm-success");
+    expect(attempts.length).toBe(2);
+    expect(attempts[0]!.providerId).toBe("kimi");
+    expect(attempts[0]!.errorCode).toBe("quota-exceeded");
+    // kimi adapter was called only once (no retry on 429)
+    expect(kimiAdapter.getCallCount()).toBe(1);
+    expect(attempts[1]!.providerId).toBe("glm");
+    expect(attempts[1]!.ok).toBe(true);
+  });
 });
 
 describe("sanitize", () => {

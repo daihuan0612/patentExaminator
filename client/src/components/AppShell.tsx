@@ -93,9 +93,13 @@ export function AppShell({ children }: AppShellProps) {
                     className={
                       location.pathname === `/cases/${caseId}/${item.path}` ? "active" : ""
                     }
-                    title={item.label}
                   >
-                      <span className="sidebar-nav__icon">{item.icon}</span>
+                      <span
+                        className="sidebar-nav__icon"
+                        title={sidebarCollapsed ? item.label : undefined}
+                      >
+                        {item.icon}
+                      </span>
                     {!sidebarCollapsed && item.label}
                   </Link>
                 ))}

@@ -230,7 +230,7 @@ async function testAiChat() {
   try {
     const body = {
       agent: "chat",
-      providerPreference: ["gemini"],
+      providerPreference: ["gemini", "bedrock"],
       modelId: GEMINI_MODEL_ID,
       prompt: "请用一句话回答：什么是专利？",
       sanitized: true,
@@ -260,7 +260,7 @@ async function testAiInterpret() {
   try {
     const body = {
       agent: "interpret",
-      providerPreference: ["gemini"],
+      providerPreference: ["gemini", "bedrock"],
       modelId: GEMINI_MODEL_ID,
       prompt:
         "请分析以下专利段落的技术领域：\n[0001] 本发明涉及一种散热装置，特别涉及一种基于相变材料的LED散热模组。",
@@ -291,7 +291,7 @@ async function testAiClaimChart() {
   try {
     const body = {
       agent: "claim-chart",
-      providerPreference: ["gemini"],
+      providerPreference: ["gemini", "bedrock"],
       modelId: GEMINI_MODEL_ID,
       prompt:
         '请将以下权利要求拆解为技术特征：\n权利要求1：一种散热装置，其特征在于，包括：基板；相变材料层，设置于所述基板上；散热翅片，设置于所述相变材料层上。',

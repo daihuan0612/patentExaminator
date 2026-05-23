@@ -586,7 +586,7 @@ function validateInterpretOutput(data) {
 async function runRealAiAgentTest(label, agent, prompt, metadata, onResponse) {
   const body = {
     agent,
-    providerPreference: ["gemini"],
+    providerPreference: ["gemini", "bedrock"],
     modelId: GEMINI_MODEL_ID,
     prompt,
     sanitized: false,
