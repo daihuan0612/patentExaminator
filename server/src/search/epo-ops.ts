@@ -53,7 +53,9 @@ function buildCqlQuery(searchTerms: string): string {
     if (/^[A-H][0-9][0-9][A-Z]/.test(t)) {
       return `ipc any "${t}"`;
     }
-    return `ti any "${t}" OR ab any "${t}" OR desc any "${t}"`;
+    // EPO OPS CQL valid indexes: ti (title), ab (abstract), cl (claims)
+    // Note: 'desc' is NOT a valid index - use 'cl' for claims instead
+    return `ti any "${t}" OR ab any "${t}" OR cl any "${t}"`;
   });
 
   if (conditions.length === 0) {
