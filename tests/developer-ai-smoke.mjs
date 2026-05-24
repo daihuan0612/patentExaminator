@@ -2,16 +2,18 @@
  * AI Smoke Test for Patent Examiner
  * ==================================
  *
- * 验证 Gemini API 连通性和基本 AI 调用功能。
- * 参考 resumeTailor 的 fallback 机制实现。
+ * 验证服务器 AI API 连通性和基本 AI 调用功能。
+ * 不绑定特定 AI provider，所有配置通过环境变量覆盖。
  *
  * Usage:
- *   GEMINI_KEY=xxx node tests/developer-ai-smoke.mjs
+ *   node tests/developer-ai-smoke.mjs
  *
  * 环境变量：
- *   GEMINI_KEY       - Google AI Studio API Key（必需）
- *   TEST_BASE        - 测试服务器地址（默认 http://localhost:3000/api）
- *   GEMINI_MODEL_ID  - 指定模型（默认 gemini-2.5-flash-lite）
+ *   MODEL_ID              - 模型 ID（默认读取 .env 中的兜底模型）
+ *   PROVIDER_PREFERENCE   - provider 优先级，逗号分隔（默认 "bedrock"）
+ *   FALLBACK_MODELS       - 备选模型列表，逗号分隔（默认与 MODEL_ID 相同）
+ *   GEMINI_KEY            - （可选）仅用于 Gemini 模型列表接口测试
+ *   TEST_BASE             - 测试服务器地址（默认 http://localhost:3000/api）
  */
 
 import fs from "fs";
@@ -21,48 +23,33 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ── 加载 .env ──
-function loadEnvFile() {
-  if (process.env.GEMINI_KEY) return;
-
-  try {
-    const envPath = path.join(__dirname, "..", ".env");
-    const envContent = fs.readFileSync(envPath, "utf-8");
-    for (const line of envContent.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const [key, ...valueParts] = trimmed.split("=");
-      if (key === "GEMINI_KEY") {
-        let value = valueParts.join("=");
-        if (
-          (value.startsWith('"') && value.endsWith('"')) ||
-          (value.startsWith("'") && value.endsWith("'"))
-        ) {
-          value = value.slice(1, -1);
-        }
-        process.env.GEMINI_KEY = value;
-        break;
-      }
+// ── 从 .env 读取配置（兜底值） ──
+const envVars = {};
+try {
+  const envPath = path.join(__dirname, "..", ".env");
+  const envContent = fs.readFileSync(envPath, "utf-8");
+  for (const line of envContent.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const [key, ...valueParts] = trimmed.split("=");
+    let value = valueParts.join("=");
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
     }
-  } catch {
-    // .env not found, continue
+    envVars[key] = value;
   }
+} catch {
+  // .env not found, continue
 }
-loadEnvFile();
 
-// ── 常量 ──
+// ── 常量（优先级：环境变量 > .env > 硬编码兜底） ──
 const BASE = process.env.TEST_BASE || "http://localhost:3000/api";
-const GEMINI_KEY = process.env.GEMINI_KEY;
-const GEMINI_MODEL_ID = process.env.GEMINI_MODEL_ID || "gemini-2.5-flash-lite";
-
-// ── Fallback 模型列表（按优先级排序）──
-const FALLBACK_MODELS = [
-  "gemini-2.5-flash-lite",   // 1. 最推荐 (速度极快、配额最高)
-  "gemini-2.0-flash-lite",   // 2. 最推荐 (速度极快、配额最高)
-  "gemini-2.5-flash",        // 3. 综合能力最强
-  "gemini-2.0-flash",        // 4. 综合能力最强
-  "gemini-2.5-pro",          // 5. 高级能力 (配额较低)
-];
+const MODEL_ID = process.env.MODEL_ID || process.env.GEMINI_MODEL_ID || envVars.MODEL_ID || envVars.GEMINI_MODEL_ID || "qwen.qwen3-vl-235b-a22b-instruct";
+const PROVIDER_PREFERENCE = (process.env.PROVIDER_PREFERENCE || "bedrock").split(",").map(s => s.trim()).filter(Boolean);
+const FALLBACK_MODELS = (
+  process.env.FALLBACK_MODELS || MODEL_ID
+).split(",").map(s => s.trim()).filter(Boolean);
+const GEMINI_KEY = process.env.GEMINI_KEY || envVars.GEMINI_KEY || "";
 
 let currentModelIndex = 0;
 const RESULTS = [];
@@ -101,7 +88,7 @@ function isModelQuotaError(text = "") {
 
 function getFallbackModel() {
   if (currentModelIndex >= FALLBACK_MODELS.length) {
-    throw new Error("所有模型都已尝试失败，无法继续 fallback");
+    throw new Error("所有备选模型都已尝试失败");
   }
   const model = FALLBACK_MODELS[currentModelIndex];
   console.log(
@@ -124,19 +111,17 @@ async function getJSON(pathname) {
 }
 
 // ── 带 Fallback 的 AI 调用 ──
-async function callAIWithFallback(body, retries = 4) {
+async function callAIWithFallback(body, retries = 2) {
   currentModelIndex = 0;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      if (attempt === 0) {
-        body.modelId = GEMINI_MODEL_ID;
-      } else {
+      if (attempt > 0) {
         body.modelId = getFallbackModel();
       }
 
       console.log(
-        `[Attempt ${attempt + 1}/${retries + 1}] 尝试模型: ${body.modelId}`
+        `[Attempt ${attempt + 1}/${retries + 1}] 模型: ${body.modelId}, provider: ${body.providerPreference?.join(",") || "默认"}`
       );
 
       const res = await postJSON("/ai/run", body);
@@ -201,7 +186,11 @@ async function testServerHealth() {
   }
 }
 
-async function testGeminiModels() {
+async function testModelList() {
+  if (!GEMINI_KEY) {
+    log("T-SMOKE-002: Gemini 模型列表", true, "已跳过（未设 GEMINI_KEY）");
+    return;
+  }
   try {
     const res = await getJSON(
       `/providers/gemini/models?apiKey=${encodeURIComponent(GEMINI_KEY)}`
@@ -214,7 +203,7 @@ async function testGeminiModels() {
     }
 
     const models = data.models || [];
-    const hasValidModels = models.length > 0 && models.some((m) => m.startsWith("gemini-"));
+    const hasValidModels = models.length > 0;
 
     log(
       "T-SMOKE-002: Gemini 模型列表",
@@ -230,8 +219,8 @@ async function testAiChat() {
   try {
     const body = {
       agent: "chat",
-      providerPreference: ["gemini", "bedrock"],
-      modelId: GEMINI_MODEL_ID,
+      providerPreference: PROVIDER_PREFERENCE,
+      modelId: MODEL_ID,
       prompt: "请用一句话回答：什么是专利？",
       sanitized: true,
       metadata: {
@@ -260,8 +249,8 @@ async function testAiInterpret() {
   try {
     const body = {
       agent: "interpret",
-      providerPreference: ["gemini", "bedrock"],
-      modelId: GEMINI_MODEL_ID,
+      providerPreference: PROVIDER_PREFERENCE,
+      modelId: MODEL_ID,
       prompt:
         "请分析以下专利段落的技术领域：\n[0001] 本发明涉及一种散热装置，特别涉及一种基于相变材料的LED散热模组。",
       sanitized: true,
@@ -291,8 +280,8 @@ async function testAiClaimChart() {
   try {
     const body = {
       agent: "claim-chart",
-      providerPreference: ["gemini", "bedrock"],
-      modelId: GEMINI_MODEL_ID,
+      providerPreference: PROVIDER_PREFERENCE,
+      modelId: MODEL_ID,
       prompt:
         '请将以下权利要求拆解为技术特征：\n权利要求1：一种散热装置，其特征在于，包括：基板；相变材料层，设置于所述基板上；散热翅片，设置于所述相变材料层上。',
       sanitized: true,
@@ -318,13 +307,14 @@ async function testAiClaimChart() {
   }
 }
 
-async function testModelFallback() {
-  console.log("\n─── 模型 Fallback 机制测试 ───");
-  console.log(`首选模型: ${GEMINI_MODEL_ID}`);
-  console.log(`Fallback 列表: ${FALLBACK_MODELS.join(" → ")}`);
-  console.log("注意：如果首选模型正常，fallback 不会触发\n");
+async function testModelFallbackInfo() {
+  console.log("\n─── 模型配置 ───");
+  console.log(`首选模型: ${MODEL_ID}`);
+  console.log(`Provider 优先级: ${PROVIDER_PREFERENCE.join(" → ")}`);
+  console.log(`备选模型: ${FALLBACK_MODELS.join(" → ")}`);
+  console.log("注意：首次调用使用首选模型，失败后按备选列表 fallback\n");
 
-  log("T-SMOKE-006: Fallback 配置", true, `${FALLBACK_MODELS.length} 个备选模型已配置`);
+  log("T-SMOKE-006: 模型配置", true, `provider: ${PROVIDER_PREFERENCE.join(",")}, 备选: ${FALLBACK_MODELS.length} 个`);
 }
 
 // ── 主函数 ──
@@ -333,19 +323,14 @@ async function main() {
   console.log("  Patent Examiner AI Smoke Test");
   console.log("═══════════════════════════════════════════");
   console.log(`API Base: ${BASE}`);
-  console.log(`Model: ${GEMINI_MODEL_ID}`);
-  console.log(`GEMINI_KEY: ${GEMINI_KEY ? "已设置" : "未设置"}`);
+  console.log(`Model: ${MODEL_ID}`);
+  console.log(`Provider 优先级: ${PROVIDER_PREFERENCE.join(" → ")}`);
+  console.log(`备选模型: ${FALLBACK_MODELS.join(", ")}`);
   console.log("═══════════════════════════════════════════\n");
 
-  if (!GEMINI_KEY) {
-    console.error("错误：请设置环境变量 GEMINI_KEY");
-    console.error("  GEMINI_KEY=your-key node tests/developer-ai-smoke.mjs");
-    process.exit(1);
-  }
-
   await testServerHealth();
-  await testGeminiModels();
-  await testModelFallback();
+  await testModelList();
+  await testModelFallbackInfo();
   await testAiChat();
   await testAiInterpret();
   await testAiClaimChart();

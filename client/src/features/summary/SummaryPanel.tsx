@@ -1,7 +1,13 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { SummaryResponse } from "../../agent/contracts";
 import { useDraftStore } from "../../store";
 import { InlineEdit } from "../../components/InlineEdit";
+
+function renderParagraphs(text: string): ReactNode {
+  return text.split('\n\n').filter(Boolean).map((p, i) => (
+    <p key={i}>{p}</p>
+  ));
+}
 
 interface SummaryPanelProps {
   caseId: string;
@@ -72,7 +78,7 @@ export function SummaryPanel({ caseId, runSummary }: SummaryPanelProps) {
                 setSummary(caseId, { ...summary, body: v });
               }}
             >
-              <div className="summary-body-text">{summary.body}</div>
+              <div className="summary-body-text">{renderParagraphs(summary.body)}</div>
             </InlineEdit>
           </section>
 
@@ -103,7 +109,7 @@ export function SummaryPanel({ caseId, runSummary }: SummaryPanelProps) {
                   setSummary(caseId, { ...summary, aiNotes: v });
                 }}
               >
-                <div className="summary-ai-notes-text">{summary.aiNotes || "（空）"}</div>
+                <div className="summary-ai-notes-text">{summary.aiNotes ? renderParagraphs(summary.aiNotes) : "（空）"}</div>
               </InlineEdit>
             ) : (
               <p className="placeholder-hint">AI 未生成备注内容。</p>
