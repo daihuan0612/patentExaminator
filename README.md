@@ -66,13 +66,17 @@ npm run dev
 
 - 通过 AI Gateway 调用真实大模型 API
 - 需在「设置」页面配置至少一个 Provider 的 API Key
-- 支持 6 个 Provider：
+- 支持多个 Provider：
   - **Gemini**（Google AI Studio）
   - **Kimi**（Moonshot / 月之暗面）
   - **GLM**（智谱）
   - **MiniMax**
   - **MiMo**（小米 Token Plan）
   - **DeepSeek**
+  - **Qwen**（阿里通义千问）
+  - **AWS Bedrock**
+  - **OpenRouter**
+  - **OpenCode Zen**（OpenCode 官方精选模型网关）
 - 支持自动 fallback：429 时切换 Provider，5xx 时指数退避重试（最多 2 次）
 
 切换方式：点击顶部模式横幅 → 确认切换 → 系统检查 API Key 是否已配置。

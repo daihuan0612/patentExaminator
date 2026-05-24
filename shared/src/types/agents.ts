@@ -1,6 +1,6 @@
 import type { AppMode } from "./domain.js";
 
-export type ProviderId = "kimi" | "glm" | "minimax" | "mimo" | "deepseek" | "gemini" | "qwen" | "bedrock" | "openrouter";
+export type ProviderId = "kimi" | "glm" | "minimax" | "mimo" | "deepseek" | "gemini" | "qwen" | "bedrock" | "openrouter" | "opencode";
 
 export interface ModelInfo {
   id: string;
@@ -80,7 +80,8 @@ export const PRESET_MODEL_PROVIDERS: PresetModelProvider[] = [
   { id: "deepseek", displayName: "DeepSeek", desc: "深度求索", baseUrl: "https://api.deepseek.com", keyPlaceholder: "sk-..." },
   { id: "qwen", displayName: "Qwen", desc: "阿里通义千问 (DashScope)", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", keyPlaceholder: "sk-..." },
   { id: "bedrock", displayName: "AWS Bedrock", desc: "AWS Bedrock OpenAI-Compatible API", baseUrl: "https://bedrock-mantle.us-east-1.api.aws/v1", keyPlaceholder: "bedrock-api-key" },
-  { id: "openrouter", displayName: "OpenRouter", desc: "统一 API 聚合数百模型", baseUrl: "https://openrouter.ai/api/v1", keyPlaceholder: "sk-or-v1-..." }
+  { id: "openrouter", displayName: "OpenRouter", desc: "统一 API 聚合数百模型", baseUrl: "https://openrouter.ai/api/v1", keyPlaceholder: "sk-or-v1-..." },
+  { id: "opencode", displayName: "OpenCode Zen", desc: "OpenCode 官方精选模型网关", baseUrl: "https://opencode.ai/zen/v1", keyPlaceholder: "opencode-zen-key" }
 ];
 
 export const PRESET_SEARCH_PROVIDERS: PresetSearchProvider[] = [

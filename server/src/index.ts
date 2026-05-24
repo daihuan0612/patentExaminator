@@ -29,6 +29,10 @@ if (process.env.Openrouter_KEY) {
   setApiKey("openrouter", process.env.Openrouter_KEY);
   console.log("Loaded Openrouter_KEY from environment");
 }
+if (process.env.OPENCODE_KEY) {
+  setApiKey("opencode", process.env.OPENCODE_KEY);
+  console.log("Loaded OPENCODE_KEY from environment");
+}
 
 app.use(express.json());
 
@@ -51,12 +55,11 @@ const server = app.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);
 });
 
-process.on("SIGINT", () => {
-  server.close();
-  process.exit(0);
-});
+function shutdown() {
+  server.closeAllConnections?.();
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 3000).unref();
+}
 
-process.on("SIGTERM", () => {
-  server.close();
-  process.exit(0);
-});
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

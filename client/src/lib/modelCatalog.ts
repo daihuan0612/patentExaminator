@@ -56,6 +56,16 @@ export const DEFAULT_MODELS: Record<ProviderId, ModelInfo[]> = {
     { id: "deepseek/deepseek-r1", recommendation: "DeepSeek R1 (推理)", inputTokenLimit: 128000, outputTokenLimit: 8192 },
     { id: "meta-llama/llama-4-maverick", recommendation: "Llama 4 Maverick", inputTokenLimit: 128000, outputTokenLimit: 8192 },
     { id: "qwen/qwen3-235b-a22b", recommendation: "Qwen3 旗舰 MoE", inputTokenLimit: 131072, outputTokenLimit: 8192 },
+  ],
+  opencode: [
+    { id: "deepseek-v4-flash-free", recommendation: "DeepSeek V4 Flash Free (免费)", inputTokenLimit: 128000, outputTokenLimit: 8192 },
+    { id: "kimi-k2.5", recommendation: "Kimi K2.5 (推荐)", inputTokenLimit: 131072, outputTokenLimit: 8192 },
+    { id: "kimi-k2.6", recommendation: "Kimi K2.6 (最新)", inputTokenLimit: 131072, outputTokenLimit: 8192 },
+    { id: "glm-5", recommendation: "GLM 5", inputTokenLimit: 131072, outputTokenLimit: 8192 },
+    { id: "glm-5.1", recommendation: "GLM 5.1 (最新)", inputTokenLimit: 131072, outputTokenLimit: 8192 },
+    { id: "minimax-m2.5", recommendation: "MiniMax M2.5", inputTokenLimit: 131072, outputTokenLimit: 8192 },
+    { id: "minimax-m2.7", recommendation: "MiniMax M2.7 (最新)", inputTokenLimit: 131072, outputTokenLimit: 8192 },
+    { id: "nemotron-3-super-free", recommendation: "Nemotron 3 Super Free (免费)", inputTokenLimit: 128000, outputTokenLimit: 8192 },
   ]
 };
 

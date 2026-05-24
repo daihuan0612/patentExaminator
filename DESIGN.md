@@ -1,6 +1,6 @@
 # 专利复审 AI 助手 v0.1.0 详细设计文档
 
-<p align="right">版本 v0.1.0-r24 · 2026-05-24</p>
+<p align="right">版本 v0.1.0-r25 · 2026-05-24</p>
 
 > 本文档面向后续维护者与开发者，描述 v0.1.0 的架构设计、关键决策、领域模型与实现约束。与 `PRD.md`（做什么）和 `DEVELOPMENT_PLAN.md`（怎么做）互为补充；如有冲突，以 PRD 为准。
 
@@ -8,6 +8,7 @@
 
 | 版本 | 日期 | 变更摘要 |
 |------|------|---------|
+| v0.1.0-r25 | 2026-05-24 | nf-1: 新增 OpenCode Zen Provider — ProviderId 添加 "opencode"、PRESET_MODEL_PROVIDERS 添加 OpenCode Zen 条目、DEFAULT_MODELS 添加 opencode 模型列表、新增 OpencodeAdapter (OpenAI兼容)、registry 注册、OPENCODE_KEY 环境变量加载 | agents.ts, modelCatalog.ts, AgentsAssignmentPanel.tsx, opencode.ts, registry.ts, index.ts, .env.example |
 | v0.1.0-r24 | 2026-05-24 | bg-11 举一反三: 3 模块空结果不持久化 — 新增 runMarkers IDB 存储 + 3 个 slice 的 ranCases 状态，修复 DefectPanel/ClaimChartTable/ArgumentMappingPanel 在 AI 返回空结果时刷新后显示"未运行"的问题 | defectsSlice.ts, claimsSlice.ts, opinionSlice.ts, DefectPanel.tsx, ClaimChartActions.tsx, ClaimChartTable.tsx, router.tsx, caseLoader.ts, runMarkerRepo.ts, indexedDb.ts |
 | v0.1.0-r23 | 2026-05-24 | bg-11: 缺陷复查持久化 — systemic fix: AppShell 自动恢复 case 数据（覆盖所有模块） | AppShell.tsx |
 | v0.1.0-r22 | 2026-05-24 | bg-10: 审查意见简述正文格式优化 — 新增 26 条 CSS 规则为摘要面板提供卡片化布局、正文排版（行高 1.8、段落间距、列表缩进）、帮助区样式、法律声明样式 | app.css |

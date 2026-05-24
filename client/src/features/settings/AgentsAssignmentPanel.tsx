@@ -25,7 +25,8 @@ const PROVIDER_NAMES: Record<ProviderId, string> = {
   deepseek: "DeepSeek",
   qwen: "Qwen",
   bedrock: "Bedrock",
-  openrouter: "OpenRouter"
+  openrouter: "OpenRouter",
+  opencode: "OpenCode"
 };
 
 export function AgentsAssignmentPanel() {
