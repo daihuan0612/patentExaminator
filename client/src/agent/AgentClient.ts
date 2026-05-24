@@ -1070,6 +1070,7 @@ function buildArgumentAnalysisPrompt(request: ArgumentAnalysisRequest): string {
 
 function buildReexamDraftPrompt(request: ReexamDraftRequest): string {
   return [
+    `你是一位资深专利审查员，负责起草复审意见草稿。`,
     `案件 ID: ${request.caseId}`,
     `权利要求号: ${request.claimNumber}`,
     ``,
@@ -1082,12 +1083,40 @@ function buildReexamDraftPrompt(request: ReexamDraftRequest): string {
     ),
     ...(request.noveltyResults ? [``, `新颖性复核:`, request.noveltyResults.slice(0, 4000)] : []),
     ...(request.inventiveResults ? [``, `创造性复核:`, request.inventiveResults.slice(0, 4000)] : []),
-    ...(request.defectResults ? [``, `缺陷复查:`, request.defectResults.slice(0, 2000)] : [])
+    ...(request.defectResults ? [``, `缺陷复查:`, request.defectResults.slice(0, 2000)] : []),
+    ``,
+    `请根据以上内容起草复审意见草稿，严格按以下 JSON 格式输出，不要输出其他内容：`,
+    `{`,
+    `  "claimNumber": 权利要求号,`,
+    `  "responseItems": [`,
+    `    {`,
+    `      "rejectionGroundCode": "驳回理由代码",`,
+    `      "category": "驳回理由类别",`,
+    `      "applicantArgumentSummary": "申请人答辩要点摘要",`,
+    `      "examinerResponse": "审查员回应（复审意见正文）",`,
+    `      "conclusion": "argument-accepted|argument-partially-accepted|argument-rejected|needs-further-review",`,
+    `      "supportingEvidence": [`,
+    `        { "label": "证据标签", "quote": "引文片段（可选）", "confidence": "high|medium|low" }`,
+    `      ]`,
+    `    }`,
+    `  ],`,
+    `  "overallAssessment": "综合评估",`,
+    `  "defectReviewSummary": "缺陷复查总结（可选）",`,
+    `  "legalCaution": "法律风险提示"`,
+    `}`,
+    ``,
+    `注意：`,
+    `- conclusion 只能是 argument-accepted、argument-partially-accepted、argument-rejected 或 needs-further-review`,
+    `- supportingEvidence 为可选字段，无证据时不包含`,
+    `- confidence 为 high 或 medium 时，quote 必须有至少 20 个字符的引文`,
+    `- defectReviewSummary 为可选字段`,
+    `- 务必使用双引号，字段名必须与示例完全一致`
   ].join("\n");
 }
 
 function buildSummaryPrompt(request: SummaryRequest): string {
   return [
+    `你是一位资深专利审查员，负责撰写专利申请技术简述。`,
     `案件基线: ${request.caseBaseline}`,
     ``,
     `Claim Chart（已确认特征）:`,
@@ -1098,6 +1127,17 @@ function buildSummaryPrompt(request: SummaryRequest): string {
     ``,
     `创造性分析:`,
     request.inventiveAnalysis.slice(0, 4000),
+    ``,
+    `请根据以上内容撰写技术简述，严格按以下 JSON 格式输出，不要输出其他内容：`,
+    `{`,
+    `  "body": "技术简述正文（用通俗易懂的语言描述申请的技术方案、发明要解决的问题、关键技术手段）",`,
+    `  "aiNotes": "AI 备注（包括不确定性说明、需要人工确认的事项等）",`,
+    `  "legalCaution": "法律风险提示"`,
+    `}`,
+    ``,
+    `注意：`,
+    `- body 字段必须包含有效的简述正文`,
+    `- 务必使用双引号，字段名必须与示例完全一致`
   ].join("\n");
 }
 

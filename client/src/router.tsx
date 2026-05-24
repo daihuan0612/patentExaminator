@@ -555,7 +555,6 @@ export function DefectWrapper() {
   const { claimNodes, claimFeatures } = useClaimsStore();
   const { documents } = useDocumentsStore();
   const { settings } = useSettingsStore();
-  const { defects } = useDefectsStore();
 
   const appDoc = documents.find((d) => d.caseId === caseId && d.role === "application");
   const specificationText = appDoc?.extractedText ?? "";
@@ -564,8 +563,6 @@ export function DefectWrapper() {
   const features = claimFeatures
     .filter((f) => f.caseId === caseId)
     .map((f) => ({ featureCode: f.featureCode, description: f.description }));
-  const existingDefects = defects.filter((d) => d.caseId === caseId);
-
   return (
     <DefectPanel
       key={`defect-${caseId}`}
