@@ -696,6 +696,15 @@ function buildNoveltyPrompt(request: NoveltyRequest): string {
 
 function buildInventivePrompt(request: InventiveRequest): string {
   const parts = [
+    `你是一名专利复审辅助系统，负责在复审阶段进行创造性三步法分析。`,
+    ``,
+    `## 复审上下文`,
+    `本次分析基于以下复审背景：`,
+    `- 审查意见通知书中的驳回理由`,
+    `- 申请人的答辩理由（如提供）`,
+    `- 申请人修改后的权利要求（如提供）`,
+    ``,
+    `## 输入数据`,
     `案件 ID: ${request.caseId}`,
     `权利要求号: ${request.claimNumber}`,
     `技术特征:`,
@@ -712,6 +721,38 @@ function buildInventivePrompt(request: InventiveRequest): string {
   if (request.amendedClaimText) {
     parts.push(``, `修改后权利要求:`, request.amendedClaimText.slice(0, 4000));
   }
+  parts.push(
+    ``,
+    `## 输出要求`,
+    `严格按以下 JSON 格式输出，不要输出其他任何内容：`,
+    ``,
+    `{`,
+    `  "claimNumber": ${request.claimNumber},`,
+    `  "closestPriorArtId": "最接近现有技术的 referenceId（必须填写，从可用对比文件中选择一个）",`,
+    `  "sharedFeatureCodes": ["共有特征的 featureCode 数组"],`,
+    `  "distinguishingFeatureCodes": ["区别特征的 featureCode 数组"],`,
+    `  "objectiveTechnicalProblem": "客观技术问题描述",`,
+    `  "motivationEvidence": [`,
+    `    {`,
+    `      "referenceId": "对比文件ID",`,
+    `      "label": "引用标签",`,
+    `      "quote": "引用原文",`,
+    `      "confidence": "high|medium|low"`,
+    `    }`,
+    `  ],`,
+    `  "candidateAssessment": "possibly-inventive|possibly-lacks-inventiveness|insufficient-evidence",`,
+    `  "cautions": ["注意事项数组"],`,
+    `  "examinerResponse": "审查员回应草稿（可包含换行）",`,
+    `  "legalCaution": "法律风险提示"`,
+    `}`,
+    ``,
+    `注意事项：`,
+    `- closestPriorArtId 必须填写，如果用户未指定则从可用对比文件中选择最相关的一个`,
+    `- sharedFeatureCodes 和 distinguishingFeatureCodes 并集必须等于输入的所有 features`,
+    `- candidateAssessment 只能是 possibly-inventive、possibly-lacks-inventiveness 或 insufficient-evidence`,
+    `- motivationEvidence 中的 confidence 只能是 high、medium 或 low`,
+    `- 务必使用双引号，字段名必须与示例完全一致`
+  );
   return parts.join("\n");
 }
 
@@ -810,11 +851,12 @@ function mockInventive(request: InventiveRequest): InventiveResponse {
     "（本分析为 AI 辅助候选，不构成正式审查结论。）"
   ].join("\n");
 
-  const closestPriorArtId = request.closestPriorArtId ?? request.availableReferences[0]?.referenceId;
+  // Always provide closestPriorArtId, even if empty string when no references available
+  const closestPriorArtId = request.closestPriorArtId ?? request.availableReferences[0]?.referenceId ?? "";
 
   return {
     claimNumber: request.claimNumber,
-    ...(closestPriorArtId ? { closestPriorArtId } : {}),
+    closestPriorArtId,
     sharedFeatureCodes: sharedCodes,
     distinguishingFeatureCodes: diffCodes,
     objectiveTechnicalProblem: `如何通过${diffCodes.join("、")}等技术特征的组合，解决现有技术中存在的效率低、成本高等问题`,
