@@ -568,7 +568,7 @@ export function DefectWrapper() {
 
   return (
     <DefectPanel
-      key={`defect-${caseId}-${existingDefects.length}`}
+      key={`defect-${caseId}`}
       caseId={caseId ?? ""}
       claimText={claimText}
       specificationText={specificationText}
