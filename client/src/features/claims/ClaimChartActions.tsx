@@ -13,7 +13,7 @@ export function ClaimChartActions({ claimNodes, specificationText }: ClaimChartA
   const { caseId } = useParams<{ caseId: string }>();
   const { settings } = useSettingsStore();
   const { currentCase } = useCaseStore();
-  const { addClaimFeature } = useClaimsStore();
+  const { addClaimFeature, addRanCase } = useClaimsStore();
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState("");
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
@@ -59,6 +59,10 @@ export function ClaimChartActions({ claimNodes, specificationText }: ClaimChartA
 
       if (!isMountedRef.current || controller.signal.aborted) return;
 
+      if (!response.features || !Array.isArray(response.features)) {
+        throw new Error("AI 未返回有效的权利要求特征数据，请确认 AI Provider 配置正确或切换为 Mock 模式重试。");
+      }
+
       const { claimFeatures } = useClaimsStore.getState();
       const oldIds = claimFeatures
         .filter((f) => f.caseId === caseId && f.claimNumber === targetClaim.claimNumber)
@@ -68,13 +72,11 @@ export function ClaimChartActions({ claimNodes, specificationText }: ClaimChartA
         removeClaimFeature(id);
       }
 
-      if (!response.features || !Array.isArray(response.features)) {
-        throw new Error("AI 未返回有效的权利要求特征数据，请确认 AI Provider 配置正确或切换为 Mock 模式重试。");
-      }
-
       for (const feature of response.features) {
         addClaimFeature(feature);
       }
+
+      addRanCase(caseId);
     } catch (err) {
       if (controller.signal.aborted) return;
       if (!isMountedRef.current) return;

@@ -10,6 +10,7 @@ import { getSessionsByCaseId, getMessagesBySessionId } from "./repositories/chat
 import { readInterpretSummaries } from "./repositories/interpretRepo";
 import { readOpinionAnalysis, readArgumentMappings } from "./repositories/opinionRepo";
 import { readReexamDraft, readSummary } from "./repositories/draftRepo";
+import { getRunMarkersByCaseId } from "./repositories/runMarkerRepo";
 
 const DEBUG = true;
 function log(...args: unknown[]) {
@@ -46,7 +47,7 @@ export async function loadCaseById(caseId: string) {
 
   // Load all domain data in parallel
   log("Loading all domain data in parallel...");
-  const [docs, refs, nodes, features, novelty, inventive, defects, sessions, interpretSummaries, opinionAnalysis, argumentMappings, reexamDraft, summary] = await Promise.all([
+  const [docs, refs, nodes, features, novelty, inventive, defects, sessions, interpretSummaries, opinionAnalysis, argumentMappings, reexamDraft, summary, runMarkers] = await Promise.all([
     readDocumentsByCaseId(caseId),
     readReferencesByCaseId(caseId),
     readClaimNodesByCaseId(caseId),
@@ -59,7 +60,8 @@ export async function loadCaseById(caseId: string) {
     readOpinionAnalysis(caseId),
     readArgumentMappings(caseId),
     readReexamDraft(caseId),
-    readSummary(caseId)
+    readSummary(caseId),
+    getRunMarkersByCaseId(caseId)
   ]);
 
   log("Loaded data counts:", {
@@ -75,7 +77,8 @@ export async function loadCaseById(caseId: string) {
     opinionAnalysis: !!opinionAnalysis,
     argumentMappings: argumentMappings.length,
     reexamDraft: !!reexamDraft,
-    summary: !!summary
+    summary: !!summary,
+    runMarkers
   });
 
   // Load chat messages for all sessions
@@ -131,6 +134,23 @@ export async function loadCaseById(caseId: string) {
   }
   if (summary) {
     useDraftStore.getState().loadSummary(caseId, summary);
+  }
+
+  // Distribute run markers to each module's slice
+  if (runMarkers.length > 0) {
+    const moduleMap: Record<string, string[]> = {};
+    for (const m of runMarkers) {
+      (moduleMap[m] ??= []).push(caseId);
+    }
+    if (moduleMap.defects) {
+      useDefectsStore.getState().setRanCases(moduleMap.defects);
+    }
+    if (moduleMap.claimChart) {
+      useClaimsStore.getState().setRanCases(moduleMap.claimChart);
+    }
+    if (moduleMap.argumentMapping) {
+      useOpinionStore.getState().setArgumentRanCases(moduleMap.argumentMapping);
+    }
   }
 
   log("loadCaseById completed successfully for caseId:", caseId);

@@ -32,11 +32,10 @@ export function DefectPanel({
   claimFeatures,
   runDefectCheck
 }: DefectPanelProps) {
-  const { defects, addDefect, updateDefect, removeDefect, isLoading, setLoading } =
+  const { defects, addDefect, updateDefect, removeDefect, isLoading, setLoading, ranCases, addRanCase } =
     useDefectsStore();
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasRun, setHasRun] = useState(false);
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const isMountedRef = useRef(true);
 
@@ -134,7 +133,7 @@ export function DefectPanel({
         aiResponseCount: response.defects.length
       });
 
-      setHasRun(true);
+      addRanCase(caseId);
 
       // 清除所有旧缺陷
       const oldIds = caseDefects.map((d) => d.id);
@@ -331,7 +330,7 @@ export function DefectPanel({
             </div>
           ))}
         </div>
-      ) : hasRun ? (
+      ) : ranCases.includes(caseId) ? (
         <div className="defect-empty" data-testid="defect-empty">
           <p>未发现形式缺陷。</p>
           <p className="defect-empty-hint">AI 已对权利要求和说明书完成形式缺陷检测，未发现问题。</p>

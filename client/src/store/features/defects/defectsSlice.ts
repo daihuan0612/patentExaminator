@@ -6,10 +6,12 @@ import {
   deleteDefect,
   deleteDefectsByCaseId
 } from "../../../lib/repositories/defectRepo.js";
+import { saveRunMarker } from "../../../lib/repositories/runMarkerRepo.js";
 
 export interface DefectsSlice {
   defects: FormalDefect[];
   isLoading: boolean;
+  ranCases: string[];
 
   setDefects: (defects: FormalDefect[]) => void;
   loadDefects: (defects: FormalDefect[]) => void; // Load from DB without re-saving
@@ -18,6 +20,8 @@ export interface DefectsSlice {
   removeDefect: (id: string) => void;
   clearDefectsByCase: (caseId: string) => void;
   setLoading: (v: boolean) => void;
+  setRanCases: (caseIds: string[]) => void;
+  addRanCase: (caseId: string) => void;
 }
 
 export const createDefectsSlice = (
@@ -26,16 +30,15 @@ export const createDefectsSlice = (
 ): DefectsSlice => ({
   defects: [],
   isLoading: false,
+  ranCases: [],
 
   setDefects: (defects) => {
-    // Persist each defect to IndexedDB
     for (const defect of defects) {
       createDefect(defect).catch((e) => console.error("[DefectsSlice] createDefect error:", e));
     }
     set(() => ({ defects }));
   },
   loadDefects: (defects) => {
-    // Load from DB without re-saving to IndexedDB
     set(() => ({ defects }));
   },
   addDefect: (defect) => {
@@ -56,7 +59,14 @@ export const createDefectsSlice = (
     deleteDefectsByCaseId(caseId).catch((e) => console.error("[DefectsSlice] deleteDefectsByCaseId error:", e));
     set((prev) => ({ defects: prev.defects.filter((d) => d.caseId !== caseId) }));
   },
-  setLoading: (v) => set(() => ({ isLoading: v }))
+  setLoading: (v) => set(() => ({ isLoading: v })),
+  setRanCases: (caseIds) => set(() => ({ ranCases: caseIds })),
+  addRanCase: (caseId) => {
+    saveRunMarker(caseId, "defects").catch((e) => console.error("[DefectsSlice] saveRunMarker error:", e));
+    set((prev) => ({
+      ranCases: prev.ranCases.includes(caseId) ? prev.ranCases : [...prev.ranCases, caseId]
+    }));
+  }
 });
 
 export const useDefectsStore = create<DefectsSlice>()((set, get) =>

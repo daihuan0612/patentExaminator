@@ -8,7 +8,7 @@ interface ClaimChartTableProps {
 }
 
 export function ClaimChartTable({ caseId, claimNumber }: ClaimChartTableProps) {
-  const { claimFeatures, updateClaimFeature, addClaimFeature, removeClaimFeature } = useClaimsStore();
+  const { claimFeatures, updateClaimFeature, addClaimFeature, removeClaimFeature, ranCases } = useClaimsStore();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
 
@@ -53,6 +53,9 @@ export function ClaimChartTable({ caseId, claimNumber }: ClaimChartTableProps) {
   };
 
   if (features.length === 0) {
+    if (ranCases.includes(caseId)) {
+      return <p data-testid="claim-chart-empty">AI 已运行，未生成特征。如需手动添加特征，请点击下方 "生成权利要求特征表" 按钮。</p>;
+    }
     return <p data-testid="claim-chart-empty">尚未生成权利要求特征表</p>;
   }
 

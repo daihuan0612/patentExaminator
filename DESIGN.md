@@ -1,6 +1,6 @@
 # 专利复审 AI 助手 v0.1.0 详细设计文档
 
-<p align="right">版本 v0.1.0-r23 · 2026-05-24</p>
+<p align="right">版本 v0.1.0-r24 · 2026-05-24</p>
 
 > 本文档面向后续维护者与开发者，描述 v0.1.0 的架构设计、关键决策、领域模型与实现约束。与 `PRD.md`（做什么）和 `DEVELOPMENT_PLAN.md`（怎么做）互为补充；如有冲突，以 PRD 为准。
 
@@ -8,6 +8,7 @@
 
 | 版本 | 日期 | 变更摘要 |
 |------|------|---------|
+| v0.1.0-r24 | 2026-05-24 | bg-11 举一反三: 3 模块空结果不持久化 — 新增 runMarkers IDB 存储 + 3 个 slice 的 ranCases 状态，修复 DefectPanel/ClaimChartTable/ArgumentMappingPanel 在 AI 返回空结果时刷新后显示"未运行"的问题 | defectsSlice.ts, claimsSlice.ts, opinionSlice.ts, DefectPanel.tsx, ClaimChartActions.tsx, ClaimChartTable.tsx, router.tsx, caseLoader.ts, runMarkerRepo.ts, indexedDb.ts |
 | v0.1.0-r23 | 2026-05-24 | bg-11: 缺陷复查持久化 — systemic fix: AppShell 自动恢复 case 数据（覆盖所有模块） | AppShell.tsx |
 | v0.1.0-r22 | 2026-05-24 | bg-10: 审查意见简述正文格式优化 — 新增 26 条 CSS 规则为摘要面板提供卡片化布局、正文排版（行高 1.8、段落间距、列表缩进）、帮助区样式、法律声明样式 | app.css |
 | v0.1.0-r21 | 2026-05-24 | bg-9 补充: AI 备注区添加说明文字 + 支持编辑和清除 — SummaryPanel aiNotes 从只读改为 InlineEdit (textarea)、新增清除按钮、新增说明文字（"这是 AI 的辅助注释…"）、新增 `.summary-ai-notes-desc` CSS | SummaryPanel.tsx, app.css |
@@ -1245,6 +1246,7 @@ Supabase（后端服务）
 | `chatMessages` | `id` | `caseId`, `moduleScope`, `createdAt` | 每模块独立会话 |
 | `feedback` | `id` | `caseId`, `subjectType`, `subjectId` | like/dislike/comment |
 | `settings` | `id`="app" | — | 单例 AppSettings（不含 API Key 明文） |
+| `runMarkers` | `id` (composite `caseId::module`) | `caseId`, `module` | 标记某 case 的某个模块（`defects`/`claimChart`/`argumentMapping`）已完成 AI 分析，用于区分"未运行"和"运行后无结果"。v8 新增。 |
 
 **迁移策略：** `open(db, version, { upgrade(db, oldV, newV, tx) })`，按版本分支处理。禁止破坏性清库（除非 major 版本变更并在 UI 提示）。
 

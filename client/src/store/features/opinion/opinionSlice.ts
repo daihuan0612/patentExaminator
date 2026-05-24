@@ -11,12 +11,14 @@ import {
   deleteArgumentMappings,
   clearOpinionData
 } from "../../../lib/repositories/opinionRepo.js";
+import { saveRunMarker } from "../../../lib/repositories/runMarkerRepo.js";
 
 export interface OpinionSlice {
   officeActionAnalysis: OfficeActionAnalysis | null;
   argumentMappings: ArgumentMapping[];
   unmappedGrounds: string[];
   isLoading: boolean;
+  argumentRanCases: string[];
 
   setOfficeActionAnalysis: (analysis: OfficeActionAnalysis) => void;
   loadOfficeActionAnalysis: (analysis: OfficeActionAnalysis) => void; // Load from DB without re-saving
@@ -33,6 +35,8 @@ export interface OpinionSlice {
   removeCitedRef: (pubNumber: string) => void;
   clearReexamData: (caseId?: string) => void;
   setLoading: (v: boolean) => void;
+  setArgumentRanCases: (caseIds: string[]) => void;
+  addArgumentRanCase: (caseId: string) => void;
 }
 
 export const createOpinionSlice = (
@@ -43,23 +47,27 @@ export const createOpinionSlice = (
   argumentMappings: [],
   unmappedGrounds: [],
   isLoading: false,
+  argumentRanCases: [],
 
   setOfficeActionAnalysis: (analysis) => {
     saveOpinionAnalysis(analysis).catch((e) => console.error("[OpinionSlice] saveOpinionAnalysis error:", e));
     set(() => ({ officeActionAnalysis: analysis }));
   },
   loadOfficeActionAnalysis: (analysis) => {
-    // Load from DB without re-saving to IndexedDB
     set(() => ({ officeActionAnalysis: analysis }));
   },
   setArgumentMappings: (mappings) => {
     if (mappings.length > 0 && mappings[0]!.caseId) {
       saveArgumentMappings(mappings).catch((e) => console.error("[OpinionSlice] saveArgumentMappings error:", e));
+    } else if (mappings.length === 0) {
+      const caseId = _get().argumentMappings[0]?.caseId;
+      if (caseId) {
+        deleteArgumentMappings(caseId).catch((e) => console.error("[OpinionSlice] deleteArgumentMappings error:", e));
+      }
     }
     set(() => ({ argumentMappings: mappings }));
   },
   loadArgumentMappings: (mappings) => {
-    // Load from DB without re-saving to IndexedDB
     set(() => ({ argumentMappings: mappings }));
   },
   setUnmappedGrounds: (codes) => set(() => ({ unmappedGrounds: codes })),
@@ -162,7 +170,14 @@ export const createOpinionSlice = (
     }
     set(() => ({ officeActionAnalysis: null, argumentMappings: [], unmappedGrounds: [] }));
   },
-  setLoading: (v) => set(() => ({ isLoading: v }))
+  setLoading: (v) => set(() => ({ isLoading: v })),
+  setArgumentRanCases: (caseIds) => set(() => ({ argumentRanCases: caseIds })),
+  addArgumentRanCase: (caseId) => {
+    saveRunMarker(caseId, "argumentMapping").catch((e) => console.error("[OpinionSlice] saveRunMarker error:", e));
+    set((prev) => ({
+      argumentRanCases: prev.argumentRanCases.includes(caseId) ? prev.argumentRanCases : [...prev.argumentRanCases, caseId]
+    }));
+  }
 });
 
 export const useOpinionStore = create<OpinionSlice>()((set, get) =>

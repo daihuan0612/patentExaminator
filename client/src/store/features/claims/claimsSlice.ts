@@ -8,11 +8,13 @@ import {
   deleteClaimFeature,
   deleteClaimFeaturesByCaseId
 } from "../../../lib/repositories/claimRepo.js";
+import { saveRunMarker } from "../../../lib/repositories/runMarkerRepo.js";
 
 export interface ClaimsSlice {
   claimNodes: ClaimNode[];
   claimFeatures: ClaimFeature[];
   isLoading: boolean;
+  ranCases: string[];
 
   setClaimNodes: (nodes: ClaimNode[]) => void;
   addClaimNode: (node: ClaimNode) => void;
@@ -24,6 +26,8 @@ export interface ClaimsSlice {
   loadClaimFeatures: (features: ClaimFeature[]) => void; // for loading from DB without re-saving
   clearClaimFeatures: (caseId: string) => void;
   setLoading: (v: boolean) => void;
+  setRanCases: (caseIds: string[]) => void;
+  addRanCase: (caseId: string) => void;
 }
 
 export const createClaimsSlice = (
@@ -33,6 +37,7 @@ export const createClaimsSlice = (
   claimNodes: [],
   claimFeatures: [],
   isLoading: false,
+  ranCases: [],
 
   setClaimNodes: (claimNodes) => set(() => ({ claimNodes })),
 
@@ -107,7 +112,14 @@ export const createClaimsSlice = (
     });
   },
 
-  setLoading: (v) => set(() => ({ isLoading: v }))
+  setLoading: (v) => set(() => ({ isLoading: v })),
+  setRanCases: (caseIds) => set(() => ({ ranCases: caseIds })),
+  addRanCase: (caseId) => {
+    saveRunMarker(caseId, "claimChart").catch((e) => console.error("[ClaimsSlice] saveRunMarker error:", e));
+    set((prev) => ({
+      ranCases: prev.ranCases.includes(caseId) ? prev.ranCases : [...prev.ranCases, caseId]
+    }));
+  }
 });
 
 export const useClaimsStore = create<ClaimsSlice>()((set, get) => createClaimsSlice(set, get));

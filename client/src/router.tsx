@@ -311,7 +311,7 @@ export function ArgumentMappingWrapper() {
   const { caseId } = useParams<{ caseId: string }>();
   const { documents } = useDocumentsStore();
   const { settings } = useSettingsStore();
-  const { officeActionAnalysis, setArgumentMappings } = useOpinionStore();
+  const { officeActionAnalysis, argumentMappings, argumentRanCases, setArgumentMappings, addArgumentRanCase } = useOpinionStore();
   const { updateWorkflowState } = useCaseStore();
   const responseDoc = documents.find(
     (d) => d.caseId === caseId && d.role === "office-action-response"
@@ -321,11 +321,26 @@ export function ArgumentMappingWrapper() {
   );
   const rejectionGrounds = officeActionAnalysis?.rejectionGrounds ?? [];
 
+  const initialResult = (argumentMappings.length > 0 || (caseId && argumentRanCases.includes(caseId)))
+    ? {
+        mappings: argumentMappings.map((m) => ({
+          rejectionGroundCode: m.rejectionGroundCode,
+          applicantArgument: m.applicantArgument,
+          argumentSummary: m.argumentSummary,
+          confidence: m.confidence,
+          ...(m.amendedClaims ? { amendedClaims: m.amendedClaims } : {}),
+          ...(m.newEvidence ? { newEvidence: m.newEvidence } : {})
+        })),
+        legalCaution: "本分析为 AI 辅助候选，需审查员确认。"
+      }
+    : null;
+
   return (
     <ArgumentMappingPanel
       caseId={caseId ?? ""}
       rejectionGrounds={rejectionGrounds}
       responseText={responseDoc?.extractedText ?? ""}
+      initialResult={initialResult}
       runAnalysis={async (options) => {
         const client = new AgentClient(settings.mode, "/api", settings);
         return client.runArgumentAnalysis({
@@ -350,6 +365,7 @@ export function ArgumentMappingWrapper() {
           ...(mapping.newEvidence ? { newEvidence: mapping.newEvidence } : {})
         }));
         setArgumentMappings(mappings);
+        addArgumentRanCase(caseId ?? "");
         updateWorkflowState("argument-mapped");
       }}
     />
