@@ -35,6 +35,7 @@ export function DefectPanel({
   const { defects, addDefect, updateDefect, removeDefect, isLoading, setLoading } =
     useDefectsStore();
   const [showConfirm, setShowConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const isMountedRef = useRef(true);
 
@@ -69,6 +70,7 @@ export function DefectPanel({
     abortControllersRef.current.set("defectCheck", controller);
 
     setLoading(true);
+    setError(null);
     try {
       const request: DefectRequest = {
         caseId,
@@ -159,6 +161,11 @@ export function DefectPanel({
         console.log("[DefectPanel] restoring user-added defect:", userDefect.id);
         addDefect(userDefect);
       }
+    } catch (err) {
+      console.error("[DefectPanel] Error running defect check:", err);
+      if (isMountedRef.current) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       abortControllersRef.current.delete("defectCheck");
       if (isMountedRef.current) setLoading(false);
@@ -196,6 +203,19 @@ export function DefectPanel({
   return (
     <div className="defect-panel" data-testid="defect-panel">
       <h2>缺陷复查</h2>
+
+      {error && (
+        <div className="defect-error" data-testid="defect-error" style={{
+          background: "#fff0f0",
+          border: "1px solid #e00",
+          borderRadius: 4,
+          padding: "8px 12px",
+          marginBottom: 12,
+          color: "#c00"
+        }}>
+          <strong>运行失败：</strong>{error}
+        </div>
+      )}
 
       {caseDefects.length > 0 && (
         <div className="defect-legal-caution" data-testid="defect-legal-caution">

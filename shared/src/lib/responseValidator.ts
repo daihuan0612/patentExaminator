@@ -8,6 +8,7 @@ import {
   argumentMappingSchema,
   reexamDraftSchema,
   classifyDocumentsOutputSchema,
+  defectSchema,
 } from "../index.js";
 import { searchReferencesFilterSchema } from "../schemas/searchReferences.schema.js";
 
@@ -28,6 +29,7 @@ const STRUCTURED_AGENT_SCHEMAS: Record<string, ZodSchema> = {
   "reexam-draft": reexamDraftSchema,
   "classify-documents": classifyDocumentsOutputSchema,
   "search-references": searchReferencesFilterSchema,
+  "defects": defectSchema,
 };
 
 const TEXT_AGENTS = new Set(["chat", "interpret", "translate", "extract-case-fields"]);
