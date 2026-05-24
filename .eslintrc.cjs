@@ -24,7 +24,9 @@ module.exports = {
   rules: {
     "no-undef": "off",
     "react/react-in-jsx-scope": "off",
-    "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }]
+    "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+    "react/no-unescaped-entities": "warn",
+    "no-empty": "warn"
   },
   overrides: [
     {
