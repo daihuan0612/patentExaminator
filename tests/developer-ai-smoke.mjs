@@ -240,6 +240,16 @@ async function testAiChat() {
         ? `模型: ${data.modelId}, 响应: ${data.rawText.slice(0, 80)}...`
         : "无响应文本"
     );
+
+    if (data.ok && hasText) {
+      const reply = data.outputJson?.reply || data.rawText;
+      const meaningful = typeof reply === "string" && reply.length >= 10;
+      log(
+        "T-SMOKE-003-Q: AI 对话内容质量",
+        meaningful,
+        meaningful ? `回复: ${reply.slice(0, 80)}...` : "回复内容过短或无效"
+      );
+    }
   } catch (err) {
     log("T-SMOKE-003: AI 对话调用", false, err.message);
   }
@@ -271,6 +281,16 @@ async function testAiInterpret() {
         ? `模型: ${data.modelId}, 响应长度: ${data.rawText.length} 字符`
         : "无响应文本"
     );
+
+    if (data.ok && hasText) {
+      const reply = data.outputJson?.reply || data.rawText;
+      const meaningful = typeof reply === "string" && reply.length >= 20;
+      log(
+        "T-SMOKE-004-Q: AI 文档解读内容质量",
+        meaningful,
+        meaningful ? `解读长度: ${data.rawText.length} 字符` : "解读内容过短或无效"
+      );
+    }
   } catch (err) {
     log("T-SMOKE-004: AI 文档解读", false, err.message);
   }
@@ -302,6 +322,22 @@ async function testAiClaimChart() {
         ? `模型: ${data.modelId}, 响应长度: ${data.rawText.length} 字符`
         : "无响应文本"
     );
+
+    if (data.ok) {
+      const structureErrors = data.structureErrors;
+      if (Array.isArray(structureErrors) && structureErrors.length > 0) {
+        log("T-SMOKE-005-Q: AI 特征拆解输出质量", false,
+          `结构校验失败: ${structureErrors.join("; ")}`);
+      } else if (data.outputJson) {
+        const features = data.outputJson.features;
+        const valid = Array.isArray(features) && features.length > 0
+          && features.every(f => typeof f.featureCode === "string" && typeof f.description === "string");
+        log("T-SMOKE-005-Q: AI 特征拆解输出质量", valid,
+          valid ? `features=${features.length}` : "features 格式不正确");
+      } else {
+        log("T-SMOKE-005-Q: AI 特征拆解输出质量", false, "无结构化 JSON 输出");
+      }
+    }
   } catch (err) {
     log("T-SMOKE-005: AI 特征拆解", false, err.message);
   }

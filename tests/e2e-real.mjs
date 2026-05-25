@@ -633,6 +633,11 @@ async function runRealAiAgentTest(label, agent, prompt, metadata, onResponse) {
 
       log(`${label} ok`, data.ok === true, `ok=${data.ok}`);
 
+      if (data.ok && Array.isArray(data.structureErrors) && data.structureErrors.length > 0) {
+        log(`${label} output quality`, false,
+          `structure validation failed: ${data.structureErrors.join("; ")}`);
+      }
+
       if (data.tokenUsage) {
         log(`${label} token usage`, typeof data.tokenUsage.input === "number",
           `in=${data.tokenUsage.input}, out=${data.tokenUsage.output}`);
@@ -680,6 +685,11 @@ async function runRealAiAgentTest(label, agent, prompt, metadata, onResponse) {
     }
 
     log(`${label} ok (Bedrock)`, true, `model=${BEDROCK_FALLBACK_MODEL_ID}`);
+
+    if (data.ok && Array.isArray(data.structureErrors) && data.structureErrors.length > 0) {
+      log(`${label} (Bedrock) output quality`, false,
+        `structure validation failed: ${data.structureErrors.join("; ")}`);
+    }
 
     if (data.tokenUsage) {
       log(`${label} token usage`, typeof data.tokenUsage.input === "number",
@@ -2225,6 +2235,8 @@ async function testEpoSearchWithEnv() {
       log("EPO real search candidates non-empty",
         Array.isArray(data.candidates) && data.candidates.length > 0,
         `candidates.length=${data.candidates?.length ?? 0}`);
+      const schemaResult = validateSearchReferencesOutput(data);
+      log("EPO real search schema valid", schemaResult.valid, schemaResult.errors.join("; "));
     }
   } catch (err) {
     log("EPO real search", false, err.message);
