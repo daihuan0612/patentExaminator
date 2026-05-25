@@ -6,18 +6,13 @@ export const supportingEvidenceSchema = z.object({
   label: z.string(),
   quote: z.string().optional(),
   confidence: z.enum(["high", "medium", "low"]),
-}).refine(
-  (data) => {
-    if (data.confidence === "high" || data.confidence === "medium") {
-      return data.quote != null && data.quote.length >= MIN_QUOTE_LENGTH;
-    }
-    return true;
-  },
-  {
-    message: `Citation with high/medium confidence must have quote with at least ${MIN_QUOTE_LENGTH} characters`,
-    path: ["quote"],
+}).transform((data) => {
+  const hasValidQuote = data.quote != null && data.quote.length >= MIN_QUOTE_LENGTH;
+  if ((data.confidence === "high" || data.confidence === "medium") && !hasValidQuote) {
+    return { ...data, confidence: "low" as const };
   }
-);
+  return data;
+});
 
 export const reexamResponseItemSchema = z.object({
   rejectionGroundCode: z.string(),

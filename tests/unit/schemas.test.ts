@@ -5,7 +5,8 @@ import {
   inventiveSchema,
   summarySchema,
   draftSchema,
-  exportSchema
+  exportSchema,
+  reexamDraftSchema
 } from "@shared/index";
 
 describe("claimChartSchema", () => {
@@ -208,6 +209,185 @@ describe("draftSchema", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.sections.body).toBe("");
+    }
+  });
+});
+
+describe("reexamDraftSchema", () => {
+  it("should parse valid reexam draft", () => {
+    const result = reexamDraftSchema.safeParse({
+      claimNumber: 1,
+      responseItems: [
+        {
+          rejectionGroundCode: "R1",
+          category: "novelty",
+          applicantArgumentSummary: "申请人答辩摘要",
+          examinerResponse: "审查员回应",
+          conclusion: "argument-accepted",
+          supportingEvidence: [
+            { label: "D1 §5", quote: "D1公开了具体的技术特征内容", confidence: "high" }
+          ]
+        }
+      ],
+      overallAssessment: "综合评估",
+      legalCaution: "法律风险提示"
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("should auto-downgrade high confidence to low when quote is too short", () => {
+    const result = reexamDraftSchema.safeParse({
+      claimNumber: 1,
+      responseItems: [
+        {
+          rejectionGroundCode: "R1",
+          category: "novelty",
+          applicantArgumentSummary: "申请人答辩摘要",
+          examinerResponse: "审查员回应",
+          conclusion: "argument-accepted",
+          supportingEvidence: [
+            { label: "D1 §5", quote: "短", confidence: "high" }
+          ]
+        }
+      ],
+      overallAssessment: "综合评估",
+      legalCaution: "法律风险提示"
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const item = result.data.responseItems[0];
+      const evidence = item?.supportingEvidence?.[0];
+      expect(evidence?.confidence).toBe("low");
+    }
+  });
+
+  it("should auto-downgrade medium confidence to low when quote is too short", () => {
+    const result = reexamDraftSchema.safeParse({
+      claimNumber: 1,
+      responseItems: [
+        {
+          rejectionGroundCode: "R1",
+          category: "novelty",
+          applicantArgumentSummary: "申请人答辩摘要",
+          examinerResponse: "审查员回应",
+          conclusion: "argument-partially-accepted",
+          supportingEvidence: [
+            { label: "D1 §5", quote: "短", confidence: "medium" }
+          ]
+        }
+      ],
+      overallAssessment: "综合评估",
+      legalCaution: "法律风险提示"
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const item = result.data.responseItems[0];
+      const evidence = item?.supportingEvidence?.[0];
+      expect(evidence?.confidence).toBe("low");
+    }
+  });
+
+  it("should auto-downgrade high confidence to low when quote is missing", () => {
+    const result = reexamDraftSchema.safeParse({
+      claimNumber: 1,
+      responseItems: [
+        {
+          rejectionGroundCode: "R1",
+          category: "novelty",
+          applicantArgumentSummary: "申请人答辩摘要",
+          examinerResponse: "审查员回应",
+          conclusion: "argument-accepted",
+          supportingEvidence: [
+            { label: "D1 §5", confidence: "high" }
+          ]
+        }
+      ],
+      overallAssessment: "综合评估",
+      legalCaution: "法律风险提示"
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const item = result.data.responseItems[0];
+      const evidence = item?.supportingEvidence?.[0];
+      expect(evidence?.confidence).toBe("low");
+    }
+  });
+
+  it("should keep low confidence unchanged regardless of quote length", () => {
+    const result = reexamDraftSchema.safeParse({
+      claimNumber: 1,
+      responseItems: [
+        {
+          rejectionGroundCode: "R1",
+          category: "novelty",
+          applicantArgumentSummary: "申请人答辩摘要",
+          examinerResponse: "审查员回应",
+          conclusion: "argument-accepted",
+          supportingEvidence: [
+            { label: "D1 §5", quote: "短", confidence: "low" }
+          ]
+        }
+      ],
+      overallAssessment: "综合评估",
+      legalCaution: "法律风险提示"
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const item = result.data.responseItems[0];
+      const evidence = item?.supportingEvidence?.[0];
+      expect(evidence?.confidence).toBe("low");
+    }
+  });
+
+  it("should keep high confidence when quote is exactly 20 characters", () => {
+    const result = reexamDraftSchema.safeParse({
+      claimNumber: 1,
+      responseItems: [
+        {
+          rejectionGroundCode: "R1",
+          category: "novelty",
+          applicantArgumentSummary: "申请人答辩摘要",
+          examinerResponse: "审查员回应",
+          conclusion: "argument-accepted",
+          supportingEvidence: [
+            { label: "D1 §5", quote: "12345678901234567890", confidence: "high" }
+          ]
+        }
+      ],
+      overallAssessment: "综合评估",
+      legalCaution: "法律风险提示"
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const item = result.data.responseItems[0];
+      const evidence = item?.supportingEvidence?.[0];
+      expect(evidence?.confidence).toBe("high");
+    }
+  });
+
+  it("should downgrade high confidence when quote is 19 characters", () => {
+    const result = reexamDraftSchema.safeParse({
+      claimNumber: 1,
+      responseItems: [
+        {
+          rejectionGroundCode: "R1",
+          category: "novelty",
+          applicantArgumentSummary: "申请人答辩摘要",
+          examinerResponse: "审查员回应",
+          conclusion: "argument-accepted",
+          supportingEvidence: [
+            { label: "D1 §5", quote: "1234567890123456789", confidence: "high" }
+          ]
+        }
+      ],
+      overallAssessment: "综合评估",
+      legalCaution: "法律风险提示"
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const item = result.data.responseItems[0];
+      const evidence = item?.supportingEvidence?.[0];
+      expect(evidence?.confidence).toBe("low");
     }
   });
 });
