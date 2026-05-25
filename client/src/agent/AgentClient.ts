@@ -431,13 +431,18 @@ export class AgentClient {
     if (data.rawText) {
       try {
         return JSON.parse(stripCodeFences(data.rawText)) as T;
-      } catch {
+      } catch (parseError) {
         if (agent === "chat" || agent === "interpret") {
           return { reply: data.rawText } as T;
         }
+        // If there are structure errors, include them in the error message
+        const structureErrorInfo = data.structureErrors ? ` 结构错误: ${data.structureErrors.join("; ")}` : "";
         throw new Error(
           `AI 返回格式异常：未返回结构化 JSON 数据。` +
-          `Agent: ${agent}。请确认 AI Provider 配置正确或切换为 Mock 模式重试。`
+          `Agent: ${agent}。` +
+          `JSON 解析失败: ${parseError instanceof Error ? parseError.message : String(parseError)}` +
+          `${structureErrorInfo}` +
+          `。请确认 AI Provider 配置正确或切换为 Mock 模式重试。`
         );
       }
     }

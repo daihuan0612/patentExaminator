@@ -165,6 +165,14 @@ aiRouter.post("/ai/run", async (req, res) => {
       }
     }
 
+    // If structure errors exist but outputJson is still valid, log a warning
+    if (structureErrors && outputJson) {
+      logger.warn("AI response has structure errors but still valid", {
+        agent: request.agent,
+        errors: structureErrors
+      });
+    }
+
     logger.info("AI run succeeded", {
       agent: request.agent,
       provider: firstProvider,
