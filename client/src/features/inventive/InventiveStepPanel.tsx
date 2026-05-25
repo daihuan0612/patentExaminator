@@ -78,6 +78,17 @@ export function InventiveStepPanel({
     () => analysis?.examinerResponse ?? ""
   );
 
+  // Sync local state when analysis is loaded from IndexedDB
+  // analysis?.id is intentional: we only want to sync when analysis ID changes, not on every render
+  useEffect(() => {
+    if (!analysis) return;
+    const { objectiveTechnicalProblem, examinerResponse, distinguishingFeatureCodes, closestPriorArtId } = analysis;
+    setTechProblem(objectiveTechnicalProblem ?? "");
+    setExaminerResponse(examinerResponse ?? "");
+    setSelectedDistinguishing(distinguishingFeatureCodes ?? []);
+    setSelectedClosestId(closestPriorArtId ?? "");
+  }, [analysis?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleRun = async () => {
     if (isLoading || availableRefs.length === 0) return;
 
@@ -381,7 +392,7 @@ export function InventiveStepPanel({
                 placeholder="根据区别特征推导客观技术问题，AI 运行后自动填充，也可手动输入。"
                 rows={3}
               />
-              {!analysis && selectedDistinguishing.length > 0 && (
+              {selectedDistinguishing.length > 0 && (
                 <button
                   type="button"
                   className="btn-derive-problem"
@@ -389,7 +400,7 @@ export function InventiveStepPanel({
                   disabled={isLoading || availableRefs.length === 0}
                   data-testid="btn-derive-tech-problem"
                 >
-                  {isLoading ? "推导中..." : "推导客观技术问题"}
+                  {isLoading ? "推导中..." : analysis ? "重新推导客观技术问题" : "推导客观技术问题"}
                 </button>
               )}
             </div>
