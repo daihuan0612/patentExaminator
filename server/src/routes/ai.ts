@@ -103,15 +103,18 @@ aiRouter.post("/ai/run", async (req, res) => {
     const firstProvider = availableProviders[0]!;
     const apiKey = providerKeys.get(firstProvider)!;
 
-    // Create AbortController that listens for client disconnection
+    // Abort on client disconnect (listen on TCP socket, NOT req.on("close") which fires on body consumption)
     const controller = new AbortController();
-    req.on("close", () => {
+    const onSocketClose = () => {
       if (!res.headersSent) {
         controller.abort();
         logger.info("Client disconnected, aborting AI request", { agent: request.agent });
       }
-    });
+    };
+    const socket = req.socket;
+    socket?.on("close", onSocketClose);
 
+    try {
     const { response, attempts } = await registry.runWithFallback(
       availableProviders as string[],
       {
@@ -212,6 +215,9 @@ aiRouter.post("/ai/run", async (req, res) => {
       attempts
     } satisfies AiRunResponse as AiRunResponse;
     res.json(result);
+    } finally {
+      socket?.off("close", onSocketClose);
+    }
   } catch (error) {
     logger.error("AI run error", { error: String(error) });
     res.status(500).json({
