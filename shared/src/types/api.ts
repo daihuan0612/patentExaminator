@@ -6,6 +6,7 @@ export interface AiRunRequest {
   modelId: string;
   modelFallbacks?: Partial<Record<ProviderId, string[]>>;
   enableModelFallback?: Partial<Record<ProviderId, boolean>>;
+  providerBaseUrls?: Partial<Record<ProviderId, string>>;
   reasoningLevel?: "low" | "medium" | "high";
   prompt: string;
   expectedSchemaName?: string;

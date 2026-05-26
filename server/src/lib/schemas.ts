@@ -6,6 +6,7 @@ export const aiRunRequestSchema = z.object({
   modelId: z.string().min(1),
   modelFallbacks: z.record(z.string(), z.array(z.string())).optional(),
   enableModelFallback: z.record(z.string(), z.boolean()).optional(),
+  providerBaseUrls: z.record(z.string(), z.string()).optional(),
   reasoningLevel: z.enum(["low", "medium", "high"]).optional(),
   prompt: z.string().min(1),
   expectedSchemaName: z.string().optional(),

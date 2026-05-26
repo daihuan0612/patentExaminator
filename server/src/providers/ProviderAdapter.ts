@@ -14,6 +14,7 @@ export interface ChatRequest {
   maxTokens?: number;
   apiKey: string;
   signal?: AbortSignal;
+  baseUrl?: string;
 }
 
 export interface ChatResponse {
@@ -68,8 +69,8 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
   }
 
   async chat(req: ChatRequest): Promise<ChatResponse> {
-    if (!this.baseUrl) this.init();
-    const url = `${this.baseUrl}/chat/completions`;
+    if (!this.baseUrl && !req.baseUrl) this.init();
+    const url = `${req.baseUrl ?? this.baseUrl}/chat/completions`;
     const body = {
       model: req.modelId,
       messages: req.messages,

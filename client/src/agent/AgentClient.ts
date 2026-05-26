@@ -385,9 +385,13 @@ export class AgentClient {
 
     const modelFallbacks: Partial<Record<ProviderId, string[]>> = {};
     const enableModelFallback: Partial<Record<ProviderId, boolean>> = {};
+    const providerBaseUrls: Partial<Record<ProviderId, string>> = {};
     for (const p of this.providerSettings) {
       modelFallbacks[p.providerId] = p.modelFallbacks ?? p.modelIds;
       enableModelFallback[p.providerId] = p.enableModelFallback ?? true;
+      if (p.baseUrl) {
+        providerBaseUrls[p.providerId] = p.baseUrl;
+      }
     }
 
     const providerPreference = this.enableProviderFallback
@@ -400,6 +404,7 @@ export class AgentClient {
       modelId: resolved.modelId,
       modelFallbacks,
       enableModelFallback,
+      providerBaseUrls,
       prompt,
       sanitized: false,
       metadata: {

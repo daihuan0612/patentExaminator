@@ -49,19 +49,20 @@ export class ProviderRegistry {
     return this.adapters.get(id);
   }
 
-  /**
-   * Execute a chat request with fallback logic.
-   * - 429/quota: try next provider (for mimo/gemini, try model fallbacks first)
-   * - 5xx/network: exponential backoff retry up to 2 times, then next provider
-   * - 401: no retry, no fallback
-   * - timeout: treated as network error
-   */
+/**
+    * Execute a chat request with fallback logic.
+    * - 429/quota: try next provider (for mimo/gemini, try model fallbacks first)
+    * - 5xx/network: exponential backoff retry up to 2 times, then next provider
+    * - 401: no retry, no fallback
+    * - timeout: treated as network error
+    */
   async runWithFallback(
     providerPreference: string[],
     req: ChatRequest,
     mimoModelFallbacks?: string[],
     modelFallbacks?: Partial<Record<string, string[]>>,
-    enableModelFallback?: Partial<Record<string, boolean>>
+    enableModelFallback?: Partial<Record<string, boolean>>,
+    providerBaseUrls?: Partial<Record<string, string>>
   ): Promise<{ response: ChatResponse; attempts: AttemptRecord[] }> {
     const attempts: AttemptRecord[] = [];
     let totalAttempts = 0;
@@ -74,6 +75,7 @@ export class ProviderRegistry {
         continue;
       }
 
+      const providerBaseUrl = providerBaseUrls?.[pid];
       const enabled = enableModelFallback?.[pid] ?? true;
       const models = modelFallbacks?.[pid] ?? (pid === "mimo" ? (mimoModelFallbacks ?? MIMO_MODEL_FALLBACKS) : (pid === "gemini" ? GEMINI_MODEL_FALLBACKS : null));
 
@@ -87,7 +89,7 @@ export class ProviderRegistry {
             };
           }
           try {
-            const response = await this.executeWithRetry(adapter, { ...req, modelId });
+            const response = await this.executeWithRetry(adapter, providerBaseUrl ? { ...req, modelId, baseUrl: providerBaseUrl } : { ...req, modelId });
             attempts.push({ providerId, ok: true });
             return { response, attempts };
           } catch (error) {
@@ -111,7 +113,7 @@ export class ProviderRegistry {
       }
 
       try {
-        const response = await this.executeWithRetry(adapter, req);
+        const response = await this.executeWithRetry(adapter, providerBaseUrl ? { ...req, baseUrl: providerBaseUrl } : req);
         attempts.push({ providerId, ok: true });
         return { response, attempts };
       } catch (error) {

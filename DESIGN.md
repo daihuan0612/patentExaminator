@@ -8,9 +8,7 @@
 
 | 版本 | 日期 | 变更摘要 |
 |------|------|---------|
-| v0.1.0-r25 | 2026-05-24 | nf-1: 新增 OpenCode Zen Provider — ProviderId 添加 "opencode"、PRESET_MODEL_PROVIDERS 添加 OpenCode Zen 条目、DEFAULT_MODELS 添加 opencode 模型列表、新增 OpencodeAdapter (OpenAI兼容)、registry 注册、OPENCODE_KEY 环境变量加载 | agents.ts, modelCatalog.ts, AgentsAssignmentPanel.tsx, opencode.ts, registry.ts, index.ts, .env.example |
-| v0.1.0-r26 | 2026-05-26 | bg-20 修复: 用户离开页面后 Agent 请求未取消 — server/src/routes/ai.ts 添加客户端断开监听，server/src/providers/registry.ts executeWithRetry 传递和响应 AbortSignal，确保客户端导航离开时服务器端AI请求正确取消 | ai.ts, registry.ts |
-| v0.1.0-r27 | 2026-05-26 | nf-4: AI Provider + Model ID 双Fallback配置 — AppSettings 新增 enableProviderFallback/providerErrorMessages、ProviderConnection 新增 enableModelFallback、AiRunRequest 新增 modelFallbacks/enableModelFallback、ProviderRegistry.runWithFallback 泛化为支持所有 provider 的 model 回退、settingsSlice 新增 addProviderError 方法、新增 ProviderErrorBox 组件展示错误消息、ProvidersConfigPanel 添加回退开关UI | agents.ts, api.ts, schemas.ts, registry.ts, ai.ts, settingsSlice.ts, ProvidersConfigPanel.tsx, ProviderErrorBox.tsx, app.css |
+| v0.1.0-r28 | 2026-05-26 | bg-25: Provider 自定义 baseUrl 支持 — AiRunRequest 新增 providerBaseUrls 字段、ChatRequest 新增 baseUrl、AgentClient 收集 providerSettings.baseUrl 填入请求、ProviderRegistry.runWithFallback 传递 baseUrl 至 OpenAICompatibleAdapter.chat | api.ts, schemas.ts, AgentClient.ts, registry.ts, ai.ts, ProviderAdapter.ts |
 | v0.1.0-r28 | 2026-05-26 | td-4: 专利检索容错机制优化 — server/src/routes/search.ts JSON解析从4层简化为2层（移除截断JSON修复中间层）、查询词提取从3层简化为2层（移除引号字符串提取中间层），降低容错代码复杂度约60% | search.ts |
 | v0.1.0-r24 | 2026-05-24 | bg-11 举一反三: 3 模块空结果不持久化 — 新增 runMarkers IDB 存储 + 3 个 slice 的 ranCases 状态，修复 DefectPanel/ClaimChartTable/ArgumentMappingPanel 在 AI 返回空结果时刷新后显示"未运行"的问题 | defectsSlice.ts, claimsSlice.ts, opinionSlice.ts, DefectPanel.tsx, ClaimChartActions.tsx, ClaimChartTable.tsx, router.tsx, caseLoader.ts, runMarkerRepo.ts, indexedDb.ts |
 | v0.1.0-r23 | 2026-05-24 | bg-11: 缺陷复查持久化 — systemic fix: AppShell 自动恢复 case 数据（覆盖所有模块） | AppShell.tsx |
