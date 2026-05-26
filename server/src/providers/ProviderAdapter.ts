@@ -28,7 +28,7 @@ export interface ProviderAdapter {
   defaultBaseUrl: string;
   supportedModels(): string[];
   chat(req: ChatRequest): Promise<ChatResponse>;
-  listModels(apiKey: string): Promise<string[]>;
+  listModels(apiKey: string, customBaseUrl?: string): Promise<string[]>;
 }
 
 /**
@@ -51,9 +51,9 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
 
   abstract supportedModels(): string[];
 
-  async listModels(apiKey: string): Promise<string[]> {
-    if (!this.baseUrl) this.init();
-    const url = `${this.baseUrl}/models`;
+  async listModels(apiKey: string, customBaseUrl?: string): Promise<string[]> {
+    const base = customBaseUrl || this.baseUrl || this.defaultBaseUrl;
+    const url = `${base}/models`;
     const res = await fetch(url, {
       method: "GET",
       headers: { Authorization: `Bearer ${apiKey}` }

@@ -1173,6 +1173,20 @@
   margin-bottom: 12px;
 }
 
+.provider-card__drag-handle {
+  cursor: grab;
+  color: var(--pex-color-text-placeholder);
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px 2px 0;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.provider-card__drag-handle:active {
+  cursor: grabbing;
+}
+
 .provider-card__header strong {
   font-size: var(--pex-font-size-subtitle);
 }

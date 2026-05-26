@@ -220,8 +220,9 @@ export function ProvidersConfigPanel() {
     if (!provider.apiKeyRef) return;
     setLoadingModels(id);
     setModelError((prev) => ({ ...prev, [id]: "" }));
+    const preset = PRESET_MODEL_PROVIDERS.find((p) => p.id === id);
     try {
-      const models = await fetchModels(id, provider.apiKeyRef);
+      const models = await fetchModels(id, provider.apiKeyRef, provider.baseUrl ?? preset?.baseUrl);
       if (models.length > 0) {
         const defaultId = models.includes(provider.defaultModelId)
           ? provider.defaultModelId
@@ -269,13 +270,20 @@ export function ProvidersConfigPanel() {
               key={preset.id}
               className={`provider-card ${provider.enabled ? "" : "provider-card--disabled"} ${isExpanded ? "provider-card--expanded" : "provider-card--collapsed"}`}
               data-testid={`provider-${preset.id}`}
-              draggable
-              onDragStart={() => handleProviderDragStart(index)}
               onDragOver={(e) => handleProviderDragOver(e, index)}
               onDrop={handleProviderDrop}
-              onDragEnd={handleProviderDragEnd}
             >
               <div className="provider-card__header">
+                <span
+                  className="provider-card__drag-handle"
+                  draggable
+                  onDragStart={() => handleProviderDragStart(index)}
+                  onDragEnd={handleProviderDragEnd}
+                  title="拖拽排序"
+                  aria-label="拖拽排序"
+                >
+                  ⋮⋮
+                </span>
                 <button
                   type="button"
                   className="provider-card__collapse-toggle"

@@ -45,6 +45,7 @@ settingsRouter.get("/settings/providers/:providerId", (req, res) => {
 settingsRouter.get("/providers/:providerId/models", async (req, res) => {
   const { providerId } = req.params;
   const apiKey = req.query.apiKey as string | undefined;
+  const baseUrl = req.query.baseUrl as string | undefined;
 
   if (!apiKey) {
     res.status(400).json({ error: "apiKey query parameter is required" });
@@ -58,7 +59,7 @@ settingsRouter.get("/providers/:providerId/models", async (req, res) => {
   }
 
   try {
-    const models = await adapter.listModels(apiKey);
+    const models = await adapter.listModels(apiKey, baseUrl);
     res.json({ providerId, models });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
