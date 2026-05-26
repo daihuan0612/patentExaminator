@@ -1,5 +1,5 @@
 import { createBrowserRouter, Navigate, Outlet, useParams } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useCallback, useState } from "react";
 import { AppShell } from "./components/AppShell";
 import { ShellPlaceholder } from "./components/ShellPlaceholder";
 import { NewCasePage } from "./features/case/NewCasePage";
@@ -254,48 +254,59 @@ export function InterpretWrapper() {
   const { documents } = useDocumentsStore();
   const { references } = useReferencesStore();
   const { settings } = useSettingsStore();
-  const interpretDocuments: Parameters<typeof InterpretPanel>[0]["documents"] = Array.from(
-    new Map([...documents, ...references].map((doc) => [doc.id, doc])).values()
-  )
-    .filter((doc) => doc.caseId === caseId)
-    .filter((doc) => doc.extractedText.trim().length > 0)
-    .map((doc) => ({
-      id: doc.id,
-      fileName: doc.fileName,
-      role: doc.role,
-      documentType:
-        doc.role === "office-action"
-          ? "office-action"
-          : doc.role === "office-action-response"
-            ? "office-action-response"
-            : "application",
-      text: doc.extractedText
-    }));
+  const interpretDocuments = useMemo(() =>
+    Array.from(
+      new Map([...documents, ...references].map((doc) => [doc.id, doc])).values()
+    )
+      .filter((doc) => doc.caseId === caseId)
+      .filter((doc) => doc.extractedText.trim().length > 0)
+      .map((doc) => ({
+        id: doc.id,
+        fileName: doc.fileName,
+        role: doc.role,
+        documentType:
+          doc.role === "office-action"
+            ? "office-action" as const
+            : doc.role === "office-action-response"
+              ? "office-action-response" as const
+              : "application" as const,
+        text: doc.extractedText
+      })),
+    [documents, references, caseId]
+  );
+
+  const runInterpret = useCallback(async (
+    document: Parameters<typeof InterpretPanel>[0]["documents"][0],
+    relatedDocuments: Parameters<typeof InterpretPanel>[0]["documents"],
+    options?: { signal?: AbortSignal }
+  ) => {
+    const client = new AgentClient(settings.mode, "/api", settings);
+    const response = await client.runInterpret({
+      caseId: caseId ?? "",
+      documentId: document.id,
+      fileName: document.fileName,
+      documentText: document.text,
+      documentType: document.documentType,
+      relatedDocuments: relatedDocuments.map((doc) => ({
+        fileName: doc.fileName,
+        documentType: doc.documentType
+      }))
+    }, options?.signal ? { signal: options.signal } : undefined);
+    return response.reply;
+  }, [caseId, settings]);
+
+  const runTranslate = useCallback(async (text: string) => {
+    const client = new AgentClient(settings.mode, "/api", settings);
+    const response = await client.runTranslate({ caseId: caseId ?? "", documentText: text });
+    return response.translatedText;
+  }, [caseId, settings]);
 
   return (
     <InterpretPanel
       caseId={caseId ?? ""}
       documents={interpretDocuments}
-      runInterpret={async (document, relatedDocuments, options) => {
-        const client = new AgentClient(settings.mode, "/api", settings);
-        const response = await client.runInterpret({
-          caseId: caseId ?? "",
-          documentId: document.id,
-          fileName: document.fileName,
-          documentText: document.text,
-          documentType: document.documentType,
-          relatedDocuments: relatedDocuments.map((doc) => ({
-            fileName: doc.fileName,
-            documentType: doc.documentType
-          }))
-        }, options?.signal ? { signal: options.signal } : undefined);
-        return response.reply;
-      }}
-      runTranslate={async (text: string) => {
-        const client = new AgentClient(settings.mode, "/api", settings);
-        const response = await client.runTranslate({ caseId: caseId ?? "", documentText: text });
-        return response.translatedText;
-      }}
+      runInterpret={runInterpret}
+      runTranslate={runTranslate}
     />
   );
 }

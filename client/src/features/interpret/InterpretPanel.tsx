@@ -131,7 +131,10 @@ export function InterpretPanel({
   runTranslate
 }: InterpretPanelProps) {
   const { interpretSummaries, setInterpretSummary } = useInterpretStore();
-  const persistedSummaries = interpretSummaries[caseId] ?? {};
+  const persistedSummaries = useMemo(
+    () => interpretSummaries[caseId] ?? ({} as Record<string, string>),
+    [interpretSummaries, caseId]
+  );
   const [cardStates, setCardStates] = useState<Record<string, DocumentCardState>>({});
   const [expandedDocuments, setExpandedDocuments] = useState<ExpandedStateMap>({});
   const [isCombinedReinterpreting, setIsCombinedReinterpreting] = useState(false);
@@ -234,7 +237,7 @@ export function InterpretPanel({
         void doTranslate(doc);
       }
     });
-  }, [documents, persistedSummaries, runTranslate]);
+  }, [documents, runTranslate]);
 
   const doTranslate = async (doc: InterpretableDocument) => {
     if (!runTranslate) return;
