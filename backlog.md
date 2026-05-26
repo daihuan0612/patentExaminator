@@ -216,7 +216,7 @@ bg-28: [✅] 点击AI检索文献时，server端报错：“[server] [2026-05-26
 可是前面的几毫秒的aPI call都是没有问题的，也有配额。
 
 
-#### B23 — 推理模型 maxTokens 自适应
+#### B23 — [✅] 推理模型 maxTokens 自适应
 
 **目标：** Server 端检测推理模型（如 MiMo、DeepSeek R1、o1/o3 系列），自动放大 maxTokens。
 
