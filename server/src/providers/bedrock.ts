@@ -3,6 +3,7 @@
 
 import type { ProviderId } from "@shared/types/agents";
 import type { ProviderAdapter, ChatRequest, ChatResponse } from "./ProviderAdapter.js";
+import { resolveMaxTokens } from "./ProviderAdapter.js";
 
 const BEDROCK_OPENAI_COMPAT_BASE_URL = "https://bedrock-mantle.us-east-1.api.aws/v1";
 
@@ -63,7 +64,7 @@ export class BedrockAdapter implements ProviderAdapter {
         content: m.content
       })),
       temperature: req.temperature ?? 0.7,
-      max_tokens: req.maxTokens ?? 4096,
+      max_tokens: resolveMaxTokens(req.modelId, req.maxTokens),
       stream: false
     };
 

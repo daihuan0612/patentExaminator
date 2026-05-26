@@ -121,7 +121,7 @@ aiRouter.post("/ai/run", async (req, res) => {
       {
         modelId: request.modelId,
         messages,
-        maxTokens: 4096,
+        maxTokens: request.maxTokens ?? 4096,
         apiKey,
         signal: controller.signal
       },

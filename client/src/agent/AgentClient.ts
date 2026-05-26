@@ -109,14 +109,15 @@ export class AgentClient {
     }
   }
 
-  private resolveAgent(gatewayAgent: string): { providerId: ProviderId; modelId: string } | null {
+  private resolveAgent(gatewayAgent: string): { providerId: ProviderId; modelId: string; maxTokens?: number } | null {
     const key = GATEWAY_AGENT_TO_KEY[gatewayAgent];
     if (!key) return null;
     const assignment = this.agentAssignments.find((a) => a.agent === key);
     if (!assignment) return null;
     return {
       providerId: assignment.providerOrder[0] ?? this.fallbackProvider,
-      modelId: assignment.modelId
+      modelId: assignment.modelId,
+      maxTokens: assignment.maxTokens
     };
   }
 
@@ -405,8 +406,8 @@ export class AgentClient {
     await waitForServerReady(this.gatewayUrl);
 
     const resolved = meta.providerId && meta.modelId
-      ? { providerId: meta.providerId as ProviderId, modelId: meta.modelId }
-      : this.resolveAgent(agent) ?? { providerId: this.fallbackProvider, modelId: this.fallbackModel };
+      ? { providerId: meta.providerId as ProviderId, modelId: meta.modelId, maxTokens: undefined as number | undefined }
+      : this.resolveAgent(agent) ?? { providerId: this.fallbackProvider, modelId: this.fallbackModel, maxTokens: undefined };
 
     const modelFallbacks: Partial<Record<ProviderId, string[]>> = {};
     const enableModelFallback: Partial<Record<ProviderId, boolean>> = {};
@@ -427,6 +428,7 @@ export class AgentClient {
       agent,
       providerPreference: providerPreference as ProviderId[],
       modelId: resolved.modelId,
+      ...(resolved.maxTokens != null ? { maxTokens: resolved.maxTokens } : {}),
       modelFallbacks,
       enableModelFallback,
       providerBaseUrls,

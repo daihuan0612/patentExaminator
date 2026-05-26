@@ -8,6 +8,21 @@ function isTextModel(id: string): boolean {
   return !NON_TEXT_PATTERNS.test(id);
 }
 
+const REASONING_MODEL_PATTERNS = /mimo|r1\b|o[134]\b|reasoner|thinking/i;
+const REASONING_MAX_TOKENS_MULTIPLIER = 4;
+
+function isReasoningModel(modelId: string): boolean {
+  return REASONING_MODEL_PATTERNS.test(modelId);
+}
+
+export function resolveMaxTokens(modelId: string, requestedMaxTokens?: number): number {
+  const base = requestedMaxTokens ?? 4096;
+  if (isReasoningModel(modelId)) {
+    return base * REASONING_MAX_TOKENS_MULTIPLIER;
+  }
+  return base;
+}
+
 export interface ChatRequest {
   modelId: string;
   messages: Array<{ role: "system" | "user" | "assistant"; content: string | MultimodalPart[] }>;
@@ -72,11 +87,12 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
   async chat(req: ChatRequest): Promise<ChatResponse> {
     if (!this.baseUrl && !req.baseUrl) this.init();
     const url = `${req.baseUrl ?? this.baseUrl}/chat/completions`;
+    const effectiveMaxTokens = resolveMaxTokens(req.modelId, req.maxTokens);
     const body = {
       model: req.modelId,
       messages: req.messages,
       temperature: req.temperature ?? 0.1,
-      max_tokens: req.maxTokens ?? 4096
+      max_tokens: effectiveMaxTokens
     };
 
     const fetchInit: RequestInit = {

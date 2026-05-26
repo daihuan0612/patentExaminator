@@ -1,5 +1,6 @@
 import type { ProviderId } from "@shared/types/agents";
 import type { ProviderAdapter, ChatRequest, ChatResponse } from "./ProviderAdapter.js";
+import { resolveMaxTokens } from "./ProviderAdapter.js";
 import { logger } from "../lib/logger.js";
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
@@ -147,7 +148,7 @@ export class GeminiAdapter implements ProviderAdapter {
       contents,
       generationConfig: {
         temperature: req.temperature ?? 0.7,
-        maxOutputTokens: req.maxTokens ?? 4096
+        maxOutputTokens: resolveMaxTokens(req.modelId, req.maxTokens)
       }
     };
 
