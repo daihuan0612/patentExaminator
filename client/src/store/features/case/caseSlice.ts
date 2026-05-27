@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { PatentCase, CaseWorkflowState } from "@shared/types/domain";
+import { updateCase } from "../../../lib/repositories/caseRepo";
 
 export interface CaseSlice {
   currentCase: PatentCase | null;
@@ -24,11 +25,14 @@ export const createCaseSlice = (
   setCases: (cases) => set(() => ({ cases })),
   setLoading: (v) => set(() => ({ isLoading: v })),
   updateWorkflowState: (state) =>
-    set((prev) => ({
-      currentCase: prev.currentCase
-        ? { ...prev.currentCase, workflowState: state, updatedAt: new Date().toISOString() }
-        : null
-    }))
+    set((prev) => {
+      if (prev.currentCase) {
+        const updated = { ...prev.currentCase, workflowState: state, updatedAt: new Date().toISOString() };
+        updateCase(updated).catch((e) => console.error("[CaseSlice] updateCase error:", e));
+        return { currentCase: updated };
+      }
+      return { currentCase: null };
+    })
 });
 
 export const useCaseStore = create<CaseSlice>()((set, get) => createCaseSlice(set, get));
