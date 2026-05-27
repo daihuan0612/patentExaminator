@@ -181,7 +181,7 @@ const ALL_STORES = [
   "novelty", "inventive", "defects", "ocrCache",
   "chatMessages", "chatSessions", "feedback", "settings",
   "interpretSummaries", "opinionAnalyses", "argumentMappings",
-  "reexamDrafts", "summaries"
+  "reexamDrafts", "summaries", "runMarkers", "searchSessions"
 ] as const;
 
 export async function clearAllLocalData(): Promise<void> {
