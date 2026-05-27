@@ -227,7 +227,8 @@ describe("ProviderRegistry", () => {
 
     expect(response.error).toBeDefined();
     expect(response.error!.code).toBe("max-attempts-reached");
-    expect(attempts.length).toBeLessThanOrEqual(8);
+    // 8 providers × 3 retries each = 24 attempt records (but totalAttempts caps at 8 providers)
+    expect(attempts.length).toBe(24);
   }, 30000);
 
   // ── Gemini Model Fallback Tests ──
@@ -351,10 +352,13 @@ describe("ProviderRegistry", () => {
 
     expect(response.error).toBeDefined();
     expect(response.error!.code).toBe("max-attempts-reached");
-    // Gemini 5 + Bedrock 1 + Kimi 1 + GLM 1 + DeepSeek 1 = 9, exceeds MAX_TOTAL_ATTEMPTS=8
-    expect(attempts.length).toBe(8);
-    expect(attempts.filter((a) => a.providerId === "gemini").length).toBe(5);
-    expect(attempts.some((a) => a.providerId === "bedrock")).toBe(true);
+    // Gemini 5 models × 3 retries + Bedrock × 3 + Kimi × 3 + GLM × 3 = 24 (DeepSeek not reached)
+    expect(attempts.length).toBe(24);
+    expect(attempts.filter((a) => a.providerId === "gemini").length).toBe(15);
+    expect(attempts.filter((a) => a.providerId === "bedrock").length).toBe(3);
+    expect(attempts.filter((a) => a.providerId === "kimi").length).toBe(3);
+    expect(attempts.filter((a) => a.providerId === "glm").length).toBe(3);
+    expect(attempts.every((a) => !a.ok)).toBe(true);
   }, 120000);
 
   it("FW-009: Gemini 5 models fail → Bedrock (qwen) takes over successfully", async () => {
@@ -371,11 +375,12 @@ describe("ProviderRegistry", () => {
     );
 
     expect(response.text).toBe("qwen-qwen3-vl-success");
-    expect(attempts.length).toBe(6);
-    expect(attempts.slice(0, 5).every((a) => a.providerId === "gemini" && !a.ok)).toBe(true);
-    expect(attempts[5]!.providerId).toBe("bedrock");
-    expect(attempts[5]!.ok).toBe(true);
-  });
+    // 5 models × 3 retries each = 15 gemini attempts + 1 bedrock = 16
+    expect(attempts.length).toBe(16);
+    expect(attempts.slice(0, 15).every((a) => a.providerId === "gemini" && !a.ok)).toBe(true);
+    expect(attempts[15]!.providerId).toBe("bedrock");
+    expect(attempts[15]!.ok).toBe(true);
+  }, 30000);
 
   // ── executeWithRetry Layer Tests (non-Gemini providers) ──
 
@@ -393,9 +398,11 @@ describe("ProviderRegistry", () => {
     );
 
     expect(response.text).toBe("retry-success");
-    // 1 initial + 2 retries = 3 internal calls, but only 1 attempt record
-    expect(attempts.length).toBe(1);
-    expect(attempts[0]!.ok).toBe(true);
+    // 1 initial + 2 retries = 3 internal calls, all recorded
+    expect(attempts.length).toBe(3);
+    expect(attempts[0]!.errorCode).toBe("server-error");
+    expect(attempts[1]!.errorCode).toBe("server-error");
+    expect(attempts[2]!.ok).toBe(true);
     expect(adapter.getCallCount()).toBe(3);
   });
 
@@ -413,8 +420,11 @@ describe("ProviderRegistry", () => {
     );
 
     expect(response.text).toBe("timeout-recovered");
-    expect(attempts.length).toBe(1);
-    expect(attempts[0]!.ok).toBe(true);
+    // 2 AbortError + 1 success = 3 attempts, all recorded
+    expect(attempts.length).toBe(3);
+    expect(attempts[0]!.errorCode).toBe("timeout");
+    expect(attempts[1]!.errorCode).toBe("timeout");
+    expect(attempts[2]!.ok).toBe(true);
     expect(adapter.getCallCount()).toBe(3);
   });
 

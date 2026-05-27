@@ -102,12 +102,14 @@ export class ProviderRegistry {
             };
           }
           try {
-            const response = await this.executeWithRetry(adapter, buildReq(req, { modelId }));
-            attempts.push({ providerId, ok: true });
-            return { response, attempts };
+            const result = await this.executeWithRetry(adapter, buildReq(req, { modelId }));
+            attempts.push(...result.attempts);
+            return { response: result.response, attempts };
           } catch (error) {
             const errInfo = classifyError(error);
-            attempts.push({ providerId, ok: false, errorCode: errInfo.code });
+            const inner = (error as Error & { attempts?: AttemptRecord[] }).attempts;
+            if (inner) attempts.push(...inner);
+            else attempts.push({ providerId, ok: false, errorCode: errInfo.code });
             if (errInfo.code === "auth-failed") {
               return { response: buildErrorResponse(errInfo), attempts };
             }
@@ -126,12 +128,14 @@ export class ProviderRegistry {
       }
 
       try {
-        const response = await this.executeWithRetry(adapter, buildReq(req, {}));
-        attempts.push({ providerId, ok: true });
-        return { response, attempts };
+        const result = await this.executeWithRetry(adapter, buildReq(req, {}));
+        attempts.push(...result.attempts);
+        return { response: result.response, attempts };
       } catch (error) {
         const errInfo = classifyError(error);
-        attempts.push({ providerId, ok: false, errorCode: errInfo.code });
+        const inner = (error as Error & { attempts?: AttemptRecord[] }).attempts;
+        if (inner) attempts.push(...inner);
+        else attempts.push({ providerId, ok: false, errorCode: errInfo.code });
         if (errInfo.code === "auth-failed") {
           return { response: buildErrorResponse(errInfo), attempts };
         }
@@ -155,8 +159,10 @@ export class ProviderRegistry {
   private async executeWithRetry(
     adapter: ProviderAdapter,
     req: ChatRequest
-  ): Promise<ChatResponse> {
+  ): Promise<{ response: ChatResponse; attempts: AttemptRecord[] }> {
+    const attempts: AttemptRecord[] = [];
     let lastError: unknown;
+    let lastErrInfo: ErrorInfo | undefined;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (attempt > 0) {
@@ -167,34 +173,34 @@ export class ProviderRegistry {
         const timeoutController = new AbortController();
         const timeout = setTimeout(() => timeoutController.abort(), TIMEOUT_MS);
 
-        // Merge client signal (for disconnection) with timeout signal
         const clientSignal = req.signal;
         if (clientSignal?.aborted) {
           throw new Error("Request aborted by client");
         }
 
-        // When client aborts, also abort the timeout controller
         const onClientAbort = () => timeoutController.abort();
         clientSignal?.addEventListener("abort", onClientAbort);
 
         try {
-          // Use timeout controller's signal so both client abort and timeout work
           const response = await adapter.chat({ ...req, signal: timeoutController.signal });
-          return response;
+          attempts.push({ providerId: adapter.id as ProviderId, ok: true });
+          return { response, attempts };
         } finally {
           clearTimeout(timeout);
           clientSignal?.removeEventListener("abort", onClientAbort);
         }
       } catch (error) {
         lastError = error;
-        const errInfo = classifyError(error);
-        if (errInfo.code === "auth-failed" || errInfo.code === "quota-exceeded") {
+        lastErrInfo = classifyError(error);
+        attempts.push({ providerId: adapter.id as ProviderId, ok: false, errorCode: lastErrInfo.code });
+        if (lastErrInfo.code === "auth-failed" || lastErrInfo.code === "quota-exceeded") {
+          (error as Error & { attempts: AttemptRecord[] }).attempts = [...attempts];
           throw error;
         }
-        // 5xx/network: retry
       }
     }
 
+    (lastError as Error & { attempts: AttemptRecord[] }).attempts = [...attempts];
     throw lastError;
   }
 }
