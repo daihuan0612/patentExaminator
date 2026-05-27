@@ -250,7 +250,7 @@ bg-28: [✅] 点击AI检索文献时，server端报错：“[server] [2026-05-26
 
 ---
 
-#### B25 — 默认 agent 分配去硬编码
+#### B25 — [✅] 默认 agent 分配去硬编码
 
 **目标：** 默认 agent assignments 不再硬编码 "gemini"，而是让未指定 provider 的 agent 自动 fallback 到用户当前启用的首个 provider。
 
