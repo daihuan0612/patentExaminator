@@ -234,7 +234,7 @@ bg-28: [✅] 点击AI检索文献时，server端报错：“[server] [2026-05-26
 
 ---
 
-#### B24 — modelId 随 provider 透明变化
+#### B24 — [✅] modelId 随 provider 透明变化
 
 **目标：** 当用户切换 provider 时，modelId 自动跟随该 provider 的默认 model，不残留前一个 provider 的 model name。
 
