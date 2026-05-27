@@ -2,6 +2,8 @@
 
 ## new features
 
+nf-7: [✅] ai辅助检索：检索完毕应该显示每个search aPI分别最终检索了多少结果，不能只显示检索结果为0的search API 检索结果。另外，每个search API 的检索词应该先显示给用户看，而且允许用户CRUD操作，编辑后可以再次用用户的编辑好的检索词再次检索。这些和用户CRUD相关的内容都要持久化和案件一起存储。
+
 nf-6: 整个应用要移植到https://www.doubao.com/chat/bot/的智能体，将会使用[coze.cn](https://www.coze.cn/)平台来开发智能体，为了移植成功，需要以下几点：
 # Role
 你是一个资深的软件架构师与系统分析专家。你需要深入分析当前项目 `patentExaminator` 的完整工作区，并将其核心业务逻辑、数据流转（Schema）以及 AI 提示词（Prompts）提取出来，以便于后续将这些逻辑无缝移植到低代码 Agent 开发平台, [Coze.cn](https://www.coze.cn/) 。
@@ -205,6 +207,12 @@ td-2: [✅] 立即修复 lint 测试的所有 error 级别问题。
 59. [✅] bug-fix: 根据 bug57 的lesson learn总结报告 docs/lesson-learned-57.md 和调查，其他 store 存在同样的升级问题：其他 store (`claimCharts`, `novelty`, `inventive`, `defects` 等) 使用"仅创建不升级"模式，如果未来需要添加新索引，会遇到同样问题。因此需要重构所有 store 的升级逻辑为基于 `oldVersion` 的增量升级模式。
 
 ## bugs
+
+bg-29: 修复 docs/bug-audit-2026-05-27.md 中提到的 “## 三、测试覆盖缺口分析”。这些缺口必须最高优先级fix
+
+bg-30: 修复 docs/bug-audit-2026-05-27.md 中提到的 “历史 Bug 模式总结“ 中这些模式的目前潜在隐患。
+
+bg-31: 修复 docs/bug-audit-2026-05-27.md 中提到的 “二、当前存在的 Bug（按严重程度排序）”，全都要fix
 
 bg-28: [✅] 点击AI检索文献时，server端报错：“[server] [2026-05-26T12:04:15.181Z] ERROR LLM extract search terms failed {"error":{"code":"auth-failed","message":"Provider mimo returned 401: {\n    \"error\": {\n        \"message\": \"Invalid API Key\",\n        \"param\": \"Please provide valid API Key\",\n        \"code\": \"401\",\n        \"type\": \"invalid_key\"\n    }\n}\n","retryable":false}}
 [server] [2026-05-26T12:04:15.201Z] ERROR LLM extract search terms failed {"error":{"code":"auth-failed","message":"Provider mimo returned 401: {\n    \"error\": {\n        \"message\": \"Invalid API Key\",\n        \"param\": \"Please provide valid API Key\",\n        \"code\": \"401\",\n        \"type\": \"invalid_key\"\n    }\n}\n","retryable":false}}
