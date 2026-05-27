@@ -6,7 +6,7 @@ import { searchPatents } from "../services/webSearch.js";
 import { logger } from "../lib/logger.js";
 import { extractJsonFromText } from "../lib/jsonExtractor.js";
 import { sanitizeText } from "../security/sanitize.js";
-import type { SearchReferencesResponse, SearchReferencesCandidate, SearchSummary } from "@shared/types/api";
+import type { SearchReferencesResponse, SearchReferencesCandidate, SearchSummary, ExtractSearchTermsResponse } from "@shared/types/api";
 import type { ChatRequest } from "../providers/ProviderAdapter.js";
 
 export const searchRouter = Router();
@@ -491,6 +491,403 @@ searchRouter.post("/search-references", async (req, res) => {
     res.status(500).json({
       ok: false,
       candidates: [],
+      error: `检索失败: ${String(error)}`
+    } satisfies SearchReferencesResponse);
+  }
+});
+
+// ─── nf-7: Step 1 — 仅提取检索词（不执行搜索） ───
+
+const extractTermsSchema = z.object({
+  caseId: z.string(),
+  claimText: z.string().min(1),
+  features: z.array(z.object({ featureCode: z.string(), description: z.string() })),
+  providerPreference: z.array(z.string()).optional().default(["gemini", "mimo"]),
+  modelId: z.string().optional().default("gemini-2.5-flash-lite"),
+  llmApiKey: z.string().optional(),
+  modelFallbacks: z.record(z.string(), z.array(z.string())).optional(),
+  enableModelFallback: z.record(z.string(), z.boolean()).optional(),
+  providerBaseUrls: z.record(z.string(), z.string()).optional()
+});
+
+searchRouter.post("/extract-search-terms", async (req, res) => {
+  const parseResult = extractTermsSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    res.status(400).json({
+      ok: false,
+      queries: [],
+      featureCount: 0,
+      error: `Invalid request: ${parseResult.error.issues.map((i) => i.message).join(", ")}`
+    } satisfies ExtractSearchTermsResponse);
+    return;
+  }
+
+  const request = parseResult.data;
+
+  // Resolve LLM provider
+  const providerKeys = new Map<string, string>();
+  if (request.llmApiKey) {
+    for (const pid of request.providerPreference) {
+      if (registry.get(pid)) {
+        providerKeys.set(pid, request.llmApiKey);
+        break;
+      }
+    }
+  }
+  for (const pid of request.providerPreference) {
+    if (!providerKeys.has(pid)) {
+      const key = getApiKey(pid);
+      if (key) providerKeys.set(pid, key);
+    }
+  }
+  const availableProviders = request.providerPreference.filter((p) => providerKeys.has(p));
+  if (availableProviders.length === 0) {
+    res.status(400).json({
+      ok: false,
+      queries: [],
+      featureCount: 0,
+      error: "未配置任何 LLM API key，无法提取检索词。"
+    } satisfies ExtractSearchTermsResponse);
+    return;
+  }
+
+  try {
+    const featureText = request.features.map((f) => `${f.featureCode}: ${f.description}`).join("\n");
+    const extractPrompt = sanitizeText(
+      `你是资深专利检索专家。请从权利要求中提取用于搜索专利文献的检索式。\n\n` +
+      `权利要求文本:\n${request.claimText.slice(0, 4000)}\n\n` +
+      `技术特征:\n${featureText}\n\n` +
+      `检索策略要求:\n` +
+      `1. 生成 3-5 条短检索式，每条仅含 2-4 个词，用于在 Google Patents 等专利搜索引擎中检索\n` +
+      `2. 每条检索式必须是纯中文或纯英文，不要中英混杂\n` +
+      `3. 优先选择能区分技术方案的特征词，避免通用词（如"装置""方法"）\n` +
+      `4. 中文检索式用中文关键词，英文检索式用英文关键词\n` +
+      `5. 覆盖不同角度：技术领域、核心结构、关键技术特征\n\n` +
+      `请严格输出 JSON 格式 {"queries":["查询1","查询2",...]}，不要输出其他内容：`
+    );
+
+    const firstProvider = availableProviders[0]!;
+    const apiKey = providerKeys.get(firstProvider)!;
+
+    const extractReq: ChatRequest = {
+      modelId: request.modelId,
+      messages: [{ role: "user", content: extractPrompt }],
+      maxTokens: 8192,
+      apiKey
+    };
+
+    const { response: extractRes } = await registry.runWithFallback(
+      availableProviders as string[],
+      extractReq,
+      undefined,
+      request.modelFallbacks as Partial<Record<string, string[]>> | undefined,
+      request.enableModelFallback as Partial<Record<string, boolean>> | undefined,
+      request.providerBaseUrls as Partial<Record<string, string>> | undefined,
+      Object.fromEntries(providerKeys) as Partial<Record<string, string>>
+    );
+
+    if (extractRes.error || !extractRes.text?.trim()) {
+      logger.error("Extract search terms failed", { error: extractRes.error });
+      res.status(502).json({
+        ok: false,
+        queries: [],
+        featureCount: request.features.length,
+        error: "AI 提取检索词失败，请稍后重试。"
+      } satisfies ExtractSearchTermsResponse);
+      return;
+    }
+
+    // Parse queries
+    let searchQueries: string[];
+    const rawText = extractRes.text.trim();
+    try {
+      const extracted = extractJsonFromText(rawText);
+      if (extracted) {
+        const parsed = extracted.parsed;
+        searchQueries = Array.isArray(parsed)
+          ? (parsed as string[])
+          : ((parsed as { queries?: string[] }).queries ?? []);
+      } else {
+        searchQueries = [];
+      }
+    } catch {
+      searchQueries = [];
+    }
+
+    if (searchQueries.length === 0) {
+      searchQueries = rawText
+        .split(/\n/)
+        .map((s) => s.replace(/^[-•*\d.)`\s]+/, "").trim())
+        .filter((s) => s.length >= 3 && !s.startsWith("```") && !/^[{}[\]":,]/.test(s))
+        .slice(0, 5);
+    }
+
+    searchQueries = searchQueries
+      .filter((q) => q.length >= 3 && !q.startsWith("```") && !q.startsWith("{"))
+      .slice(0, 5);
+
+    if (searchQueries.length === 0) {
+      searchQueries = [rawText];
+    }
+
+    logger.info("Extract search terms completed", { queryCount: searchQueries.length });
+
+    res.json({
+      ok: true,
+      queries: searchQueries,
+      featureCount: request.features.length
+    } satisfies ExtractSearchTermsResponse);
+  } catch (error) {
+    logger.error("Extract search terms error", { error: String(error) });
+    res.status(500).json({
+      ok: false,
+      queries: [],
+      featureCount: 0,
+      error: `提取检索词失败: ${String(error)}`
+    } satisfies ExtractSearchTermsResponse);
+  }
+});
+
+// ─── nf-7: Step 2 — 用用户编辑后的检索词执行搜索 ───
+
+const searchWithTermsSchema = z.object({
+  caseId: z.string(),
+  claimText: z.string().min(1),
+  features: z.array(z.object({ featureCode: z.string(), description: z.string() })),
+  searchQueries: z.array(z.string().min(1)).min(1),
+  maxResults: z.number().int().min(1).max(10).optional().default(5),
+  searchProviderId: z.string().optional(),
+  searchApiKey: z.string().optional(),
+  searchBaseUrl: z.string().optional(),
+  llmApiKey: z.string().optional(),
+  providerPreference: z.array(z.string()).optional().default(["gemini", "mimo"]),
+  modelId: z.string().optional().default("gemini-2.5-flash-lite"),
+  modelFallbacks: z.record(z.string(), z.array(z.string())).optional(),
+  enableModelFallback: z.record(z.string(), z.boolean()).optional(),
+  providerBaseUrls: z.record(z.string(), z.string()).optional()
+});
+
+searchRouter.post("/search-with-terms", async (req, res) => {
+  const parseResult = searchWithTermsSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    res.status(400).json({
+      ok: false,
+      candidates: [],
+      error: `Invalid request: ${parseResult.error.issues.map((i) => i.message).join(", ")}`
+    } satisfies SearchReferencesResponse);
+    return;
+  }
+
+  const request = parseResult.data;
+  const searchProviderId = request.searchProviderId || "tavily";
+
+  // Resolve search API key
+  const envKeyMap: Record<string, string | undefined> = {
+    tavily: process.env.TAVILY_API_KEY,
+    serpapi: process.env.SerpAPI_KEY,
+    epo: process.env.EPO_CONSUMER_KEY && process.env.EPO_CONSUMER_SECRET
+      ? `${process.env.EPO_CONSUMER_KEY}:${process.env.EPO_CONSUMER_SECRET}`
+      : undefined
+  };
+  const searchApiKey = request.searchApiKey || envKeyMap[searchProviderId];
+  if (!searchApiKey) {
+    res.status(503).json({
+      ok: false,
+      candidates: [],
+      error: "搜索服务不可用：未配置搜索 API Key。"
+    } satisfies SearchReferencesResponse);
+    return;
+  }
+
+  // Resolve LLM provider
+  const providerKeys = new Map<string, string>();
+  if (request.llmApiKey) {
+    for (const pid of request.providerPreference) {
+      if (registry.get(pid)) {
+        providerKeys.set(pid, request.llmApiKey);
+        break;
+      }
+    }
+  }
+  for (const pid of request.providerPreference) {
+    if (!providerKeys.has(pid)) {
+      const key = getApiKey(pid);
+      if (key) providerKeys.set(pid, key);
+    }
+  }
+  const availableProviders = request.providerPreference.filter((p) => providerKeys.has(p));
+  if (availableProviders.length === 0) {
+    res.status(400).json({
+      ok: false,
+      candidates: [],
+      error: "未配置任何 LLM API key，无法执行检索分析。"
+    } satisfies SearchReferencesResponse);
+    return;
+  }
+
+  try {
+    let searchQueries = [...request.searchQueries];
+
+    // EPO translation if needed
+    if (searchProviderId === "epo") {
+      const chineseQueries = searchQueries.filter(q => /[一-鿿]/.test(q));
+      if (chineseQueries.length > 0) {
+        const firstProvider = availableProviders[0]!;
+        const apiKey = providerKeys.get(firstProvider)!;
+        const translatePrompt = sanitizeText(
+          `你是专利检索专家。请将以下中文检索词翻译为英文，用于在 EPO 专利数据库中检索。\n\n` +
+          `中文检索词:\n${chineseQueries.map((q, i) => `${i + 1}. ${q}`).join("\n")}\n\n` +
+          `输出 JSON 格式: {"translations":["英文检索词1","英文检索词2",...]}`
+        );
+        const translateReq: ChatRequest = {
+          modelId: request.modelId,
+          messages: [{ role: "user", content: translatePrompt }],
+          maxTokens: 4096,
+          apiKey
+        };
+        try {
+          const { response: translateRes } = await registry.runWithFallback(
+            availableProviders as string[], translateReq, undefined,
+            request.modelFallbacks as Partial<Record<string, string[]>> | undefined,
+            request.enableModelFallback as Partial<Record<string, boolean>> | undefined,
+            request.providerBaseUrls as Partial<Record<string, string>> | undefined,
+            Object.fromEntries(providerKeys) as Partial<Record<string, string>>
+          );
+          if (!translateRes.error && translateRes.text) {
+            const extracted = extractJsonFromText(translateRes.text);
+            if (extracted) {
+              const parsed = extracted.parsed as { translations?: string[] };
+              if (parsed.translations && parsed.translations.length === chineseQueries.length) {
+                let transIdx = 0;
+                searchQueries = searchQueries.map(q =>
+                  /[一-鿿]/.test(q) ? parsed.translations![transIdx++]! : q
+                );
+              }
+            }
+          }
+        } catch (err) {
+          logger.warn("EPO query translation failed, using original", { error: String(err) });
+        }
+      }
+    }
+
+    const searchQuery = searchQueries.join(" | ");
+    logger.info("Search with user terms", { providerId: searchProviderId, queries: searchQueries });
+
+    const searchConfig = {
+      providerId: searchProviderId,
+      apiKey: searchApiKey,
+      ...(request.searchBaseUrl ? { baseUrl: request.searchBaseUrl } : {})
+    };
+    const searchRes = await searchPatents(searchQueries, request.maxResults * 2, searchConfig);
+
+    const dataSourceName: Record<string, string> = {
+      tavily: "Tavily", serpapi: "SerpAPI", epo: "EPO", custom: "自定义数据源"
+    };
+    const providerResultCount = {
+      providerId: searchProviderId,
+      providerName: dataSourceName[searchProviderId] ?? searchProviderId.toUpperCase(),
+      resultCount: searchRes.results.length,
+      candidateCount: 0 // updated after LLM filtering
+    };
+
+    const searchSummary: SearchSummary = {
+      featureCount: request.features.length,
+      queryCount: searchQueries.length,
+      dataSource: dataSourceName[searchProviderId] ?? searchProviderId.toUpperCase(),
+      queries: searchQueries,
+      providerResults: [providerResultCount]
+    };
+
+    if (searchRes.results.length === 0) {
+      res.json({
+        ok: true,
+        candidates: [],
+        searchQuery,
+        searchSummary,
+        error: `未在 ${searchSummary.dataSource} 数据库中找到与这些技术特征匹配的专利文献。`
+      } satisfies SearchReferencesResponse);
+      return;
+    }
+
+    // LLM filter and rank
+    const featureText = request.features.map((f) => `${f.featureCode}: ${f.description}`).join("\n");
+    const searchResultsText = searchRes.results
+      .map((r, i) => `[${i + 1}] 标题: ${r.title}\nURL: ${r.url}\n摘要: ${r.content.slice(0, 500)}`)
+      .join("\n\n");
+
+    const filterPrompt = sanitizeText(
+      `你是专利检索分析专家。以下是从网络搜索到的结果，需要从中识别专利文献。\n\n` +
+      `权利要求文本:\n${request.claimText.slice(0, 2000)}\n\n` +
+      `技术特征:\n${featureText}\n\n` +
+      `搜索结果:\n${searchResultsText}\n\n` +
+      `任务：从搜索结果中识别专利文献，提取 title, publicationNumber, publicationDate, summary, relevanceScore, recommendationReason, sourceUrl。` +
+      `按相关度排序，最多返回${request.maxResults}篇。\n\n` +
+      `输出 JSON 数组格式。`
+    );
+
+    const firstProvider = availableProviders[0]!;
+    const apiKey = providerKeys.get(firstProvider)!;
+    const filterReq: ChatRequest = {
+      modelId: request.modelId,
+      messages: [{ role: "user", content: filterPrompt }],
+      maxTokens: 8192,
+      apiKey
+    };
+
+    const { response: filterRes } = await registry.runWithFallback(
+      availableProviders as string[], filterReq, undefined,
+      request.modelFallbacks as Partial<Record<string, string[]>> | undefined,
+      request.enableModelFallback as Partial<Record<string, boolean>> | undefined,
+      request.providerBaseUrls as Partial<Record<string, string>> | undefined,
+      Object.fromEntries(providerKeys) as Partial<Record<string, string>>
+    );
+
+    if (filterRes.error || !filterRes.text?.trim()) {
+      res.status(502).json({
+        ok: false, candidates: [], searchQuery, searchSummary,
+        error: "AI 筛选结果失败，请稍后重试。"
+      } satisfies SearchReferencesResponse);
+      return;
+    }
+
+    let candidates: SearchReferencesCandidate[] = [];
+    try {
+      const extracted = extractJsonFromText(filterRes.text);
+      if (extracted) {
+        const parsed = extracted.parsed;
+        const rawCandidates = Array.isArray(parsed) ? (parsed as Record<string, unknown>[]) : ((parsed as { candidates?: Record<string, unknown>[] }).candidates ?? []);
+        candidates = rawCandidates
+          .filter((c: Record<string, unknown>) => c.title && c.publicationNumber)
+          .slice(0, request.maxResults)
+          .map((c: Record<string, unknown>) => ({
+            title: String(c.title),
+            publicationNumber: String(c.publicationNumber),
+            ...(c.publicationDate ? { publicationDate: String(c.publicationDate) } : {}),
+            summary: String(c.summary ?? ""),
+            relevanceScore: Number(c.relevanceScore) || 0,
+            recommendationReason: String(c.recommendationReason ?? ""),
+            ...(c.sourceUrl ? { sourceUrl: String(c.sourceUrl) } : {})
+          }));
+      } else {
+        const fallbackCandidates = extractFallbackCandidates(filterRes.text);
+        if (fallbackCandidates.length > 0) candidates = fallbackCandidates.slice(0, request.maxResults);
+      }
+    } catch {
+      const fallbackCandidates = extractFallbackCandidates(filterRes.text);
+      if (fallbackCandidates.length > 0) candidates = fallbackCandidates.slice(0, request.maxResults);
+    }
+
+    // Update candidate count
+    if (searchSummary.providerResults) {
+      searchSummary.providerResults[0]!.candidateCount = candidates.length;
+    }
+
+    res.json({ ok: true, candidates, searchQuery, searchSummary } satisfies SearchReferencesResponse);
+  } catch (error) {
+    logger.error("Search with terms error", { error: String(error) });
+    res.status(500).json({
+      ok: false, candidates: [],
       error: `检索失败: ${String(error)}`
     } satisfies SearchReferencesResponse);
   }

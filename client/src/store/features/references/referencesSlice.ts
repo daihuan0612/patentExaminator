@@ -10,11 +10,26 @@ function debugRefLog(...args: unknown[]) {
   }
 }
 
+export interface ProviderResult {
+  providerId: string;
+  providerName: string;
+  resultCount: number;
+  candidateCount: number;
+}
+
+export type SearchStep = "idle" | "extracting" | "editing" | "searching" | "done";
+
 export interface ReferencesSlice {
   references: ReferenceDocument[];
   candidates: ReferenceDocument[];
   isLoading: boolean;
   isSearching: boolean;
+
+  // nf-7: 检索会话状态
+  searchTerms: string[];
+  searchStep: SearchStep;
+  searchSessionId: string | null;
+  providerResults: ProviderResult[];
 
   setReferences: (refs: ReferenceDocument[]) => void;
   addReference: (ref: ReferenceDocument) => void;
@@ -27,6 +42,15 @@ export interface ReferencesSlice {
   rejectCandidate: (candidateId: string) => void;
   clearCandidates: () => void;
   setIsSearching: (v: boolean) => void;
+
+  // nf-7 actions
+  setSearchTerms: (terms: string[]) => void;
+  setSearchStep: (step: SearchStep) => void;
+  setSearchSessionId: (id: string | null) => void;
+  setProviderResults: (results: ProviderResult[]) => void;
+  addSearchTerm: (term: string) => void;
+  updateSearchTerm: (index: number, term: string) => void;
+  removeSearchTerm: (index: number) => void;
 }
 
 export const createReferencesSlice = (
@@ -37,6 +61,12 @@ export const createReferencesSlice = (
   candidates: [],
   isLoading: false,
   isSearching: false,
+
+  // nf-7
+  searchTerms: [],
+  searchStep: "idle",
+  searchSessionId: null,
+  providerResults: [],
 
   setReferences: (references) => {
     debugRefLog("setReferences:", { count: references.length, ids: references.map(r => r.id) });
@@ -82,7 +112,22 @@ export const createReferencesSlice = (
   rejectCandidate: (candidateId) =>
     set((prev) => ({ candidates: prev.candidates.filter((c) => c.id !== candidateId) })),
   clearCandidates: () => set(() => ({ candidates: [] })),
-  setIsSearching: (v) => set(() => ({ isSearching: v }))
+  setIsSearching: (v) => set(() => ({ isSearching: v })),
+
+  // nf-7 actions
+  setSearchTerms: (terms) => set(() => ({ searchTerms: terms })),
+  setSearchStep: (step) => set(() => ({ searchStep: step })),
+  setSearchSessionId: (id) => set(() => ({ searchSessionId: id })),
+  setProviderResults: (results) => set(() => ({ providerResults: results })),
+  addSearchTerm: (term) => set((prev) => ({ searchTerms: [...prev.searchTerms, term] })),
+  updateSearchTerm: (index, term) =>
+    set((prev) => ({
+      searchTerms: prev.searchTerms.map((t, i) => (i === index ? term : t))
+    })),
+  removeSearchTerm: (index) =>
+    set((prev) => ({
+      searchTerms: prev.searchTerms.filter((_, i) => i !== index)
+    }))
 });
 
 export const useReferencesStore = create<ReferencesSlice>()((set, get) =>

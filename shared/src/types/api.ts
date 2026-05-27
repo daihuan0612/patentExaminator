@@ -49,6 +49,14 @@ export interface SearchReferencesCandidate {
   sourceUrl?: string;
 }
 
+/** 每个搜索 Provider 的结果计数 */
+export interface ProviderResultCount {
+  providerId: string;
+  providerName: string;
+  resultCount: number;
+  candidateCount: number;
+}
+
 export interface SearchSummary {
   /** 技术特征数量 */
   featureCount: number;
@@ -58,6 +66,25 @@ export interface SearchSummary {
   dataSource: string;
   /** 原始检索词列表（供折叠展示） */
   queries: string[];
+  /** 每个 Provider 的结果明细（nf-7） */
+  providerResults?: ProviderResultCount[];
+}
+
+/** nf-7: Step 1 响应 — 仅提取检索词 */
+export interface ExtractSearchTermsResponse {
+  ok: boolean;
+  queries: string[];
+  featureCount: number;
+  error?: string;
+}
+
+/** nf-7: Step 2 请求 — 用用户编辑后的检索词搜索 */
+export interface SearchWithTermsRequest {
+  caseId: string;
+  claimText: string;
+  features: Array<{ featureCode: string; description: string }>;
+  searchQueries: string[];
+  maxResults?: number;
 }
 
 export interface SearchReferencesResponse {

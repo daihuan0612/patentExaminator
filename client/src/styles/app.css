@@ -3682,6 +3682,151 @@
   word-break: break-all;
 }
 
+/* ─── nf-7: 检索词编辑器 ─── */
+
+.search-terms-editor {
+  margin: 12px 0;
+  padding: 12px 16px;
+  background: var(--pex-color-bg-card);
+  border: 1px solid var(--pex-color-border-default);
+  border-radius: var(--pex-radius-lg);
+}
+
+.search-term-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.search-term-row input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--pex-color-border-default);
+  border-radius: var(--pex-radius-md);
+  font-size: var(--pex-font-size-body-sm);
+  color: var(--pex-color-text-primary);
+  background: var(--pex-color-bg-input);
+}
+
+.search-term-row input:focus {
+  outline: none;
+  border-color: var(--pex-color-primary);
+}
+
+.search-term-delete {
+  background: none;
+  border: none;
+  color: var(--pex-color-text-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: var(--pex-font-size-caption);
+  border-radius: var(--pex-radius-sm);
+}
+
+.search-term-delete:hover {
+  color: var(--pex-color-error);
+  background: var(--pex-color-error-bg);
+}
+
+.search-terms-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.btn-add-term {
+  font-size: var(--pex-font-size-caption);
+  color: var(--pex-color-primary);
+  background: none;
+  border: 1px dashed var(--pex-color-primary-border);
+  border-radius: var(--pex-radius-md);
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.btn-add-term:hover {
+  background: var(--pex-color-primary-light);
+}
+
+/* ─── nf-7: 逐 Provider 结果计数 ─── */
+
+.provider-results-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 8px 0;
+}
+
+.provider-result-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--pex-color-primary-light);
+  border: 1px solid var(--pex-color-primary-border);
+  border-radius: var(--pex-radius-full);
+  font-size: var(--pex-font-size-caption);
+  color: var(--pex-color-text-secondary);
+}
+
+.provider-result-badge .count {
+  font-weight: var(--pex-font-weight-semibold);
+  color: var(--pex-color-primary);
+}
+
+.provider-result-badge--zero {
+  background: var(--pex-color-bg-muted, #f5f5f5);
+  border-color: var(--pex-color-border-default);
+  color: var(--pex-color-text-muted);
+}
+
+.provider-result-badge--zero .count {
+  color: var(--pex-color-text-muted);
+}
+
+/* ─── nf-7: 步骤操作按钮 ─── */
+
+.search-step-actions {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.search-step-actions .btn-primary {
+  padding: 8px 16px;
+  background: var(--pex-color-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--pex-radius-lg);
+  font-size: var(--pex-font-size-body-sm);
+  cursor: pointer;
+}
+
+.search-step-actions .btn-primary:hover {
+  opacity: 0.9;
+}
+
+.search-step-actions .btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.search-step-actions .btn-secondary {
+  padding: 8px 16px;
+  background: transparent;
+  color: var(--pex-color-text-secondary);
+  border: 1px solid var(--pex-color-border-default);
+  border-radius: var(--pex-radius-lg);
+  font-size: var(--pex-font-size-body-sm);
+  cursor: pointer;
+}
+
+.search-step-actions .btn-secondary:hover {
+  background: var(--pex-color-bg-muted, #f5f5f5);
+}
+
 .candidates-toolbar {
   display: flex;
   align-items: center;

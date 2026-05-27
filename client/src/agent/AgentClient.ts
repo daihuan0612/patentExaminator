@@ -14,6 +14,9 @@ import {
   SearchReferencesResponse,
   ExtractCaseFieldsRequest,
   ExtractCaseFieldsResponse,
+  ExtractSearchTermsRequest,
+  ExtractSearchTermsResponse,
+  SearchWithTermsRequest,
   SummaryRequest,
   SummaryResponse,
   TranslateRequest,
@@ -258,6 +261,139 @@ export class AgentClient {
       clearServerReadyCache();
       await waitForServerReady(this.gatewayUrl, true);
       res = await doSearchFetch();
+    }
+
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(error.error ?? `Search error: ${res.status}`);
+    }
+
+    return (await res.json()) as SearchReferencesResponse;
+  }
+
+  /** nf-7 Step 1: 仅提取检索词，不执行搜索 */
+  async runExtractSearchTerms(
+    request: ExtractSearchTermsRequest,
+    options?: AgentRunOptions
+  ): Promise<ExtractSearchTermsResponse> {
+    if (this.mode === "mock") {
+      return {
+        ok: true,
+        queries: ["LED散热器 相变材料", "LED heatsink phase change", "散热模组 相变储能", "thermal management phase change"],
+        featureCount: request.features.length
+      };
+    }
+
+    await waitForServerReady(this.gatewayUrl);
+
+    const searchResolved = options?.providerId && options?.modelId
+      ? { providerId: options.providerId, modelId: options.modelId }
+      : this.resolveAgent("search-references") ?? {
+          providerId: this.enabledProviders[0] ?? this.fallbackProvider,
+          modelId: this.fallbackModel
+        };
+
+    const modelFallbacks: Partial<Record<string, string[]>> = {};
+    const enableModelFallback: Partial<Record<string, boolean>> = {};
+    const providerBaseUrls: Partial<Record<string, string>> = {};
+    for (const p of this.providerSettings) {
+      modelFallbacks[p.providerId] = p.modelFallbacks ?? p.modelIds;
+      enableModelFallback[p.providerId] = p.enableModelFallback ?? true;
+      if (p.baseUrl) providerBaseUrls[p.providerId] = p.baseUrl;
+    }
+
+    const doFetch = async (): Promise<Response> => {
+      return fetch(`${this.gatewayUrl}/extract-search-terms`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          caseId: request.caseId,
+          claimText: request.claimText,
+          features: request.features,
+          providerPreference: [searchResolved.providerId, ...this.enabledProviders.filter((p) => p !== searchResolved.providerId)],
+          modelId: searchResolved.modelId,
+          llmApiKey: this.llmApiKey || undefined,
+          modelFallbacks,
+          enableModelFallback,
+          providerBaseUrls
+        })
+      });
+    };
+
+    let res: Response;
+    try {
+      res = await doFetch();
+    } catch {
+      clearServerReadyCache();
+      await waitForServerReady(this.gatewayUrl, true);
+      res = await doFetch();
+    }
+
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(error.error ?? `Extract terms error: ${res.status}`);
+    }
+
+    return (await res.json()) as ExtractSearchTermsResponse;
+  }
+
+  /** nf-7 Step 2: 用用户编辑后的检索词搜索 */
+  async runSearchWithTerms(
+    request: SearchWithTermsRequest,
+    options?: AgentRunOptions
+  ): Promise<SearchReferencesResponse> {
+    if (this.mode === "mock") {
+      return mockSearchReferences({ caseId: request.caseId, claimText: request.claimText, features: request.features, maxResults: request.maxResults });
+    }
+
+    await waitForServerReady(this.gatewayUrl);
+
+    const searchResolved = options?.providerId && options?.modelId
+      ? { providerId: options.providerId, modelId: options.modelId }
+      : this.resolveAgent("search-references") ?? {
+          providerId: this.enabledProviders[0] ?? this.fallbackProvider,
+          modelId: this.fallbackModel
+        };
+
+    const modelFallbacks: Partial<Record<string, string[]>> = {};
+    const enableModelFallback: Partial<Record<string, boolean>> = {};
+    const providerBaseUrls: Partial<Record<string, string>> = {};
+    for (const p of this.providerSettings) {
+      modelFallbacks[p.providerId] = p.modelFallbacks ?? p.modelIds;
+      enableModelFallback[p.providerId] = p.enableModelFallback ?? true;
+      if (p.baseUrl) providerBaseUrls[p.providerId] = p.baseUrl;
+    }
+
+    const doFetch = async (): Promise<Response> => {
+      return fetch(`${this.gatewayUrl}/search-with-terms`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          caseId: request.caseId,
+          claimText: request.claimText,
+          features: request.features,
+          searchQueries: request.searchQueries,
+          maxResults: request.maxResults ?? 5,
+          searchProviderId: request.searchProviderId,
+          searchApiKey: request.searchApiKey,
+          searchBaseUrl: request.searchBaseUrl,
+          providerPreference: [searchResolved.providerId, ...this.enabledProviders.filter((p) => p !== searchResolved.providerId)],
+          modelId: searchResolved.modelId,
+          llmApiKey: this.llmApiKey || undefined,
+          modelFallbacks,
+          enableModelFallback,
+          providerBaseUrls
+        })
+      });
+    };
+
+    let res: Response;
+    try {
+      res = await doFetch();
+    } catch {
+      clearServerReadyCache();
+      await waitForServerReady(this.gatewayUrl, true);
+      res = await doFetch();
     }
 
     if (!res.ok) {

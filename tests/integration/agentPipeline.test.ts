@@ -434,6 +434,94 @@ describe("Agent Pipeline: SearchReferences (Mock)", () => {
   });
 });
 
+describe("Agent Pipeline: Two-Step Search nf-7 (Mock)", () => {
+  it("runExtractSearchTerms → 返回检索词列表", async () => {
+    const client = makeMockClient();
+    const resp = await client.runExtractSearchTerms({
+      caseId: CASE_ID,
+      claimText: MOCK_CLAIM_TEXT,
+      features: [
+        { featureCode: "A", description: "散热基板" },
+        { featureCode: "B", description: "导热界面层" }
+      ]
+    });
+
+    expect(resp.ok).toBe(true);
+    expect(resp.queries.length).toBeGreaterThanOrEqual(1);
+    expect(resp.featureCount).toBe(2);
+    resp.queries.forEach((q) => {
+      expect(q.length).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  it("runSearchWithTerms → 用编辑后的检索词搜索 → 返回候选文献", async () => {
+    const client = makeMockClient();
+    const resp = await client.runSearchWithTerms({
+      caseId: CASE_ID,
+      claimText: MOCK_CLAIM_TEXT,
+      features: [{ featureCode: "A", description: "散热基板" }],
+      searchQueries: ["LED散热器 相变材料", "散热模组 相变储能"],
+      maxResults: 3
+    });
+
+    expect(resp.ok).toBe(true);
+    expect(resp.candidates.length).toBeGreaterThan(0);
+    expect(resp.candidates[0]!.publicationNumber).toBeTruthy();
+  });
+
+  it("referencesSlice → searchTerms CRUD 操作", () => {
+    const store = useReferencesStore.getState();
+
+    store.setSearchTerms(["term1", "term2", "term3"]);
+    expect(useReferencesStore.getState().searchTerms).toEqual(["term1", "term2", "term3"]);
+
+    store.updateSearchTerm(1, "edited-term2");
+    expect(useReferencesStore.getState().searchTerms[1]).toBe("edited-term2");
+
+    store.removeSearchTerm(0);
+    expect(useReferencesStore.getState().searchTerms).toEqual(["edited-term2", "term3"]);
+
+    store.addSearchTerm("new-term");
+    expect(useReferencesStore.getState().searchTerms).toEqual(["edited-term2", "term3", "new-term"]);
+
+    store.setSearchTerms([]);
+    expect(useReferencesStore.getState().searchTerms).toEqual([]);
+  });
+
+  it("referencesSlice → searchStep 状态转换", () => {
+    const store = useReferencesStore.getState();
+
+    store.setSearchStep("idle");
+    expect(useReferencesStore.getState().searchStep).toBe("idle");
+
+    store.setSearchStep("extracting");
+    expect(useReferencesStore.getState().searchStep).toBe("extracting");
+
+    store.setSearchStep("editing");
+    expect(useReferencesStore.getState().searchStep).toBe("editing");
+
+    store.setSearchStep("searching");
+    expect(useReferencesStore.getState().searchStep).toBe("searching");
+
+    store.setSearchStep("done");
+    expect(useReferencesStore.getState().searchStep).toBe("done");
+  });
+
+  it("referencesSlice → providerResults 设置和读取", () => {
+    const store = useReferencesStore.getState();
+    const results = [
+      { providerId: "tavily", providerName: "Tavily", resultCount: 12, candidateCount: 5 },
+      { providerId: "epo", providerName: "EPO", resultCount: 0, candidateCount: 0 }
+    ];
+
+    store.setProviderResults(results);
+    expect(useReferencesStore.getState().providerResults).toEqual(results);
+
+    store.setProviderResults([]);
+    expect(useReferencesStore.getState().providerResults).toEqual([]);
+  });
+});
+
 describe("Agent Pipeline: Chat (Mock)", () => {
   it("runChat → 普通消息 → 上下文感知回复", async () => {
     const client = makeMockClient();

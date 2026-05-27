@@ -8,6 +8,7 @@
 
 | 版本 | 日期 | 变更摘要 |
 |------|------|---------|
+| v0.1.0-r34 | 2026-05-27 | nf-7: AI 辅助检索两步式流程 — 新增 extract-search-terms/search-with-terms 端点、SearchSession IndexedDB 存储（v8→v9）、searchSessionRepo、ReferenceSearchPanel 两步 UI（可编辑检索词 + 逐 Provider 结果计数 + 持久化） | search.ts, indexedDb.ts, searchSessionRepo.ts, referencesSlice.ts, AgentClient.ts, ReferenceSearchPanel.tsx, app.css, api.ts, domain.ts, contracts.ts |
 | v0.1.0-r33 | 2026-05-27 | B25: 默认 agent 分配去硬编码 — settingsRepo.ts 中 8 个 agent 默认配置的 providerOrder 从 ["gemini"] 改为 []、modelId 改为 ""，由 AgentClient 从首个 enabled provider 动态获取 | settingsRepo.ts |
 | v0.1.0-r32 | 2026-05-27 | B24: modelId 随 provider 透明变化 — AgentClient.resolveAgent() 查找 resolved provider 的 defaultModelId 替代 assignment 中可能过时的 modelId，确保切换 provider 时 modelId 自动跟随 | AgentClient.ts |
 | v0.1.0-r31 | 2026-05-27 | B23: 推理模型 maxTokens 自适应 — Server 端检测推理模型（MiMo/DeepSeek R1/o1-o3 系列）自动放大 maxTokens 4x；AiRunRequest 新增 maxTokens 可选字段透传 agent 配置；所有适配器（OpenAICompatible/Bedrock/Gemini）统一使用 resolveMaxTokens() | ProviderAdapter.ts, bedrock.ts, gemini.ts, ai.ts, schemas.ts, AgentClient.ts, api.ts |

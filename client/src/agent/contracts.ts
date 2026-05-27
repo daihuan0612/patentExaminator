@@ -178,7 +178,48 @@ export interface SearchReferencesResponse {
   ok: boolean;
   candidates: SearchReferencesCandidate[];
   searchQuery?: string;
+  searchSummary?: {
+    featureCount: number;
+    queryCount: number;
+    dataSource: string;
+    queries: string[];
+    providerResults?: Array<{
+      providerId: string;
+      providerName: string;
+      resultCount: number;
+      candidateCount: number;
+    }>;
+  };
   error?: string;
+}
+
+/** nf-7: Step 1 — 仅提取检索词 */
+export interface ExtractSearchTermsRequest {
+  caseId: string;
+  claimText: string;
+  features: Array<{ featureCode: string; description: string }>;
+  searchProviderId?: string;
+  searchApiKey?: string;
+  searchBaseUrl?: string;
+}
+
+export interface ExtractSearchTermsResponse {
+  ok: boolean;
+  queries: string[];
+  featureCount: number;
+  error?: string;
+}
+
+/** nf-7: Step 2 — 用用户编辑后的检索词搜索 */
+export interface SearchWithTermsRequest {
+  caseId: string;
+  claimText: string;
+  features: Array<{ featureCode: string; description: string }>;
+  searchQueries: string[];
+  maxResults?: number;
+  searchProviderId?: string;
+  searchApiKey?: string;
+  searchBaseUrl?: string;
 }
 
 export type InterpretDocumentType = "application" | "office-action" | "office-action-response";

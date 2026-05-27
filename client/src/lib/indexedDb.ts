@@ -117,10 +117,27 @@ export interface PatentExaminerDB extends DBSchema {
     value: { id: string; caseId: string; module: string; timestamp: string };
     indexes: { "by-caseId": string; "by-module": string };
   };
+  searchSessions: {
+    key: string;
+    value: {
+      id: string;
+      caseId: string;
+      searchTerms: string[];
+      providerResults: Array<{
+        providerId: string;
+        providerName: string;
+        resultCount: number;
+        candidateCount: number;
+      }>;
+      createdAt: string;
+      updatedAt: string;
+    };
+    indexes: { "by-caseId": string };
+  };
 }
 
 const DB_NAME = "patent-examiner-v1";
-const DB_VERSION = 8;
+const DB_VERSION = 9;
 
 export async function openPatentDB(): Promise<IDBPDatabase<PatentExaminerDB>> {
   return openDB<PatentExaminerDB>(DB_NAME, DB_VERSION, {
@@ -206,6 +223,11 @@ export async function openPatentDB(): Promise<IDBPDatabase<PatentExaminerDB>> {
         const markerStore = db.createObjectStore("runMarkers", { keyPath: "id" });
         markerStore.createIndex("by-caseId", "caseId");
         markerStore.createIndex("by-module", "module");
+      }
+
+      if (oldVersion < 9) {
+        const searchSessionStore = db.createObjectStore("searchSessions", { keyPath: "id" });
+        searchSessionStore.createIndex("by-caseId", "caseId");
       }
     }
   });

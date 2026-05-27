@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import type { ReferenceDocument } from "@shared/types/domain";
-import type { SearchReferencesCandidate, SearchReferencesResponse, SearchSummary } from "@shared/types/api";
+import type { SearchReferencesCandidate, SearchReferencesResponse } from "@shared/types/api";
 import { classifyReferenceDate } from "../../lib/dateRules";
 import { TimelineStatusBadge } from "../../components/TimelineStatusBadge";
 import { useReferencesStore, useCaseStore, useSettingsStore } from "../../store";
 import { createDocument } from "../../lib/repositories/documentRepo";
+import { getLatestSearchSession, createSearchSession, updateSearchSession } from "../../lib/repositories/searchSessionRepo";
 import { AgentClient } from "../../agent/AgentClient";
 import { ErrorBanner } from "../../lib/errorDisplay";
 
@@ -16,53 +17,108 @@ interface ReferenceSearchPanelProps {
 
 export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPanelProps) {
   const { caseId } = useParams<{ caseId: string }>();
-  const { candidates, setCandidates, acceptCandidate, rejectCandidate, isSearching, setIsSearching } =
-    useReferencesStore();
+  const {
+    candidates, setCandidates, acceptCandidate, rejectCandidate,
+    isSearching, setIsSearching,
+    searchTerms, setSearchTerms,
+    searchStep, setSearchStep,
+    searchSessionId, setSearchSessionId,
+    providerResults, setProviderResults,
+    addSearchTerm, updateSearchTerm, removeSearchTerm
+  } = useReferencesStore();
   const { references } = useReferencesStore();
   const { currentCase } = useCaseStore();
   const { settings } = useSettingsStore();
   const [error, setError] = useState("");
-  const [searchSummary, setSearchSummary] = useState<SearchSummary | null>(null);
-  const [showQueryDetails, setShowQueryDetails] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const baselineDate = currentCase?.priorityDate ?? currentCase?.applicationDate;
   const MAX_REFERENCES = 10;
+  const remaining = MAX_REFERENCES - references.length;
 
-  const handleSearch = async () => {
+  // 恢复历史检索会话
+  useEffect(() => {
+    if (!caseId) return;
+    (async () => {
+      try {
+        const session = await getLatestSearchSession(caseId);
+        if (session && session.searchTerms.length > 0) {
+          setSearchTerms(session.searchTerms);
+          setProviderResults(session.providerResults);
+          setSearchSessionId(session.id);
+          setSearchStep("done");
+        }
+      } catch {
+        // ignore restore errors
+      }
+    })();
+  }, [caseId, setSearchTerms, setProviderResults, setSearchSessionId, setSearchStep]);
+
+  // Step 1: 提取检索词
+  const handleExtractTerms = useCallback(async () => {
     if (!claimText.trim()) {
       setError("请先上传申请文件并提取权利要求。");
+      return;
+    }
+    setError("");
+    setSearchStep("extracting");
+
+    try {
+      const agentClient = new AgentClient(settings.mode, "/api", settings);
+      const res = await agentClient.runExtractSearchTerms({
+        caseId: caseId ?? "",
+        claimText,
+        features
+      });
+      if (!res.ok || res.queries.length === 0) {
+        setError(res.error || "AI 提取检索词失败。");
+        setSearchStep("idle");
+        return;
+      }
+      setSearchTerms(res.queries);
+      setSearchStep("editing");
+    } catch (err) {
+      setError(String(err));
+      setSearchStep("idle");
+    }
+  }, [claimText, features, caseId, settings, setSearchTerms, setSearchStep]);
+
+  // Step 2: 用编辑后的检索词执行搜索
+  const handleSearchWithTerms = useCallback(async () => {
+    if (searchTerms.length === 0) {
+      setError("请至少保留一条检索词。");
+      return;
+    }
+
+    const enabledSearchProviders = (settings.searchProviders ?? []).filter((p) => p.enabled && p.apiKeyRef);
+    if (enabledSearchProviders.length === 0) {
+      setError("未配置搜索 API。请在设置→专利搜索中配置搜索服务的 API Key。");
       return;
     }
 
     setError("");
     setIsSearching(true);
+    setSearchStep("searching");
     setCandidates([]);
-    setSearchSummary(null);
+    setProviderResults([]);
 
     try {
       const agentClient = new AgentClient(settings.mode, "/api", settings);
-      const enabledSearchProviders = (settings.searchProviders ?? []).filter((p) => p.enabled && p.apiKeyRef);
-      if (enabledSearchProviders.length === 0) {
-        setError("未配置搜索 API。请在设置→专利搜索中配置搜索服务的 API Key。");
-        setIsSearching(false);
-        return;
-      }
-
-      // 并行请求所有搜索 API
       const maxResults = MAX_REFERENCES - references.length;
       const perProvider = Math.max(3, Math.ceil(maxResults / enabledSearchProviders.length));
+
       const responses = await Promise.all(
         enabledSearchProviders.map((sp) =>
-          agentClient.runSearchReferences({
+          agentClient.runSearchWithTerms({
             caseId: caseId ?? "",
             claimText,
             features,
+            searchQueries: searchTerms,
             maxResults: perProvider,
             searchProviderId: sp.providerId,
             searchApiKey: sp.apiKeyRef,
             ...(sp.baseUrl ? { searchBaseUrl: sp.baseUrl } : {})
-          }).catch((err): { ok: false; candidates: []; error: string } => ({
+          }).catch((err): SearchReferencesResponse => ({
             ok: false,
             candidates: [],
             error: String(err)
@@ -70,25 +126,42 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
         )
       );
 
-      // 合并结果，去重，取 top N
-      const failedProviders = responses.filter((r) => !r.ok);
-      const okResponses = responses.filter((r): r is SearchReferencesResponse => r.ok);
+      // 收集每个 provider 的结果
+      const allProviderResults: typeof providerResults = [];
+      const okResponses: SearchReferencesResponse[] = [];
 
-      // Show partial errors if some providers failed but others succeeded
-      if (failedProviders.length > 0 && okResponses.length > 0) {
-        const failedNames = failedProviders.map((_, i) => enabledSearchProviders[i]?.name ?? `Provider ${i + 1}`);
-        console.warn(`Search providers failed: ${failedNames.join(", ")}`, failedProviders.map((r) => r.error));
+      for (let i = 0; i < responses.length; i++) {
+        const r = responses[i]!;
+        const sp = enabledSearchProviders[i]!;
+        if (r.ok) {
+          okResponses.push(r);
+          // 从 searchSummary.providerResults 取，或自行构建
+          const pr = r.searchSummary?.providerResults?.[0];
+          allProviderResults.push({
+            providerId: sp.providerId,
+            providerName: pr?.providerName ?? sp.name ?? sp.providerId,
+            resultCount: pr?.resultCount ?? r.candidates.length,
+            candidateCount: r.candidates.length
+          });
+        } else {
+          allProviderResults.push({
+            providerId: sp.providerId,
+            providerName: sp.name ?? sp.providerId,
+            resultCount: 0,
+            candidateCount: 0
+          });
+        }
       }
+
+      setProviderResults(allProviderResults);
 
       if (okResponses.length === 0) {
         setError(responses.map((r) => r.error).filter(Boolean).join("; ") || "检索失败，请稍后重试。");
+        setSearchStep("editing");
         return;
       }
 
-      // Use searchSummary from the first successful response
-      const firstSummary = okResponses.find((r) => r.searchSummary)?.searchSummary;
-      if (firstSummary) setSearchSummary(firstSummary);
-
+      // 合并去重
       const seen = new Set<string>();
       const merged: ReferenceDocument[] = [];
       for (const res of okResponses) {
@@ -101,31 +174,43 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
         if (merged.length >= maxResults) break;
       }
       setCandidates(merged);
+      setSearchStep("done");
 
-      // If no candidates found but searchSummary exists, show informative message
-      if (merged.length === 0 && firstSummary) {
-        setError(`未在 ${firstSummary.dataSource} 数据库中找到与这些技术特征匹配的专利文献。`);
+      // 持久化到 IndexedDB
+      const sessionData = {
+        id: searchSessionId ?? `search-${caseId}-${Date.now()}`,
+        caseId: caseId ?? "",
+        searchTerms,
+        providerResults: allProviderResults,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      if (searchSessionId) {
+        await updateSearchSession(sessionData);
+      } else {
+        await createSearchSession(sessionData);
+        setSearchSessionId(sessionData.id);
       }
     } catch (err) {
       setError(String(err));
+      setSearchStep("editing");
     } finally {
       setIsSearching(false);
     }
-  };
+  }, [searchTerms, caseId, claimText, features, settings, searchSessionId, references.length,
+      setIsSearching, setSearchStep, setCandidates, setProviderResults, setSearchSessionId]);
+
+  // 回到编辑模式
+  const handleBackToEdit = useCallback(() => {
+    setSearchStep("editing");
+    setError("");
+  }, [setSearchStep]);
 
   const handleAccept = async (candidateId: string) => {
     const candidate = candidates.find((c) => c.id === candidateId);
     if (!candidate) return;
-
-    // Compute timeline status
-    const timelineStatus = classifyReferenceDate(
-      baselineDate,
-      candidate.publicationDate,
-      candidate.publicationDateConfidence
-    );
-    const withTimeline = { ...candidate, timelineStatus };
-
-    await createDocument(withTimeline);
+    const timelineStatus = classifyReferenceDate(baselineDate, candidate.publicationDate, candidate.publicationDateConfidence);
+    await createDocument({ ...candidate, timelineStatus });
     acceptCandidate(candidateId);
   };
 
@@ -140,39 +225,20 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
 
   const toggleSelectAll = () => {
     const selectable = candidates.slice(0, remaining);
-    if (selected.size === selectable.length) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(selectable.map((c) => c.id)));
-    }
+    if (selected.size === selectable.length) setSelected(new Set());
+    else setSelected(new Set(selectable.map((c) => c.id)));
   };
 
   const handleBatchAccept = async () => {
     const ids = candidates.filter((c) => selected.has(c.id)).slice(0, remaining).map((c) => c.id);
-    for (const id of ids) {
-      await handleAccept(id);
-    }
+    for (const id of ids) await handleAccept(id);
     setSelected(new Set());
   };
-
-  const handleReject = (candidateId: string) => {
-    rejectCandidate(candidateId);
-  };
-
-  const remaining = MAX_REFERENCES - references.length;
 
   return (
     <div className="reference-search-panel" data-testid="reference-search-panel">
       <div className="search-header">
         <h3>AI 辅助检索</h3>
-        <button
-          type="button"
-          onClick={handleSearch}
-          disabled={isSearching || remaining <= 0}
-          data-testid="btn-ai-search"
-        >
-          {isSearching ? "检索中..." : "AI 检索候选文献"}
-        </button>
       </div>
 
       {remaining <= 0 && (
@@ -181,52 +247,156 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
 
       {error && <ErrorBanner error={error} data-testid="search-error" />}
 
-      {searchSummary && (
-        <div className="search-summary" data-testid="search-summary">
-          <p className="search-summary-text">
-            基于 {searchSummary.featureCount} 个技术特征生成了 {searchSummary.queryCount} 条检索式，在 {searchSummary.dataSource} 数据库中检索
-          </p>
+      {/* ─── Step 1: 提取检索词按钮 ─── */}
+      {searchStep === "idle" && (
+        <div className="search-step-actions">
           <button
             type="button"
-            className="btn-text btn-toggle-details"
-            onClick={() => setShowQueryDetails(!showQueryDetails)}
-            data-testid="btn-toggle-query-details"
+            className="btn-primary"
+            onClick={handleExtractTerms}
+            disabled={remaining <= 0}
+            data-testid="btn-ai-search"
           >
-            {showQueryDetails ? "收起详情" : "查看检索词"}
+            AI 检索候选文献
           </button>
-          {showQueryDetails && (
-            <div className="query-details" data-testid="query-details">
-              {searchSummary.queries.map((query, idx) => (
+        </div>
+      )}
+
+      {searchStep === "extracting" && (
+        <p className="search-hint">正在提取检索词...</p>
+      )}
+
+      {/* ─── Step 1.5: 编辑检索词 ─── */}
+      {searchStep === "editing" && (
+        <div className="search-terms-editor" data-testid="search-terms-editor">
+          <p style={{ fontSize: "var(--pex-font-size-body-sm)", color: "var(--pex-color-text-secondary)", margin: "0 0 8px" }}>
+            AI 生成了 {searchTerms.length} 条检索词，您可以编辑后确认检索：
+          </p>
+          {searchTerms.map((term, idx) => (
+            <div key={idx} className="search-term-row">
+              <span className="query-index" style={{ minWidth: 20, textAlign: "right", color: "var(--pex-color-text-muted)", fontSize: "var(--pex-font-size-caption)" }}>
+                {idx + 1}.
+              </span>
+              <input
+                type="text"
+                value={term}
+                onChange={(e) => updateSearchTerm(idx, e.target.value)}
+                data-testid={`search-term-input-${idx}`}
+              />
+              <button
+                type="button"
+                className="search-term-delete"
+                onClick={() => removeSearchTerm(idx)}
+                title="删除此检索词"
+                data-testid={`search-term-delete-${idx}`}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          <div className="search-terms-actions">
+            <button
+              type="button"
+              className="btn-add-term"
+              onClick={() => addSearchTerm("")}
+              data-testid="btn-add-term"
+            >
+              + 添加检索词
+            </button>
+          </div>
+          <div className="search-step-actions" style={{ marginTop: 12 }}>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={handleSearchWithTerms}
+              disabled={searchTerms.filter((t) => t.trim()).length === 0}
+              data-testid="btn-confirm-search"
+            >
+              确认检索
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => { setSearchStep("idle"); setSearchTerms([]); setError(""); }}
+              data-testid="btn-cancel-search"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      {searchStep === "searching" && (
+        <p className="search-hint">正在检索中...</p>
+      )}
+
+      {/* ─── Step 2.5: 搜索完成 — 显示结果和操作按钮 ─── */}
+      {searchStep === "done" && searchTerms.length > 0 && (
+        <>
+          {/* 检索词摘要 */}
+          <div className="search-summary" data-testid="search-summary">
+            <p className="search-summary-text">
+              使用 {searchTerms.length} 条检索词完成检索
+            </p>
+            <div className="query-details" data-testid="query-details" style={{ borderTop: "none", marginTop: 4 }}>
+              {searchTerms.map((query, idx) => (
                 <div key={idx} className="query-item">
                   <span className="query-index">{idx + 1}.</span>
                   <span className="query-text">{query}</span>
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* 逐 Provider 结果计数 */}
+          {providerResults.length > 0 && (
+            <div className="provider-results-summary" data-testid="provider-results-summary">
+              {providerResults.map((pr) => (
+                <span
+                  key={pr.providerId}
+                  className={`provider-result-badge${pr.resultCount === 0 ? " provider-result-badge--zero" : ""}`}
+                  data-testid={`provider-result-${pr.providerId}`}
+                >
+                  {pr.providerName}: <span className="count">{pr.resultCount}</span> 条
+                </span>
+              ))}
+            </div>
           )}
-        </div>
+
+          {/* 操作按钮 */}
+          <div className="search-step-actions">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={handleBackToEdit}
+              data-testid="btn-edit-terms"
+            >
+              修改检索词
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={handleSearchWithTerms}
+              disabled={isSearching || remaining <= 0}
+              data-testid="btn-re-search"
+            >
+              {isSearching ? "检索中..." : "重新检索"}
+            </button>
+          </div>
+        </>
       )}
 
+      {/* ─── 候选文献列表 ─── */}
       {candidates.length > 0 && (
         <div className="candidates-list" data-testid="candidates-list">
           <div className="candidates-toolbar">
             <h4>候选文献 ({candidates.length} 篇)</h4>
             <div className="candidates-toolbar-actions">
-              <button
-                type="button"
-                className="btn-text"
-                onClick={toggleSelectAll}
-                data-testid="btn-select-all"
-              >
+              <button type="button" className="btn-text" onClick={toggleSelectAll} data-testid="btn-select-all">
                 {selected.size === candidates.slice(0, remaining).length ? "取消全选" : "全选"}
               </button>
               {selected.size > 0 && (
-                <button
-                  type="button"
-                  className="btn-primary-sm"
-                  onClick={handleBatchAccept}
-                  data-testid="btn-batch-accept"
-                >
+                <button type="button" className="btn-primary-sm" onClick={handleBatchAccept} data-testid="btn-batch-accept">
                   批量接受 ({selected.size})
                 </button>
               )}
@@ -257,13 +427,7 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
                   <span>{candidate.publicationNumber}</span>
                   {candidate.publicationDate && <span>公开日: {candidate.publicationDate}</span>}
                   {candidate.sourceUrl && (
-                    <a
-                      href={candidate.sourceUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="candidate-source-link"
-                      data-testid={`source-link-${candidate.id}`}
-                    >
+                    <a href={candidate.sourceUrl} target="_blank" rel="noopener noreferrer" className="candidate-source-link" data-testid={`source-link-${candidate.id}`}>
                       来源
                     </a>
                   )}
@@ -277,18 +441,10 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
                   <p className="candidate-reason">推荐理由: {candidate.aiRecommendationReason}</p>
                 )}
                 <div className="candidate-actions">
-                  <button
-                    type="button"
-                    onClick={() => handleAccept(candidate.id)}
-                    data-testid={`btn-accept-${candidate.id}`}
-                  >
+                  <button type="button" onClick={() => handleAccept(candidate.id)} data-testid={`btn-accept-${candidate.id}`}>
                     接受
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => handleReject(candidate.id)}
-                    data-testid={`btn-reject-${candidate.id}`}
-                  >
+                  <button type="button" onClick={() => rejectCandidate(candidate.id)} data-testid={`btn-reject-${candidate.id}`}>
                     拒绝
                   </button>
                 </div>
@@ -322,11 +478,7 @@ function candidateToReference(candidate: SearchReferencesCandidate, caseId: stri
     aiRecommendationReason: candidate.recommendationReason,
     createdAt: new Date().toISOString()
   };
-  if (candidate.publicationDate) {
-    ref.publicationDate = candidate.publicationDate;
-  }
-  if (candidate.sourceUrl) {
-    ref.sourceUrl = candidate.sourceUrl;
-  }
+  if (candidate.publicationDate) ref.publicationDate = candidate.publicationDate;
+  if (candidate.sourceUrl) ref.sourceUrl = candidate.sourceUrl;
   return ref;
 }

@@ -320,3 +320,18 @@ export interface AmendedClaimDetail {
   amendedText: string;
   changeDescription: string;
 }
+
+/** nf-7: 检索会话 — 持久化检索词和每个 Provider 的结果 */
+export interface SearchSession {
+  id: string;
+  caseId: string;
+  searchTerms: string[];
+  providerResults: Array<{
+    providerId: string;
+    providerName: string;
+    resultCount: number;
+    candidateCount: number;
+  }>;
+  createdAt: ISODateTimeString;
+  updatedAt: ISODateTimeString;
+}

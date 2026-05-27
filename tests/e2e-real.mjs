@@ -1048,6 +1048,42 @@ async function testMockClassifyDocuments_G1() {
   log("Mock ClassifyDocuments G1 has office-action", roles.includes("office-action"), `roles=${roles.join(",")}`);
 }
 
+// ── nf-7: Two-Step Search (Mock) ────────────────────────────────────
+
+async function testMockExtractSearchTerms_G1() {
+  const res = await postJSON("/extract-search-terms", {
+    caseId: "g1-led",
+    claimText: "一种LED灯具散热装置，包括：散热基板(A)，铝合金材质，表面有散热翅片；导热界面层(B)，石墨烯复合导热膜，厚度0.1-0.5mm；风冷模块(C)，含离心风扇和导风罩。",
+    features: [
+      { featureCode: "A", description: "散热基板" },
+      { featureCode: "B", description: "导热界面层" },
+      { featureCode: "C", description: "风冷模块" }
+    ]
+  });
+  const data = await res.json();
+  const ok = data.ok && Array.isArray(data.queries) && data.queries.length >= 1 && data.featureCount === 3;
+  log("MockExtractSearchTerms_G1: returns queries", ok,
+    ok ? `queries=${data.queries.length}` : JSON.stringify(data));
+}
+
+async function testMockSearchWithTerms_G1() {
+  const res = await postJSON("/search-with-terms", {
+    caseId: "g1-led",
+    claimText: "一种LED灯具散热装置，包括：散热基板(A)，铝合金材质，表面有散热翅片；导热界面层(B)，石墨烯复合导热膜，厚度0.1-0.5mm；风冷模块(C)，含离心风扇和导风罩。",
+    features: [
+      { featureCode: "A", description: "散热基板" },
+      { featureCode: "B", description: "导热界面层" }
+    ],
+    searchQueries: ["LED散热器 相变材料", "LED heatsink phase change"],
+    maxResults: 5,
+    mock: true
+  });
+  const data = await res.json();
+  const schemaResult = validateSearchReferencesOutput(data);
+  log("MockSearchWithTerms_G1: response schema", schemaResult.valid, schemaResult.errors.join(", "));
+  log("MockSearchWithTerms_G1: has candidates", data.candidates?.length > 0, `count=${data.candidates?.length}`);
+}
+
 // ── Reexam Data Integrity: Cross-Agent Verification ──────────────────
 
 async function testReexamDataIntegrity_G1() {
@@ -2456,6 +2492,11 @@ async function main() {
       await maybe(testMockSummary_G1);
       await maybe(testMockTranslate_G1);
       await maybe(testMockClassifyDocuments_G1);
+
+      // nf-7: Two-Step Search
+      console.log("\n--- Two-Step Search (nf-7) ---");
+      await maybe(testMockExtractSearchTerms_G1);
+      await maybe(testMockSearchWithTerms_G1);
 
       // Reexamination Data Integrity & Pipeline
       console.log("\n--- Reexamination Data Integrity ---");
