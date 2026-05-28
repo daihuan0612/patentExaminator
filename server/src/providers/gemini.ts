@@ -91,8 +91,10 @@ export class GeminiAdapter implements ProviderAdapter {
   }
 
   async listModels(apiKey: string): Promise<string[]> {
-    const url = `${GEMINI_BASE_URL}/models?key=${apiKey}`;
-    const res = await fetch(url);
+    const url = `${GEMINI_BASE_URL}/models`;
+    const res = await fetch(url, {
+      headers: { "x-goog-api-key": apiKey }
+    });
 
     if (!res.ok) {
       const body = await res.text().catch(() => "");
@@ -110,7 +112,7 @@ export class GeminiAdapter implements ProviderAdapter {
 
   async chat(req: ChatRequest): Promise<ChatResponse> {
     const base = req.baseUrl ?? GEMINI_BASE_URL;
-    const url = `${base}/models/${req.modelId}:generateContent?key=${req.apiKey}`;
+    const url = `${base}/models/${req.modelId}:generateContent`;
 
     const contents = req.messages
       .filter(m => m.role !== "system")
@@ -171,7 +173,10 @@ export class GeminiAdapter implements ProviderAdapter {
       try {
         const res = await fetch(url, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": req.apiKey
+          },
           body: JSON.stringify(body),
           signal: req.signal ?? null
         });
