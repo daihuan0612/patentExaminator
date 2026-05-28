@@ -89,6 +89,7 @@ export function SummaryWrapper() {
 }
 
 const debugNoveltyLog = createLogger("NoveltyWrapper");
+const debugInventiveLog = createLogger("InventiveWrapper");
 
 export function NoveltyWrapper() {
   const { caseId } = useParams<{ caseId: string }>();
@@ -206,7 +207,7 @@ export function InventiveWrapper() {
   const caseRefs = references.filter((r) => r.caseId === caseId);
   
   // DEBUG: Log all references in store and case-specific refs
-  console.log("[InventiveWrapper] Store references:", {
+  debugInventiveLog("[InventiveWrapper] Store references:", {
     allReferencesCount: references.length,
     allReferences: references.map(r => ({ id: r.id, caseId: r.caseId, title: r.title ?? r.fileName })),
     caseId,

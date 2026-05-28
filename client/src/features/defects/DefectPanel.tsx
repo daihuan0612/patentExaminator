@@ -5,6 +5,9 @@ import type { FormalDefect } from "@shared/types/domain";
 import { InlineEdit } from "../../components/InlineEdit";
 import { ConfirmModal } from "../../components/ConfirmModal";
 import { ErrorBanner } from "../../lib/errorDisplay";
+import { createLogger } from "../../lib/logger";
+
+const log = createLogger("DefectPanel");
 
 interface DefectPanelProps {
   caseId: string;
@@ -47,7 +50,7 @@ export function DefectPanel({
       isMountedRef.current = false;
       controllers.forEach((controller, key) => {
         controller.abort();
-        console.log(`[DefectPanel] Aborted request ${key} on unmount`);
+        log(`[DefectPanel] Aborted request ${key} on unmount`);
       });
       controllers.clear();
     };
@@ -107,9 +110,9 @@ export function DefectPanel({
       // - 用户添加：ID 末尾是时间戳（纯数字）
 
       // 添加详细的 ID 诊断日志
-      console.log("[DefectPanel] All defect IDs before classification:");
+      log("[DefectPanel] All defect IDs before classification:");
       for (const d of caseDefects) {
-        console.log(`  - ${d.id} | description: "${d.description.slice(0, 20)}..."`);
+        log(`  - ${d.id} | description: "${d.description.slice(0, 20)}..."`);
       }
 
       // AI 生成的缺陷 ID 末尾有 4 字符随机后缀（[a-z0-9]{4}）
@@ -118,7 +121,7 @@ export function DefectPanel({
       
       const userAddedDefects = caseDefects.filter((d) => {
         const isUserAdded = !aiGeneratedPattern.test(d.id);
-        console.log(`[DefectPanel] Classifying defect "${d.id.slice(-15)}": ${isUserAdded ? 'USER_ADDED' : 'AI_GENERATED'}`);
+        log(`[DefectPanel] Classifying defect "${d.id.slice(-15)}": ${isUserAdded ? 'USER_ADDED' : 'AI_GENERATED'}`);
         return isUserAdded;
       });
 
@@ -127,7 +130,7 @@ export function DefectPanel({
         return aiGeneratedPattern.test(d.id);
       });
 
-      console.log("[DefectPanel] handleRun - defect preservation:", {
+      log("[DefectPanel] handleRun - defect preservation:", {
         total: caseDefects.length,
         userAdded: userAddedDefects.length,
         aiGenerated: aiGeneratedDefects.length,
@@ -161,7 +164,7 @@ export function DefectPanel({
 
       // 重新添加用户手动添加的缺陷（保留用户的手动编辑）
       for (const userDefect of userAddedDefects) {
-        console.log("[DefectPanel] restoring user-added defect:", userDefect.id);
+        log("[DefectPanel] restoring user-added defect:", userDefect.id);
         addDefect(userDefect);
       }
     } catch (err) {

@@ -4,6 +4,9 @@ import type { InventiveRequest, InventiveResponse } from "../../agent/contracts"
 import { useInventiveStore } from "../../store";
 import { InlineEdit } from "../../components/InlineEdit";
 import { updateInventive } from "../../lib/repositories/inventiveRepo";
+import { createLogger } from "../../lib/logger";
+
+const log = createLogger("InventiveStepPanel");
 
 interface InventiveStepPanelProps {
   caseId: string;
@@ -45,7 +48,7 @@ export function InventiveStepPanel({
       isMountedRef.current = false;
       controllers.forEach((controller, key) => {
         controller.abort();
-        console.log(`[InventiveStepPanel] Aborted request ${key} on unmount`);
+        log(`[InventiveStepPanel] Aborted request ${key} on unmount`);
       });
       controllers.clear();
     };
@@ -58,7 +61,7 @@ export function InventiveStepPanel({
   );
   
   // Debug: log available references and state
-  console.log("[InventiveStepPanel] Render state:", {
+  log("[InventiveStepPanel] Render state:", {
     caseId,
     claimNumber,
     referencesCount: references.length,
@@ -176,7 +179,7 @@ if (!isMountedRef.current || controller.signal.aborted) return;
   };
 
   const handleSelectClosest = (refId: string) => {
-    console.log("[InventiveStepPanel] handleSelectClosest called:", { 
+    log("[InventiveStepPanel] handleSelectClosest called:", { 
       refId, 
       currentSelected: selectedClosestId,
       analysisExists: !!analysis,
@@ -186,10 +189,10 @@ if (!isMountedRef.current || controller.signal.aborted) return;
     setSelectedClosestId(refId);
     // 更新 analysis 中的 closestPriorArtId
     if (analysis) {
-      console.log("[InventiveStepPanel] Updating analysis with new closestPriorArtId:", refId);
+      log("[InventiveStepPanel] Updating analysis with new closestPriorArtId:", refId);
       updateAnalysis({ ...analysis, closestPriorArtId: refId });
     } else {
-      console.log("[InventiveStepPanel] No analysis to update");
+      log("[InventiveStepPanel] No analysis to update");
     }
   };
 
@@ -200,7 +203,7 @@ if (!isMountedRef.current || controller.signal.aborted) return;
   };
 
   const handleSaveResponse = async () => {
-    console.log("[InventiveStepPanel] handleSaveResponse called:", {
+    log("[InventiveStepPanel] handleSaveResponse called:", {
       analysisExists: !!analysis,
       analysisId: analysis?.id,
       examinerResponseLength: examinerResponse.length,
@@ -208,7 +211,7 @@ if (!isMountedRef.current || controller.signal.aborted) return;
       currentMotivationEvidence: analysis?.motivationEvidence
     });
     if (!analysis) {
-      console.log("[InventiveStepPanel] handleSaveResponse: NO ANALYSIS - returning early");
+      log("[InventiveStepPanel] handleSaveResponse: NO ANALYSIS - returning early");
       return;
     }
     const updatedAnalysis = {
@@ -216,7 +219,7 @@ if (!isMountedRef.current || controller.signal.aborted) return;
       examinerResponse,
       objectiveTechnicalProblem: techProblem
     };
-    console.log("[InventiveStepPanel] handleSaveResponse: calling updateAnalysis with:", {
+    log("[InventiveStepPanel] handleSaveResponse: calling updateAnalysis with:", {
       id: updatedAnalysis.id,
       examinerResponse: updatedAnalysis.examinerResponse?.substring(0, 100) + "...",
       objectiveTechnicalProblem: updatedAnalysis.objectiveTechnicalProblem,
@@ -226,15 +229,15 @@ if (!isMountedRef.current || controller.signal.aborted) return;
     // Persist to IndexedDB
     try {
       await updateInventive(updatedAnalysis);
-      console.log("[InventiveStepPanel] handleSaveResponse: persisted to IndexedDB");
+      log("[InventiveStepPanel] handleSaveResponse: persisted to IndexedDB");
     } catch (e) {
       console.error("[InventiveStepPanel] handleSaveResponse: failed to persist to IndexedDB", e);
     }
-    console.log("[InventiveStepPanel] handleSaveResponse: updateAnalysis called");
+    log("[InventiveStepPanel] handleSaveResponse: updateAnalysis called");
   };
 
   const handleUpdateEvidence = async (index: number, patch: Partial<{ label: string; quote: string; confidence: string }>) => {
-    console.log("[InventiveStepPanel] handleUpdateEvidence called:", {
+    log("[InventiveStepPanel] handleUpdateEvidence called:", {
       index,
       patch,
       analysisExists: !!analysis,
@@ -242,12 +245,12 @@ if (!isMountedRef.current || controller.signal.aborted) return;
       currentEvidence: analysis?.motivationEvidence[index]
     });
     if (!analysis) {
-      console.log("[InventiveStepPanel] handleUpdateEvidence: NO ANALYSIS - returning early");
+      log("[InventiveStepPanel] handleUpdateEvidence: NO ANALYSIS - returning early");
       return;
     }
     const updated = [...analysis.motivationEvidence];
     updated[index] = { ...updated[index], ...patch } as typeof updated[number];
-    console.log("[InventiveStepPanel] handleUpdateEvidence: calling updateAnalysis with updated evidence:", {
+    log("[InventiveStepPanel] handleUpdateEvidence: calling updateAnalysis with updated evidence:", {
       index,
       newEvidence: updated[index],
       totalEvidence: updated.length
@@ -257,11 +260,11 @@ if (!isMountedRef.current || controller.signal.aborted) return;
     // Persist to IndexedDB
     try {
       await updateInventive(updatedAnalysis);
-      console.log("[InventiveStepPanel] handleUpdateEvidence: persisted to IndexedDB");
+      log("[InventiveStepPanel] handleUpdateEvidence: persisted to IndexedDB");
     } catch (e) {
       console.error("[InventiveStepPanel] handleUpdateEvidence: failed to persist to IndexedDB", e);
     }
-    console.log("[InventiveStepPanel] handleUpdateEvidence: updateAnalysis called");
+    log("[InventiveStepPanel] handleUpdateEvidence: updateAnalysis called");
   };
 
   const handleDeleteEvidence = (index: number) => {
