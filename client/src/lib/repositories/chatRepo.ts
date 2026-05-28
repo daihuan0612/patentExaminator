@@ -1,11 +1,8 @@
 import { getDB } from "../indexedDb";
 import type { ChatSession, ChatMessage } from "@shared/types/domain";
+import { createLogger } from "../logger";
 
-const DEBUG = import.meta.env.DEV;
-
-function log(...args: unknown[]) {
-  if (DEBUG) console.log("[chatRepo]", ...args);
-}
+const log = createLogger("chatRepo");
 
 export async function createSession(session: ChatSession): Promise<void> {
   log("createSession called:", session.id, session.caseId, session.title);

@@ -71,17 +71,42 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
   async listModels(apiKey: string, customBaseUrl?: string): Promise<string[]> {
     const base = customBaseUrl || this.baseUrl || this.defaultBaseUrl;
     const url = `${base}/models`;
-    const res = await fetch(url, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${apiKey}` }
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Failed to list models for ${this.id}: ${res.status} ${body}`);
+    const MAX_RETRIES = 2;
+    const BACKOFF_MS = [1000, 3000];
+
+    let lastError: Error | undefined;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const res = await fetch(url, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${apiKey}` }
+        });
+        if (!res.ok) {
+          const body = await res.text().catch(() => "");
+          const err = new Error(`Failed to list models for ${this.id}: ${res.status} ${body}`);
+          // Don't retry auth errors
+          if (res.status === 401 || res.status === 403) throw err;
+          lastError = err;
+          if (attempt < MAX_RETRIES) {
+            await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
+            continue;
+          }
+          throw err;
+        }
+        const data = (await res.json()) as { data: Array<{ id: string }> };
+        const ids = data.data.map((m) => m.id).filter((id) => isTextModel(id));
+        return ids.sort();
+      } catch (e) {
+        if (e instanceof Error && (e.message.includes("401") || e.message.includes("403"))) {
+          throw e; // Don't retry auth errors
+        }
+        lastError = e instanceof Error ? e : new Error(String(e));
+        if (attempt < MAX_RETRIES) {
+          await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
+        }
+      }
     }
-    const data = (await res.json()) as { data: Array<{ id: string }> };
-    const ids = data.data.map((m) => m.id).filter((id) => isTextModel(id));
-    return ids.sort();
+    throw lastError ?? new Error(`Failed to list models for ${this.id}`);
   }
 
   async chat(req: ChatRequest): Promise<ChatResponse> {

@@ -26,6 +26,7 @@ module.exports = {
     "react/react-in-jsx-scope": "off",
     "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     "react/no-unescaped-entities": "warn",
+    "react/no-array-index-key": "warn",
     "no-empty": "warn"
   },
   overrides: [

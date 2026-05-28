@@ -9,10 +9,8 @@ import { formatAiErrorMessage } from "../../lib/errorDisplay";
 import type { ChatMessage, ChatSession, ModuleScope } from "@shared/types/domain";
 import type { ChatRequest } from "../../agent/contracts";
 
-const DEBUG = import.meta.env.DEV;
-function log(...args: unknown[]) {
-  if (DEBUG) console.log("[ChatPanel]", ...args);
-}
+import { createLogger } from "../../lib/logger";
+const log = createLogger("ChatPanel");
 
 const MODULE_LABELS: Record<string, string> = {
   baseline: "案件基本信息",

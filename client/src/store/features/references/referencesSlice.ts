@@ -5,15 +5,9 @@ import {
   updateDocument as updateDocumentInDB,
   deleteDocument
 } from "../../../lib/repositories/documentRepo";
+import { createLogger } from "../../../lib/logger";
 
-// DEBUG: 调试 bug 18 - 删除对比文件后无法再加载再比较
-const DEBUG_REFERENCES = import.meta.env.DEV;
-
-function debugRefLog(...args: unknown[]) {
-  if (DEBUG_REFERENCES) {
-    console.log("[ReferencesSlice]", ...args);
-  }
-}
+const debugRefLog = createLogger("ReferencesSlice");
 
 export interface ProviderResult {
   providerId: string;

@@ -12,10 +12,8 @@ import { readOpinionAnalysis, readArgumentMappings } from "./repositories/opinio
 import { readReexamDraft, readSummary } from "./repositories/draftRepo";
 import { getRunMarkersByCaseId } from "./repositories/runMarkerRepo";
 
-const DEBUG = import.meta.env.DEV;
-function log(...args: unknown[]) {
-  if (DEBUG) console.log("[caseLoader]", ...args);
-}
+import { createLogger } from "./logger";
+const log = createLogger("caseLoader");
 
 import {
   useCaseStore,

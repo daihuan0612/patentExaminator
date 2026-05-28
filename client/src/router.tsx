@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate, Outlet, useParams } from "react-router-dom";
 import { useEffect, useMemo, useCallback, useState } from "react";
+import { createLogger } from "./lib/logger";
 import { AppShell } from "./components/AppShell";
 import { ShellPlaceholder } from "./components/ShellPlaceholder";
 import { NewCasePage } from "./features/case/NewCasePage";
@@ -87,14 +88,7 @@ export function SummaryWrapper() {
   );
 }
 
-// DEBUG: 调试 bug 18 - 删除对比文件后无法再加载再比较
-const DEBUG_NOVELTY_WRAPPER = import.meta.env.DEV;
-
-function debugNoveltyLog(...args: unknown[]) {
-  if (DEBUG_NOVELTY_WRAPPER) {
-    console.log("[NoveltyWrapper]", ...args);
-  }
-}
+const debugNoveltyLog = createLogger("NoveltyWrapper");
 
 export function NoveltyWrapper() {
   const { caseId } = useParams<{ caseId: string }>();

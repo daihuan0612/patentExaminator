@@ -7,14 +7,9 @@ import {
   deleteNoveltyByCaseId
 } from "../../../lib/repositories/noveltyRepo.js";
 
-// DEBUG: 调试 bug 18 - 删除对比文件后无法再加载再比较
-const DEBUG_NOVELTY_SLICE = import.meta.env.DEV;
+import { createLogger } from "../../../lib/logger";
 
-function debugNoveltySliceLog(...args: unknown[]) {
-  if (DEBUG_NOVELTY_SLICE) {
-    console.log("[NoveltySlice]", ...args);
-  }
-}
+const debugNoveltySliceLog = createLogger("NoveltySlice");
 
 export interface NoveltySlice {
   comparisons: NoveltyComparison[];

@@ -4,14 +4,9 @@ import type { NoveltyRequest, NoveltyResponse } from "../../agent/contracts";
 import { useNoveltyStore } from "../../store";
 import { ErrorBanner } from "../../lib/errorDisplay";
 
-// DEBUG: 调试 bug 18 - 删除对比文件后无法再加载再比较
-const DEBUG_NOVELTY = import.meta.env.DEV;
+import { createLogger } from "../../lib/logger";
 
-function debugLog(...args: unknown[]) {
-  if (DEBUG_NOVELTY) {
-    console.log("[NoveltyAgentTrigger]", ...args);
-  }
-}
+const debugLog = createLogger("NoveltyAgentTrigger");
 
 interface NoveltyAgentTriggerProps {
   caseId: string;
