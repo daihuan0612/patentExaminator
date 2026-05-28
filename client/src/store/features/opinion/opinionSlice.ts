@@ -57,7 +57,7 @@ export const createOpinionSlice = (
     set(() => ({ officeActionAnalysis: analysis }));
   },
   setArgumentMappings: (mappings) => {
-    if (mappings.length > 0 && mappings[0]!.caseId) {
+    if (mappings.length > 0 && mappings[0]?.caseId) {
       saveArgumentMappings(mappings).catch((e) => console.error("[OpinionSlice] saveArgumentMappings error:", e));
     } else if (mappings.length === 0) {
       const caseId = _get().argumentMappings[0]?.caseId;
@@ -85,7 +85,7 @@ export const createOpinionSlice = (
       const newMappings = prev.argumentMappings.map((m) =>
         m.rejectionGroundCode === code ? { ...m, ...patch } : m
       );
-      if (newMappings.length > 0 && newMappings[0]!.caseId) {
+      if (newMappings.length > 0 && newMappings[0]?.caseId) {
         saveArgumentMappings(newMappings).catch((e) => console.error("[OpinionSlice] saveArgumentMappings error:", e));
       }
       return { argumentMappings: newMappings };
@@ -94,7 +94,7 @@ export const createOpinionSlice = (
   removeArgumentMapping: (code) =>
     set((prev) => {
       const newMappings = prev.argumentMappings.filter((m) => m.rejectionGroundCode !== code);
-      if (prev.argumentMappings.length > 0 && prev.argumentMappings[0]!.caseId) {
+      if (prev.argumentMappings.length > 0 && prev.argumentMappings[0]?.caseId) {
         deleteArgumentMappings(prev.argumentMappings[0]!.caseId).catch((e) => console.error("[OpinionSlice] deleteArgumentMappings error:", e));
         if (newMappings.length > 0) {
           saveArgumentMappings(newMappings).catch((e) => console.error("[OpinionSlice] saveArgumentMappings error:", e));

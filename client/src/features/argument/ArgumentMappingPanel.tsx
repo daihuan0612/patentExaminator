@@ -185,7 +185,7 @@ export function ArgumentMappingPanel({
           <div className="argument-mapping-list">
             {result.mappings.map((mapping) => (
               <div
-                key={mapping.rejectionGroundCode}
+                key={mapping.id}
                 className="argument-mapping-card"
                 data-testid={`mapping-${mapping.rejectionGroundCode}`}
               >

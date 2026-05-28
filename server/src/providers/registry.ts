@@ -14,7 +14,7 @@ import { OpencodeAdapter } from "./opencode.js";
 const MIMO_MODEL_FALLBACKS = ["MiMo-V2.5-Pro", "MiMo-V2.5", "MiMo-V2-Pro", "MiMo-V2-Omni"];
 const GEMINI_MODEL_FALLBACKS = ["gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-pro"];
 
-const BACKOFF_DELAYS = [500, 1500, 3000];
+const BACKOFF_DELAYS = [500, 1500];
 const MAX_RETRIES = 2;
 const MAX_TOTAL_ATTEMPTS = 8;
 const TIMEOUT_MS = 60_000;
