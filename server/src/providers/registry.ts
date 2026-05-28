@@ -193,6 +193,13 @@ export class ProviderRegistry {
         lastError = error;
         lastErrInfo = classifyError(error);
         attempts.push({ providerId: adapter.id as ProviderId, ok: false, errorCode: lastErrInfo.code });
+
+        // Client disconnection — don't waste retries
+        if (clientSignal?.aborted) {
+          (error as Error & { attempts: AttemptRecord[] }).attempts = [...attempts];
+          throw error;
+        }
+
         if (lastErrInfo.code === "auth-failed" || lastErrInfo.code === "quota-exceeded") {
           (error as Error & { attempts: AttemptRecord[] }).attempts = [...attempts];
           throw error;
@@ -224,6 +231,7 @@ function classifyError(error: unknown): ErrorInfo {
       return { code: "server-error", message: error.message, retryable: true };
     }
     if (error.name === "AbortError") {
+      // Client disconnection also triggers AbortError — don't retry those
       return { code: "timeout", message: "Request timed out", retryable: true };
     }
     return { code: "network-error", message: error.message, retryable: true };
