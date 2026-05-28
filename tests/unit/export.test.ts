@@ -158,3 +158,37 @@ describe("renderCaseMarkdown null field handling (TC-3)", () => {
     expect(md).not.toContain("（未填写）");
   });
 });
+
+describe("buildExportFileName serial number (TC-12)", () => {
+  it("no sequence number by default", () => {
+    const name = buildExportFileName("CN202310001001", "LED散热", "审查辅助", "2026-05-28");
+    expect(name).not.toMatch(/_\d+$/);
+  });
+
+  it("sequence number 0 is not appended", () => {
+    const name = buildExportFileName("CN202310001001", "LED散热", "审查辅助", "2026-05-28", 0);
+    expect(name).not.toMatch(/_0$/);
+  });
+
+  it("sequence number 1 is appended", () => {
+    const name = buildExportFileName("CN202310001001", "LED散热", "审查辅助", "2026-05-28", 1);
+    expect(name).toMatch(/_1$/);
+  });
+
+  it("sequence number increments correctly", () => {
+    const n1 = buildExportFileName("CN202310001001", "LED散热", "审查辅助", "2026-05-28", 1);
+    const n2 = buildExportFileName("CN202310001001", "LED散热", "审查辅助", "2026-05-28", 2);
+    const n3 = buildExportFileName("CN202310001001", "LED散热", "审查辅助", "2026-05-28", 3);
+    expect(n1).toMatch(/_1$/);
+    expect(n2).toMatch(/_2$/);
+    expect(n3).toMatch(/_3$/);
+  });
+
+  it("different dates produce different filenames", () => {
+    const d1 = buildExportFileName("CN202310001001", "LED散热", "审查辅助", "2026-05-27");
+    const d2 = buildExportFileName("CN202310001001", "LED散热", "审查辅助", "2026-05-28");
+    expect(d1).not.toBe(d2);
+    expect(d1).toContain("2026-05-27");
+    expect(d2).toContain("2026-05-28");
+  });
+});

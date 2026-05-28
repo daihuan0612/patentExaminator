@@ -251,3 +251,47 @@ describe("DefectPanel - 缺陷复查", () => {
     expect(oldAiDefect).toBeUndefined();
   });
 });
+
+describe("DefectPanel overcome status switching (TC-11)", () => {
+  beforeEach(() => {
+    useDefectsStore.getState().setDefects([]);
+  });
+
+  it("defect 初始状态为未克服", () => {
+    const defect = makeDefect({ overcomeStatus: undefined });
+    useDefectsStore.getState().setDefects([defect]);
+    expect(useDefectsStore.getState().defects[0]!.overcomeStatus).toBeUndefined();
+  });
+
+  it("updateDefect 可将 overcomeStatus 设为 overcome", () => {
+    const defect = makeDefect();
+    useDefectsStore.getState().setDefects([defect]);
+    useDefectsStore.getState().updateDefect({ ...defect, overcomeStatus: "overcome" });
+    expect(useDefectsStore.getState().defects[0]!.overcomeStatus).toBe("overcome");
+  });
+
+  it("updateDefect 可将 overcomeStatus 设为 not-overcome", () => {
+    const defect = makeDefect({ overcomeStatus: "overcome" });
+    useDefectsStore.getState().setDefects([defect]);
+    useDefectsStore.getState().updateDefect({ ...defect, overcomeStatus: "not-overcome" });
+    expect(useDefectsStore.getState().defects[0]!.overcomeStatus).toBe("not-overcome");
+  });
+
+  it("updateDefect 可将 overcomeStatus 设为 partially-overcome", () => {
+    const defect = makeDefect();
+    useDefectsStore.getState().setDefects([defect]);
+    useDefectsStore.getState().updateDefect({ ...defect, overcomeStatus: "partially-overcome" });
+    expect(useDefectsStore.getState().defects[0]!.overcomeStatus).toBe("partially-overcome");
+  });
+
+  it("overcomeStatus 三种状态可自由切换", () => {
+    const defect = makeDefect();
+    useDefectsStore.getState().setDefects([defect]);
+
+    const states = ["overcome", "not-overcome", "partially-overcome"] as const;
+    for (const status of states) {
+      useDefectsStore.getState().updateDefect({ ...defect, overcomeStatus: status });
+      expect(useDefectsStore.getState().defects[0]!.overcomeStatus).toBe(status);
+    }
+  });
+});
