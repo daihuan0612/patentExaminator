@@ -175,7 +175,7 @@ async function serpApiSearch(
   url.searchParams.set("num", String(maxResults));
   url.searchParams.set("api_key", apiKey);
 
-  logger.info("SerpAPI request", { query, maxResults, url: url.toString().replace(apiKey, "***") });
+  logger.info("SerpAPI request", { query, maxResults, url: url.toString().split(apiKey).join("***") });
 
   const response = await fetch(url.toString(), {
     method: "GET",
