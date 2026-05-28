@@ -279,6 +279,7 @@ def split_markdown(md_text: str) -> dict:
 |---------|------|------|
 | `{{textSection}}` | 权利要求书 + 说明书正文（纯 Markdown） | 送入 `mimo-v2.5-pro` Skill |
 | `{{figureSection}}` | 说明书附图区域的 Markdown | 用于附图章节定位和图注提取 |
+| `{{figureUrls}}` | 附图图片 URL 数组（由 `md-section-splitter` 从 Markdown 中提取 `![figure](url)` 生成） | 送入 `mimo-v2.5` 的 `interpret`/`figure-extract` HTTP 节点，通过 `image_url` 格式传入 |
 | `{{originalPdf}}` | 原始 PDF 文件 | **主方案**：直接送入 `mimo-v2.5` 的 `interpret`/`figure-extract` Skill，发挥多模态视觉能力 |
 | `{{hasFigures}}` | 是否检测到附图区域 | 条件分支：有附图才触发 `figure-extract` |
 
@@ -292,9 +293,40 @@ def split_markdown(md_text: str) -> dict:
 | **降级路径：Markdown 文本** | `mimo-v2.5` 不可用 | `{{figureSection}}` Markdown | token 消耗低，不依赖视觉能力 | 图片为占位符，丢失视觉信息 |
 
 **主路径工作原理**：
-1. 预处理阶段同时输出 `{{originalPdf}}`（原始 PDF）和 `{{textSection}}`（Markdown 正文）
+1. 预处理阶段同时输出 `{{originalPdf}}`（原始 PDF）、`{{textSection}}`（Markdown 正文）和 `{{figureUrls}}`（附图 URL 数组）
 2. `interpret` Skill 将原始 PDF 直接发送给 `mimo-v2.5`，模型端到端完成文字+图表的理解
 3. `figure-extract` Skill 将原始 PDF 发送给 `mimo-v2.5`，模型直接识别图注、组件标注和空间关系
+
+**多模态 HTTP 节点请求体结构**：
+
+Coze 的 HTTP 节点调用 `mimo-v2.5` 时，需使用 `Content-Type: application/json`，将图片 URL 通过 `image_url` 传入。`md-section-splitter` 代码节点提取出的 `figureUrls` 数组中前几张主图按以下格式组装：
+
+```json
+{
+  "model": "mimo-v2.5",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "请结合以下专利说明书文本及提取出的关键附图进行深度解读：\n文本：{{input.textSection}}"
+        },
+        {
+          "type": "image_url",
+          "image_url": { "url": "{{input.figureUrls[0]}}" }
+        },
+        {
+          "type": "image_url",
+          "image_url": { "url": "{{input.figureUrls[1]}}" }
+        }
+      ]
+    }
+  ]
+}
+```
+
+> **注意**：`content` 为数组格式（非纯字符串），每个元素通过 `type` 字段区分文本和图片。`figureUrls` 取前 N 张主图（建议 N ≤ 5），避免 token 消耗过大。若 `figureUrls` 为空数组，则 content 退化为纯字符串（与 `mimo-v2.5-pro` 的调用方式一致）。
 
 **降级路径工作原理**：
 1. 当 `mimo-v2.5` 不可用时，`interpret` 降级为 `mimo-v2.5-pro` + `{{textSection}}` 纯文本解读
@@ -488,11 +520,19 @@ Bot 执行逻辑：
 │  Step 2：执行搜索 + AI 筛选（search-with-terms）             │
 │                                                             │
 │  [条件] searchProviderId === "epo" 且含中文？                │
-│    ├── 是 → [Skill: translate-search-terms] EPO 中文→英文     │
-│    │         输入：中文检索词列表                              │
-│    │         输出：translations[]                             │
+│    ├── 是 → [代码节点: epo-translate-with-fallback]          │
+│    │         伪代码：                                        │
+│    │         try:                                            │
+│    │           translations = callSkill(                     │
+│    │             "translate-search-terms",                   │
+│    │             {queries: 中文检索词列表}                    │
+│    │           )                                             │
+│    │           if translations 为空或格式异常:                │
+│    │             translations = 中文检索词列表  # 降级       │
+│    │         except:                                         │
+│    │           translations = 中文检索词列表  # 降级         │
+│    │         输出：translations[]（英文或降级中文）           │
 │    │         模型：mimo-v2.5-pro                             │
-│    │         降级：翻译失败时使用原始中文检索式                 │
 │    └── 否 → 跳过                                             │
 │     │                                                       │
 │     ▼                                                       │
@@ -525,10 +565,42 @@ Bot 执行逻辑：
 | 设计要素 | 实现方式 |
 |---------|---------|
 | Step 1→2 间隙 | 用户编辑检索词，Workflow 通过 `{{confirmedQueries}}` 变量传递编辑后的结果 |
-| EPO 翻译降级 | 翻译失败不阻断流程，直接使用中文检索式 |
+| EPO 翻译降级 | Python 代码节点 try-except 包裹，翻译失败/空结果/格式异常时直接使用中文检索式（见下方代码） |
 | 后处理过滤 | 代码节点执行：`filter(q => q.length >= 3 && !q.startsWith("```") && !q.startsWith("{"))` + `slice(0, 5)` |
 | 检索会话持久化 | 每次搜索创建/更新 `search_sessions` 表（见 §7.4.5），用户可回溯历史检索 |
 | 并行 Provider | 多 Provider 并行发起（Promise.all 模式），各自结果合并去重 |
+
+**EPO 翻译降级 Python 代码节点**：
+
+```python
+import json
+
+def epo_translate_with_fallback(queries: list[str], translate_skill_output: str) -> dict:
+    """
+    EPO 检索词翻译节点，含完整降级逻辑。
+    - translate_skill_output: translate-search-terms Skill 的原始输出（JSON 字符串）
+    - 翻译失败/空结果/格式异常 → 降级使用原始中文检索词
+    """
+    try:
+        # 尝试解析 Skill 输出
+        result = json.loads(translate_skill_output)
+        translations = result.get("translations", [])
+
+        # 校验：translations 必须是非空字符串数组
+        if (not isinstance(translations, list)
+                or len(translations) == 0
+                or not all(isinstance(t, str) and len(t.strip()) > 0 for t in translations)):
+            # 空结果或格式异常 → 降级
+            return {"translations": queries, "fallback": True, "reason": "empty_or_invalid_format"}
+
+        return {"translations": translations, "fallback": False}
+
+    except (json.JSONDecodeError, TypeError, KeyError) as e:
+        # JSON 解析失败 → 降级
+        return {"translations": queries, "fallback": True, "reason": f"parse_error: {str(e)}"}
+```
+
+> **节点配置**：此代码节点位于 `translate-search-terms` Skill 之后、并行检索节点之前。输出的 `translations` 数组直接传入后续检索节点。当 `fallback: true` 时，Workflow 可选在日志中记录降级原因供排查。
 
 ---
 
@@ -635,6 +707,56 @@ chat ← 任意模块上下文
 ---
 
 ## 6. 三种操作场景的实现路径
+
+### 6.0 场景状态机：workflowState + sceneMode
+
+审查员在豆包端与 Agent 交互时，Agent 通过 Coze 数据库中的 `tb_patent_case` 表的两个字段驱动场景执行：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `sceneMode` | `VARCHAR(20)` | 场景模式：`full-auto` / `step-collab` / `partial-collab`。首次上传文件时由用户选择，后续会话从数据库恢复 |
+| `workflowState` | `VARCHAR(30)` | 当前工作流状态：`empty` → `documents-uploaded` → `opinion-analyzed` → `argument-mapped` → `claim-chart-ready` → `novelty-ready` → `inventive-ready` → `defects-ready` → `draft-ready` |
+
+**状态机驱动逻辑**：
+
+```
+用户发送消息
+  │
+  ▼
+[Agent] 查询 tb_patent_case 获取 sceneMode + workflowState
+  │
+  ├── sceneMode = 'full-auto'？
+  │     └── 是 → Agent 提示词引导一口气调完所有 Workflow 节点
+  │              每完成一个 Skill，Agent 更新 workflowState（如 'opinion-analyzed'）
+  │              全部完成后输出复审意见草稿
+  │
+  ├── sceneMode = 'step-collab'？
+  │     └── 是 → Agent 根据 workflowState 定位当前步骤
+  │              调用当前步骤的 Skill → 更新 workflowState
+  │              输出结果 + 带按钮卡片（[确认] [修改] [重新生成]）
+  │              用户点击 [确认] → 作为用户消息发送 → Agent 识别后触发下一步
+  │
+  └── sceneMode = 'partial-collab'？
+        └── 是 → Agent 查询 collabSteps 列表
+                 当前步骤 ∈ collabSteps → 同 step-collab（暂停协作）
+                 当前步骤 ∉ collabSteps → 同 full-auto（自动继续）
+```
+
+**workflowState 的值与对应步骤**：
+
+| workflowState 值 | 含义 | 下一步 |
+|-----------------|------|--------|
+| `empty` | 初始状态 | → `documents-uploaded` |
+| `documents-uploaded` | 文件已上传 | → `opinion-analyzed`（执行 opinion-analysis） |
+| `opinion-analyzed` | 审查意见已解析 | → `argument-mapped`（执行 argument-analysis） |
+| `argument-mapped` | 答辩已映射 | → `claim-chart-ready`（执行 claim-chart） |
+| `claim-chart-ready` | Claim Chart 已完成 | → `novelty-ready`（执行 novelty） |
+| `novelty-ready` | 新颖性复核已完成 | → `inventive-ready`（执行 inventive） |
+| `inventive-ready` | 创造性分析已完成 | → `defects-ready`（执行 defects） |
+| `defects-ready` | 缺陷复查已完成 | → `draft-ready`（执行 reexam-draft） |
+| `draft-ready` | 复审草稿已生成 | 完成 |
+
+**跨会话恢复**：用户在新会话中说"继续上次的复审"，Agent 查询 `tb_patent_case` 恢复 `workflowState`，从断点继续执行。各步骤的分析结果从 Coze 数据库的对应表中加载（见 §7.4）。
 
 ### 6.1 场景 0.1：一键直出
 
