@@ -8,7 +8,7 @@ import {
 } from "../../../lib/repositories/noveltyRepo.js";
 
 // DEBUG: 调试 bug 18 - 删除对比文件后无法再加载再比较
-const DEBUG_NOVELTY_SLICE = true;
+const DEBUG_NOVELTY_SLICE = import.meta.env.DEV;
 
 function debugNoveltySliceLog(...args: unknown[]) {
   if (DEBUG_NOVELTY_SLICE) {

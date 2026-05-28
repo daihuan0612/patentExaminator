@@ -8,7 +8,7 @@ import {
   deleteMessagesBySessionId
 } from "../../../lib/repositories/chatRepo.js";
 
-const DEBUG = true;
+const DEBUG = import.meta.env.DEV;
 function log(...args: unknown[]) {
   if (DEBUG) console.log("[chatSlice]", ...args);
 }

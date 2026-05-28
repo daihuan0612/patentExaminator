@@ -1,7 +1,7 @@
 import { getDB } from "../indexedDb";
 import type { ChatSession, ChatMessage } from "@shared/types/domain";
 
-const DEBUG = true;
+const DEBUG = import.meta.env.DEV;
 
 function log(...args: unknown[]) {
   if (DEBUG) console.log("[chatRepo]", ...args);
