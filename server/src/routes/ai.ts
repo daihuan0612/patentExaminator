@@ -3,6 +3,7 @@ import { aiRunRequestSchema } from "../lib/schemas.js";
 import { registry } from "../providers/registry.js";
 import { getApiKey } from "../security/keyStore.js";
 import { sanitizeText } from "../security/sanitize.js";
+import { validateProviderBaseUrls, BlockedUrlError } from "../lib/urlValidation.js";
 import { extractJsonFromText } from "../lib/jsonExtractor.js";
 import { logger } from "../lib/logger.js";
 import { isStructuredAgent, validateAgentResponse } from "@shared/lib/responseValidator.js";
@@ -26,6 +27,10 @@ aiRouter.post("/ai/run", async (req, res) => {
   }
 
   const request = parseResult.data;
+
+  // SSRF protection
+  validateProviderBaseUrls(request.providerBaseUrls as Record<string, string> | undefined);
+
   const startTime = Date.now();
 
   // Mock mode: return fixture data without calling real AI
@@ -228,11 +233,14 @@ aiRouter.post("/ai/run", async (req, res) => {
     }
   } catch (error) {
     logger.error("AI run error", { error: String(error) });
-    res.status(500).json({
+    const status = error instanceof BlockedUrlError ? 400 : 500;
+    const code = error instanceof BlockedUrlError ? "invalid-request" : "internal-error";
+    const message = error instanceof BlockedUrlError ? error.message : "AI 请求处理失败，请稍后重试";
+    res.status(status).json({
       ok: false,
       error: {
-        code: "internal-error",
-        message: String(error),
+        code,
+        message,
         retryable: false
       }
     } satisfies AiRunResponse);

@@ -6,6 +6,7 @@ import { searchPatents } from "../services/webSearch.js";
 import { logger } from "../lib/logger.js";
 import { extractJsonFromText } from "../lib/jsonExtractor.js";
 import { sanitizeText } from "../security/sanitize.js";
+import { validateExternalUrl, validateProviderBaseUrls, BlockedUrlError } from "../lib/urlValidation.js";
 import type { SearchReferencesResponse, SearchReferencesCandidate, SearchSummary, ExtractSearchTermsResponse } from "@shared/types/api";
 import type { ChatRequest } from "../providers/ProviderAdapter.js";
 
@@ -66,6 +67,10 @@ searchRouter.post("/search-references", async (req, res) => {
   }
 
   const request = parseResult.data;
+
+  // SSRF protection: validate user-provided URLs
+  if (request.searchBaseUrl) validateExternalUrl(request.searchBaseUrl);
+  validateProviderBaseUrls(request.providerBaseUrls as Record<string, string> | undefined);
 
   // Resolve search API key:
   //   - APP mode: frontend sends user-configured key via searchApiKey
@@ -488,10 +493,12 @@ searchRouter.post("/search-references", async (req, res) => {
     } satisfies SearchReferencesResponse);
   } catch (error) {
     logger.error("Search references error", { error: String(error) });
-    res.status(500).json({
+    const status = error instanceof BlockedUrlError ? 400 : 500;
+    const message = error instanceof BlockedUrlError ? error.message : "检索失败，请稍后重试";
+    res.status(status).json({
       ok: false,
       candidates: [],
-      error: `检索失败: ${String(error)}`
+      error: message
     } satisfies SearchReferencesResponse);
   }
 });
@@ -523,6 +530,9 @@ searchRouter.post("/extract-search-terms", async (req, res) => {
   }
 
   const request = parseResult.data;
+
+  // SSRF protection
+  validateProviderBaseUrls(request.providerBaseUrls as Record<string, string> | undefined);
 
   // Resolve LLM provider
   const providerKeys = new Map<string, string>();
@@ -639,11 +649,13 @@ searchRouter.post("/extract-search-terms", async (req, res) => {
     } satisfies ExtractSearchTermsResponse);
   } catch (error) {
     logger.error("Extract search terms error", { error: String(error) });
-    res.status(500).json({
+    const status = error instanceof BlockedUrlError ? 400 : 500;
+    const message = error instanceof BlockedUrlError ? error.message : "提取检索词失败，请稍后重试";
+    res.status(status).json({
       ok: false,
       queries: [],
       featureCount: 0,
-      error: `提取检索词失败: ${String(error)}`
+      error: message
     } satisfies ExtractSearchTermsResponse);
   }
 });
@@ -679,6 +691,11 @@ searchRouter.post("/search-with-terms", async (req, res) => {
   }
 
   const request = parseResult.data;
+
+  // SSRF protection
+  if (request.searchBaseUrl) validateExternalUrl(request.searchBaseUrl);
+  validateProviderBaseUrls(request.providerBaseUrls as Record<string, string> | undefined);
+
   const searchProviderId = request.searchProviderId || "tavily";
 
   // Resolve search API key
@@ -886,9 +903,11 @@ searchRouter.post("/search-with-terms", async (req, res) => {
     res.json({ ok: true, candidates, searchQuery, searchSummary } satisfies SearchReferencesResponse);
   } catch (error) {
     logger.error("Search with terms error", { error: String(error) });
-    res.status(500).json({
+    const status = error instanceof BlockedUrlError ? 400 : 500;
+    const message = error instanceof BlockedUrlError ? error.message : "检索失败，请稍后重试";
+    res.status(status).json({
       ok: false, candidates: [],
-      error: `检索失败: ${String(error)}`
+      error: message
     } satisfies SearchReferencesResponse);
   }
 });
@@ -910,6 +929,8 @@ searchRouter.post("/verify-search-key", async (req, res) => {
   const { providerId, apiKey, baseUrl } = parseResult.data;
 
   try {
+    // SSRF protection
+    if (baseUrl) validateExternalUrl(baseUrl);
     if (providerId === "tavily") {
       const response = await fetch("https://api.tavily.com/search", {
         method: "POST",
@@ -974,6 +995,8 @@ searchRouter.post("/verify-search-key", async (req, res) => {
       res.status(400).json({ ok: false, error: "自定义搜索需要提供 API 端点" });
     }
   } catch (err) {
-    res.json({ ok: false, providerId, error: `验证失败: ${String(err)}` });
+    logger.error("Verify search key error", { error: String(err) });
+    const message = err instanceof BlockedUrlError ? err.message : "验证失败，请稍后重试";
+    res.json({ ok: false, providerId, error: message });
   }
 });
