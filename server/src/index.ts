@@ -33,11 +33,34 @@ if (process.env.Openrouter_KEY) {
 
 app.use(express.json({ limit: "1mb" }));
 
+// Simple rate limiter for expensive API endpoints (no external deps)
+const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const RATE_LIMIT_MAX = 30; // 30 requests per window per IP
+
+function rateLimiter(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
+  const now = Date.now();
+  const entry = rateLimitStore.get(ip);
+
+  if (!entry || entry.resetAt < now) {
+    rateLimitStore.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return next();
+  }
+
+  entry.count++;
+  if (entry.count > RATE_LIMIT_MAX) {
+    res.status(429).json({ ok: false, error: "请求过于频繁，请稍后重试" });
+    return;
+  }
+  next();
+}
+
 // API routes
 app.use("/api", healthRouter);
-app.use("/api", aiRouter);
+app.use("/api", rateLimiter, aiRouter);
 app.use("/api", settingsRouter);
-app.use("/api", searchRouter);
+app.use("/api", rateLimiter, searchRouter);
 
 // Serve client static files if dist exists
 const clientDist = path.resolve(__dirname, "../../client/dist");
