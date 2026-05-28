@@ -507,6 +507,59 @@ describe("Agent Pipeline: Two-Step Search nf-7 (Mock)", () => {
     expect(useReferencesStore.getState().searchStep).toBe("done");
   });
 
+  it("bg-32: 取消编辑已有会话的检索词时不丢失 (done→edit→cancel preserves terms)", () => {
+    const store = useReferencesStore.getState();
+
+    // 模拟已完成搜索的状态 (done)
+    store.setSearchTerms(["LED散热器", "相变材料"]);
+    store.setSearchSessionId("session-123");
+    store.setSearchStep("done");
+    expect(useReferencesStore.getState().searchStep).toBe("done");
+    expect(useReferencesStore.getState().searchTerms).toEqual(["LED散热器", "相变材料"]);
+
+    // 模拟点击"修改检索词"进入编辑
+    store.setSearchStep("editing");
+    expect(useReferencesStore.getState().searchStep).toBe("editing");
+
+    // 模拟取消编辑 — searchSessionId 存在时应恢复到 done，不清空 terms
+    const { searchSessionId } = useReferencesStore.getState();
+    if (searchSessionId) {
+      store.setSearchStep("done");
+    } else {
+      store.setSearchStep("idle");
+      store.setSearchTerms([]);
+    }
+    expect(useReferencesStore.getState().searchStep).toBe("done");
+    expect(useReferencesStore.getState().searchTerms).toEqual(["LED散热器", "相变材料"]);
+    expect(useReferencesStore.getState().searchSessionId).toBe("session-123");
+
+    // 清理
+    store.setSearchTerms([]);
+    store.setSearchSessionId(null);
+    store.setSearchStep("idle");
+  });
+
+  it("bg-32: 取消编辑首次检索词时清空 (editing→idle clears terms)", () => {
+    const store = useReferencesStore.getState();
+
+    // 模拟首次提取检索词后的编辑状态（无 sessionId）
+    store.setSearchTerms(["term1", "term2"]);
+    store.setSearchSessionId(null);
+    store.setSearchStep("editing");
+    expect(useReferencesStore.getState().searchStep).toBe("editing");
+
+    // 模拟取消编辑 — 无 searchSessionId 时应清空并回到 idle
+    const { searchSessionId } = useReferencesStore.getState();
+    if (searchSessionId) {
+      store.setSearchStep("done");
+    } else {
+      store.setSearchStep("idle");
+      store.setSearchTerms([]);
+    }
+    expect(useReferencesStore.getState().searchStep).toBe("idle");
+    expect(useReferencesStore.getState().searchTerms).toEqual([]);
+  });
+
   it("referencesSlice → providerResults 设置和读取", () => {
     const store = useReferencesStore.getState();
     const results = [

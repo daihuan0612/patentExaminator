@@ -317,7 +317,15 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
             <button
               type="button"
               className="btn-secondary"
-              onClick={() => { setSearchStep("idle"); setSearchTerms([]); setError(""); }}
+              onClick={() => {
+                if (searchSessionId) {
+                  setSearchStep("done");
+                } else {
+                  setSearchStep("idle");
+                  setSearchTerms([]);
+                }
+                setError("");
+              }}
               data-testid="btn-cancel-search"
             >
               取消
