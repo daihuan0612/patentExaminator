@@ -56,7 +56,8 @@ export function NoveltyAgentTrigger({
       referenceIds: references.map(r => r.id),
       selectedRefId
     });
-  }, [caseId, claimNumber, features, references, selectedRefId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- debug log, stable deps via lengths
+  }, [caseId, claimNumber, features.length, references.length, selectedRefId]);
 
   // 当删除文件时清除无效的 selectedRefId和相关 comparison
   useEffect(() => {
