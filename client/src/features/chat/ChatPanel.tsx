@@ -248,7 +248,9 @@ export function ChatPanel() {
       const client = new AgentClient(settings.mode, "/api", settings);
 
       const contextSummary = buildContextSummary(caseId, moduleScope);
-      const history = messages
+      // Use getState() to get the latest messages (including the just-added user message)
+      const currentMessages = useChatStore.getState().messages;
+      const history = currentMessages
         .filter((m) => m.sessionId === sessionId)
         .slice(-10)
         .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
