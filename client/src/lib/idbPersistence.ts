@@ -15,6 +15,7 @@
  */
 import { getDB } from "./indexedDb";
 import { createLogger } from "./logger";
+import { showToast } from "./toast";
 
 const log = createLogger("IDB-Persist");
 
@@ -59,6 +60,7 @@ export function persistToIDB(
       }
     } catch (e) {
       log(`IDB ${operation} failed for ${storeName}:`, e);
+      showToast(`数据保存失败 (${storeName})，请检查浏览器存储空间或隐私模式设置`, "error");
     }
   };
   doWrite();

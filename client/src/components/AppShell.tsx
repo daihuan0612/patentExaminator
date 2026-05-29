@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Link, useParams, useLocation } from "react-router-dom";
 import { ModeBanner } from "./ModeBanner";
 import { ChatPanel } from "../features/chat/ChatPanel";
+import { ToastContainer } from "./ToastContainer";
 import { useCaseStore } from "../store";
 import { loadCaseById } from "../lib/caseLoader";
 import { useTokenUsageStore } from "../store/features/tokenUsage/tokenUsageSlice";
@@ -192,6 +193,7 @@ export function AppShell({ children }: AppShellProps) {
         </main>
         {caseId && <ChatPanel />}
       </div>
+      <ToastContainer />
     </div>
   );
 }
