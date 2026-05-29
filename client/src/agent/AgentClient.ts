@@ -40,6 +40,7 @@ import type { AiRunRequest, AiRunResponse } from "@shared/types/api";
 import type { ProviderId, ProviderConnection, AgentAssignment, AppSettings, ProviderErrorMessage } from "@shared/types/agents";
 import { useSettingsStore } from "../store/features/settings/settingsSlice";
 import { waitForServerReady, clearServerReadyCache } from "../lib/serverReady";
+import { truncateForModel } from "../lib/textTruncate";
 
 const GATEWAY_AGENT_TO_KEY: Record<string, AgentAssignment["agent"]> = {
   "claim-chart": "claim-chart",
@@ -755,7 +756,7 @@ function normalizeSpecificationCitations(
 }
 
 function buildClaimChartPrompt(request: ClaimChartRequest): string {
-  const specExcerpt = request.specificationText.slice(0, 8000);
+  const specExcerpt = truncateForModel(request.specificationText, 8000);
   return [
     `你是一位资深专利审查员助理，任务是对权利要求 ${request.claimNumber} 进行技术特征拆解（Claim Chart）。`,
     ``,
@@ -922,13 +923,13 @@ function buildNoveltyPrompt(request: NoveltyRequest): string {
     ``,
     `对比文件 ID: ${request.referenceId}`,
     `对比文件内容:`,
-    request.referenceText.slice(0, 8000)
+    truncateForModel(request.referenceText, 8000)
   ];
   if (request.applicantArguments) {
     parts.push(``, `申请人答辩理由:`, request.applicantArguments);
   }
   if (request.amendedClaimText) {
-    parts.push(``, `修改后权利要求:`, request.amendedClaimText.slice(0, 4000));
+    parts.push(``, `修改后权利要求:`, truncateForModel(request.amendedClaimText, 4000));
   }
   parts.push(
     ``,
@@ -984,7 +985,7 @@ function buildInventivePrompt(request: InventiveRequest): string {
     ...request.features.map((f) => `  ${f.featureCode}: ${f.description}`),
     ``,
     `可用对比文件:`,
-    ...request.availableReferences.map((r) => `  ${r.label} (${r.referenceId}): ${r.excerpt.slice(0, 500)}`),
+    ...request.availableReferences.map((r) => `  ${r.label} (${r.referenceId}): ${truncateForModel(r.excerpt, 500)}`),
     ``,
     `用户指定最接近现有技术: ${request.closestPriorArtId ?? "由 AI 推荐"}`
   ];
@@ -992,7 +993,7 @@ function buildInventivePrompt(request: InventiveRequest): string {
     parts.push(``, `申请人答辩理由:`, request.applicantArguments);
   }
   if (request.amendedClaimText) {
-    parts.push(``, `修改后权利要求:`, request.amendedClaimText.slice(0, 4000));
+    parts.push(``, `修改后权利要求:`, truncateForModel(request.amendedClaimText, 4000));
   }
   parts.push(
     ``,
@@ -1067,10 +1068,10 @@ function buildDefectPrompt(request: DefectRequest): string {
     `案件 ID: ${request.caseId}`,
     ``,
     `权利要求文本:`,
-    request.claimText.slice(0, 4000),
+    truncateForModel(request.claimText, 4000),
     ``,
     `说明书文本:`,
-    request.specificationText.slice(0, 8000),
+    truncateForModel(request.specificationText, 8000),
     ``,
     `技术特征:`,
     ...request.claimFeatures.map((f) => `  ${f.featureCode}: ${f.description}`),
@@ -1264,7 +1265,7 @@ function buildInterpretPrompt(request: InterpretRequest): string {
     relatedDocuments,
     "",
     "=== 文档内容 ===",
-    request.documentText.slice(0, 12000)
+    truncateForModel(request.documentText, 12000)
   ].join("\n");
 }
 
@@ -1284,7 +1285,7 @@ function buildOpinionAnalysisPrompt(request: OpinionAnalysisRequest): string {
     `文档 ID: ${request.documentId}`,
     ``,
     `审查意见通知书文本:`,
-    request.officeActionText.slice(0, 12000),
+    truncateForModel(request.officeActionText, 12000),
     ``,
     `请从以上审查意见通知书中提取驳回理由和引用文献，严格按以下 JSON 格式输出，不要输出其他内容：`,
     `{`,
@@ -1326,9 +1327,9 @@ function buildArgumentAnalysisPrompt(request: ArgumentAnalysisRequest): string {
     ...request.rejectionGrounds.map((g) => `  ${g.code} (${g.category}): ${g.summary}`),
     ``,
     `意见陈述书文本:`,
-    request.responseText.slice(0, 12000),
+    truncateForModel(request.responseText, 12000),
     ...(request.amendedClaimsText
-      ? [``, `修改后权利要求:`, request.amendedClaimsText.slice(0, 4000)]
+      ? [``, `修改后权利要求:`, truncateForModel(request.amendedClaimsText, 4000)]
       : []),
     ``,
     `请将每条驳回理由与意见陈述书中的答辩内容进行映射，严格按以下 JSON 格式输出，不要输出其他内容：`,
@@ -1376,9 +1377,9 @@ function buildReexamDraftPrompt(request: ReexamDraftRequest): string {
     ...request.argumentMappings.map(
       (m) => `  ${m.rejectionGroundCode}: ${m.argumentSummary} [${m.confidence}]`
     ),
-    ...(request.noveltyResults ? [``, `新颖性复核:`, request.noveltyResults.slice(0, 4000)] : []),
-    ...(request.inventiveResults ? [``, `创造性复核:`, request.inventiveResults.slice(0, 4000)] : []),
-    ...(request.defectResults ? [``, `缺陷复查:`, request.defectResults.slice(0, 2000)] : []),
+    ...(request.noveltyResults ? [``, `新颖性复核:`, truncateForModel(request.noveltyResults, 4000)] : []),
+    ...(request.inventiveResults ? [``, `创造性复核:`, truncateForModel(request.inventiveResults, 4000)] : []),
+    ...(request.defectResults ? [``, `缺陷复查:`, truncateForModel(request.defectResults, 2000)] : []),
     ``,
     `请根据以上内容起草复审意见草稿，严格按以下 JSON 格式输出，不要输出其他内容：`,
     `{`,
@@ -1415,13 +1416,13 @@ function buildSummaryPrompt(request: SummaryRequest): string {
     `案件基线: ${request.caseBaseline}`,
     ``,
     `Claim Chart（已确认特征）:`,
-    request.confirmedFeatures.slice(0, 4000),
+    truncateForModel(request.confirmedFeatures, 4000),
     ``,
     `新颖性对照（已审核记录）:`,
-    request.reviewedNoveltyComparisons.slice(0, 4000),
+    truncateForModel(request.reviewedNoveltyComparisons, 4000),
     ``,
     `创造性分析:`,
-    request.inventiveAnalysis.slice(0, 4000),
+    truncateForModel(request.inventiveAnalysis, 4000),
     ``,
     `请根据以上内容撰写审查意见简述，严格按以下 JSON 格式输出，不要输出其他内容：`,
     `{`,
@@ -1438,7 +1439,7 @@ function buildSummaryPrompt(request: SummaryRequest): string {
 }
 
 function buildTranslatePrompt(request: TranslateRequest): string {
-  return request.documentText.slice(0, 12000);
+  return truncateForModel(request.documentText, 12000);
 }
 
 function mockChat(request: ChatRequest): ChatResponse {
