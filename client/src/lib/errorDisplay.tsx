@@ -40,6 +40,12 @@ export function formatAiErrorMessage(error: unknown): FormattedError {
           guidance: "请确认 AI Provider 配置正确，或切换到演示模式。",
           type: "structure"
         };
+      case "abort":
+        return {
+          message: "请求已取消",
+          guidance: "您已取消本次操作。",
+          type: "abort"
+        };
       default:
         return {
           message: "未知错误：" + (error.message || "AI 服务异常"),

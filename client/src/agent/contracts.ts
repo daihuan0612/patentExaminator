@@ -373,7 +373,7 @@ export interface ClassifyDocumentsResponse {
 
 // ── AI Gateway 错误分类 ──────────────────────────────
 
-export type AiErrorType = "quota" | "auth" | "timeout" | "network" | "structure" | "other";
+export type AiErrorType = "quota" | "auth" | "timeout" | "network" | "structure" | "abort" | "other";
 
 export class AiGatewayError extends Error {
   readonly type: AiErrorType;

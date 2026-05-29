@@ -156,13 +156,14 @@ describe("AiGatewayError", () => {
 
 describe("formatAiErrorMessage", () => {
   describe("AiGatewayError input", () => {
-    const types: AiErrorType[] = ["quota", "auth", "timeout", "network", "structure", "other"];
+    const types: AiErrorType[] = ["quota", "auth", "timeout", "network", "structure", "abort", "other"];
     const expectedMarkers: Record<AiErrorType, string[]> = {
       quota: ["配额"],
       auth: ["认证"],
       timeout: ["超时"],
       network: ["网络"],
       structure: ["格式"],
+      abort: ["取消"],
       other: ["未知"]
     };
 

@@ -603,6 +603,10 @@ export class AgentClient {
     try {
       res = await doFetch();
     } catch {
+      // Don't retry if the request was already aborted by the client
+      if (meta.signal?.aborted) {
+        throw new AiGatewayError("abort", "请求已取消");
+      }
       clearServerReadyCache();
       try {
         await waitForServerReady(this.gatewayUrl, true);
