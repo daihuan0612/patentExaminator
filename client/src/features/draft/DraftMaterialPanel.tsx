@@ -384,7 +384,7 @@ export function DraftMaterialPanel({ caseId, runReexamDraft }: DraftMaterialPane
               <div>
                 <h4>待检索问题（{pendingQuestions.length} 条）</h4>
                 <ul>
-                  {pendingQuestions.map((q, i) => <li key={i}>{q}</li>)}
+                  {pendingQuestions.map((q, i) => <li key={`pq-${i}-${q.slice(0, 20)}`}>{q}</li>)}
                 </ul>
               </div>
             )}
