@@ -34,12 +34,19 @@ function reciprocalRankFusion(
     .sort((a, b) => b.score - a.score);
 }
 
+export interface SearchFilters {
+  documentCategory?: string;
+  mediaType?: string;
+  sourceId?: string;
+}
+
 /** 混合检索：语义 + BM25，RRF 融合 */
 export async function hybridSearch(
   query: string,
   config: KnowledgeConfig,
   embedConfig: EmbedderConfig,
-  topK: number = 5
+  topK: number = 5,
+  filters?: SearchFilters
 ): Promise<KnowledgeSearchResult[]> {
   const stats = await getKnowledgeStats();
   if (!config.enabled || stats.chunkCount === 0 || stats.embeddedCount === 0) {
@@ -60,15 +67,21 @@ export async function hybridSearch(
   // RRF 融合
   const fusedRanking = reciprocalRankFusion([semanticRanking, bm25Ranking]);
 
-  // 取 top-K 并映射回 KnowledgeSearchResult
+  // 取 top-K 并映射回 KnowledgeSearchResult，应用元数据过滤
   const semanticMap = new Map(semanticResults.map((r) => [r.chunk.id, r]));
   const results: KnowledgeSearchResult[] = [];
 
-  for (const { id } of fusedRanking.slice(0, topK)) {
+  for (const { id } of fusedRanking) {
+    if (results.length >= topK) break;
     const semanticResult = semanticMap.get(id);
-    if (semanticResult) {
-      results.push(semanticResult);
-    }
+    if (!semanticResult) continue;
+
+    // 元数据过滤
+    if (filters?.documentCategory && semanticResult.chunk.metadata.documentCategory !== filters.documentCategory) continue;
+    if (filters?.mediaType && semanticResult.chunk.metadata.mediaType !== filters.mediaType) continue;
+    if (filters?.sourceId && semanticResult.chunk.sourceId !== filters.sourceId) continue;
+
+    results.push(semanticResult);
   }
 
   log(`Hybrid search: ${semanticResults.length} semantic + ${bm25Results.length} BM25 → ${results.length} fused results`);

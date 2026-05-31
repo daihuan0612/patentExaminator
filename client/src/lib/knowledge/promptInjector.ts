@@ -8,6 +8,37 @@ import { createLogger } from "../logger";
 
 const log = createLogger("KnowledgePromptInjector");
 
+// 注入审计日志
+interface InjectionAudit {
+  timestamp: string;
+  agentType: string;
+  query: string;
+  chunkCount: number;
+  chunkIds: string[];
+  totalChars: number;
+}
+
+const auditLog: InjectionAudit[] = [];
+const MAX_AUDIT_LOG = 100;
+
+function recordAudit(agentType: string, query: string, results: Array<{ chunk: { id: string; text: string } }>) {
+  const entry: InjectionAudit = {
+    timestamp: new Date().toISOString(),
+    agentType,
+    query: query.slice(0, 200),
+    chunkCount: results.length,
+    chunkIds: results.map((r) => r.chunk.id),
+    totalChars: results.reduce((sum, r) => sum + r.chunk.text.length, 0),
+  };
+  auditLog.push(entry);
+  if (auditLog.length > MAX_AUDIT_LOG) auditLog.shift();
+}
+
+/** 获取注入审计日志 */
+export function getInjectionAuditLog(): InjectionAudit[] {
+  return [...auditLog];
+}
+
 export interface InjectOptions {
   /** 检索 query 文本 */
   query: string;
@@ -66,6 +97,7 @@ export async function injectKnowledge(options: InjectOptions): Promise<string> {
     const injection = `## 参考法规（由知识库检索，仅供参考）\n${contextPrefix}\n\n${formatRetrievedChunks(results).replace(/^[^\n]+\n[^\n]+\n/, "")}`;
     const enhanced = `${systemPrompt}\n\n${injection}`;
 
+    recordAudit(agentType ?? "unknown", query, results);
     log(`Injected ${results.length} knowledge chunks into prompt (agent=${agentType ?? "default"})`);
     return enhanced;
   } catch (err) {

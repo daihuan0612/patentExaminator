@@ -214,6 +214,90 @@ export async function estimateStorage(): Promise<StorageEstimate> {
   };
 }
 
+// ── 冲突检测 ──────────────────────────────────────────
+
+export interface ConflictReport {
+  sourceId: string;
+  sourceName: string;
+  conflictingWith: string;
+  conflictType: "same-name" | "same-category" | "overlapping-content";
+  suggestion: string;
+}
+
+/** 检测新文件是否与已有文件冲突 */
+export async function detectConflicts(
+  newSource: { name: string; fileHash?: string },
+  newChunks: Array<{ text: string }>
+): Promise<ConflictReport[]> {
+  const existing = await getAllSources();
+  const reports: ConflictReport[] = [];
+
+  for (const ex of existing) {
+    // 同名文件
+    if (ex.name === newSource.name && ex.fileHash !== newSource.fileHash) {
+      reports.push({
+        sourceId: ex.id,
+        sourceName: ex.name,
+        conflictingWith: newSource.name,
+        conflictType: "same-name",
+        suggestion: "同名文件已存在，建议替换或重命名",
+      });
+    }
+
+    // 同类别文件（如两个审查指南）
+    const existingChunks = await getChunksBySource(ex.id);
+    const existingCategory = existingChunks[0]?.metadata.documentCategory;
+    if (existingCategory && existingCategory !== "其他") {
+      const hasSimilarChunk = newChunks.some((nc) =>
+        existingChunks.some((ec) => ec.text.slice(0, 100) === nc.text.slice(0, 100))
+      );
+      if (hasSimilarChunk) {
+        reports.push({
+          sourceId: ex.id,
+          sourceName: ex.name,
+          conflictingWith: newSource.name,
+          conflictType: "overlapping-content",
+          suggestion: `与已有文件"${ex.name}"内容高度重叠，可能是同一法规的不同版本`,
+        });
+      }
+    }
+  }
+
+  return reports;
+}
+
+// ── 备份 ──────────────────────────────────────────────
+
+/** 下载知识库备份为 JSON 文件 */
+export async function downloadBackup(): Promise<void> {
+  const data = await exportKnowledge();
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `knowledge-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  log(`Downloaded backup: ${data.sources.length} sources, ${data.chunks.length} chunks`);
+}
+
+/** 从 JSON 文件恢复知识库备份 */
+export async function restoreFromBackup(file: File): Promise<{
+  importedSources: number;
+  importedChunks: number;
+  importedVectors: number;
+}> {
+  const text = await file.text();
+  const data = JSON.parse(text) as KnowledgeExportData;
+  if (data.version !== 1) {
+    throw new Error(`Unsupported backup version: ${data.version}`);
+  }
+  return importKnowledge(data);
+}
+
 // ── 浏览器兼容 ────────────────────────────────────────
 
 /** 检查 IndexedDB 可用性和存储配额 */
