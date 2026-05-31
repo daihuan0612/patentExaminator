@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { KnowledgeSource, KnowledgeConfig, EmbedProviderType } from "@shared/types/knowledge";
+import type { KnowledgeSource, KnowledgeConfig } from "@shared/types/knowledge";
 import { DEFAULT_KNOWLEDGE_CONFIG } from "@shared/types/knowledge";
 import {
   getAllSources,
@@ -11,7 +11,6 @@ import {
   getUnembeddedChunks,
   getKnowledgeStats,
   clearAllKnowledge,
-  invalidateVectorIndex,
 } from "../../lib/knowledge/knowledgeRepo";
 import {
   extractFromFile,
@@ -22,7 +21,7 @@ import {
 import { chunkContent } from "../../lib/knowledge/chunkers";
 import { embedChunks } from "../../lib/knowledge/embedder";
 import type { EmbedderConfig } from "../../lib/knowledge/embedder";
-import { buildVectorIndex, searchKnowledge } from "../../lib/knowledge/vectorStore";
+import { buildVectorIndex, searchKnowledge, invalidateVectorIndex } from "../../lib/knowledge/vectorStore";
 import { embedSingle } from "../../lib/knowledge/embedder";
 import { formatRetrievedChunks } from "../../lib/knowledge/retriever";
 import { createLogger } from "../../lib/logger";

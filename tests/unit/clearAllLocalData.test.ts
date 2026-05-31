@@ -19,7 +19,8 @@ const EXPECTED_STORES = [
   "novelty", "inventive", "defects", "ocrCache",
   "chatMessages", "chatSessions", "feedback", "settings",
   "interpretSummaries", "opinionAnalyses", "argumentMappings",
-  "reexamDrafts", "summaries", "runMarkers", "searchSessions"
+  "reexamDrafts", "summaries", "runMarkers", "searchSessions",
+  "knowledgeSources", "knowledgeChunks", "knowledgeVectors"
 ];
 
 describe("clearAllLocalData", () => {

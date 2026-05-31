@@ -164,7 +164,7 @@ export class AgentClient {
     }
     const prompt = await this.enhancePromptWithKnowledge(
       buildClaimChartPrompt(request),
-      request.claims.map((c) => c.rawText).join(" "),
+      request.claims?.map((c) => c.rawText).join(" ") ?? "",
       "claim-chart"
     );
     const raw = await this.callGateway<unknown>("claim-chart", prompt, {
@@ -184,7 +184,7 @@ export class AgentClient {
     }
     const prompt = await this.enhancePromptWithKnowledge(
       buildNoveltyPrompt(request),
-      request.features.map((f) => f.description).join(" "),
+      request.features?.map((f) => f.description).join(" ") ?? "",
       "novelty"
     );
     return this.callGateway<NoveltyResponse>("novelty", prompt, {
@@ -203,7 +203,7 @@ export class AgentClient {
     }
     const prompt = await this.enhancePromptWithKnowledge(
       buildInventivePrompt(request),
-      request.features.map((f) => f.description).join(" "),
+      request.features?.map((f) => f.description).join(" ") ?? "",
       "inventive"
     );
     return this.callGateway<InventiveResponse>("inventive", prompt, {
@@ -487,7 +487,7 @@ export class AgentClient {
     }
     const prompt = await this.enhancePromptWithKnowledge(
       buildOpinionAnalysisPrompt(request),
-      request.opinionText.slice(0, 500),
+      request.opinionText?.slice(0, 500) ?? "",
       "opinion-analysis"
     );
     return this.callGateway<OpinionAnalysisResponse>("opinion-analysis", prompt, {
@@ -510,7 +510,7 @@ export class AgentClient {
     }
     const prompt = await this.enhancePromptWithKnowledge(
       buildArgumentAnalysisPrompt(request),
-      request.argumentText.slice(0, 500),
+      request.argumentText?.slice(0, 500) ?? "",
       "argument-analysis"
     );
     return this.callGateway<ArgumentAnalysisResponse>("argument-analysis", prompt, {
@@ -529,7 +529,7 @@ export class AgentClient {
     }
     const prompt = await this.enhancePromptWithKnowledge(
       buildReexamDraftPrompt(request),
-      request.rejectionGrounds.map((r) => r.summary).join(" "),
+      request.rejectionGrounds?.map((r) => r.summary).join(" ") ?? "",
       "reexam-draft"
     );
     return this.callGateway<ReexamDraftResponse>("reexam-draft", prompt, {
