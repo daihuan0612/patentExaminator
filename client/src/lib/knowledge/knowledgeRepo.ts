@@ -214,6 +214,71 @@ export async function estimateStorage(): Promise<StorageEstimate> {
   };
 }
 
+// ── 导入/导出 ─────────────────────────────────────────
+
+export interface KnowledgeExportData {
+  version: 1;
+  exportedAt: string;
+  sources: KnowledgeSource[];
+  chunks: KnowledgeChunk[];
+  vectors: KnowledgeVector[];
+}
+
+/** 导出全部知识库数据为 JSON */
+export async function exportKnowledge(): Promise<KnowledgeExportData> {
+  const db = await getDB();
+  const sources = await db.getAll("knowledgeSources");
+  const chunks = await db.getAll("knowledgeChunks");
+  const vectors = await db.getAll("knowledgeVectors");
+  return { version: 1, exportedAt: new Date().toISOString(), sources, chunks, vectors };
+}
+
+/** 从 JSON 导入知识库数据（合并模式，不覆盖已有） */
+export async function importKnowledge(data: KnowledgeExportData): Promise<{
+  importedSources: number;
+  importedChunks: number;
+  importedVectors: number;
+}> {
+  const db = await getDB();
+
+  // 获取已有 ID
+  const existingSources = new Set((await db.getAll("knowledgeSources")).map((s) => s.id));
+  const existingChunks = new Set((await db.getAll("knowledgeChunks")).map((c) => c.id));
+  const existingVectors = new Set((await db.getAll("knowledgeVectors")).map((v) => v.chunkId));
+
+  let importedSources = 0;
+  let importedChunks = 0;
+  let importedVectors = 0;
+
+  const tx = db.transaction(
+    ["knowledgeSources", "knowledgeChunks", "knowledgeVectors"],
+    "readwrite"
+  );
+
+  for (const source of data.sources) {
+    if (!existingSources.has(source.id)) {
+      await tx.objectStore("knowledgeSources").put(source);
+      importedSources++;
+    }
+  }
+  for (const chunk of data.chunks) {
+    if (!existingChunks.has(chunk.id)) {
+      await tx.objectStore("knowledgeChunks").put(chunk);
+      importedChunks++;
+    }
+  }
+  for (const vec of data.vectors) {
+    if (!existingVectors.has(vec.chunkId)) {
+      await tx.objectStore("knowledgeVectors").put(vec);
+      importedVectors++;
+    }
+  }
+
+  await tx.done;
+  log(`Imported: ${importedSources} sources, ${importedChunks} chunks, ${importedVectors} vectors`);
+  return { importedSources, importedChunks, importedVectors };
+}
+
 // ── 清空 ─────────────────────────────────────────────
 
 export async function clearAllKnowledge(): Promise<void> {

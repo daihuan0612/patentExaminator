@@ -155,6 +155,47 @@ export function classifyDocument(fileName: string, text: string): DocumentCatego
   return "其他";
 }
 
+// ── 术语标准化映射（同义词表） ─────────────────────────
+
+/** 专利法律领域同义词表：用于 query 扩展和检索增强 */
+export const LEGAL_SYNONYMS: Record<string, string[]> = {
+  "创造性": ["非显而易见性", "inventive step", "非显而易见", "三步法"],
+  "新颖性": ["novelty", "绝对新颖性", "相对新颖性"],
+  "实用性": ["工业实用性", "utility", "industrial applicability"],
+  "权利要求": ["claim", "权项", "请求保护范围"],
+  "说明书": ["specification", "专利说明书"],
+  "对比文件": ["reference", "现有技术文献", "prior art"],
+  "最接近现有技术": ["closest prior art", "最接近的现有技术"],
+  "区别特征": ["distinguishing feature", "区别技术特征"],
+  "技术启示": ["technical motivation", "技术动机", "结合启示"],
+  "公开": ["disclosed", "公开内容", "技术公开"],
+  "充分公开": ["sufficient disclosure", "enablement"],
+  "修改超范围": ["added matter", "新事项"],
+  "单一性": ["unity of invention", "unity"],
+  "分案申请": ["divisional application"],
+  "优先权": ["priority", "优先权日", "priority date"],
+  "抵触申请": ["conflicting application"],
+  "复审": ["reexamination", "复审请求"],
+  "无效宣告": ["invalidation", "invalidation request"],
+};
+
+/** 对 query 做同义词扩展 */
+export function expandQuery(query: string): string {
+  const expanded = new Set<string>([query]);
+  const lower = query.toLowerCase();
+
+  for (const [term, synonyms] of Object.entries(LEGAL_SYNONYMS)) {
+    if (lower.includes(term.toLowerCase()) || synonyms.some((s) => lower.includes(s.toLowerCase()))) {
+      expanded.add(term);
+      for (const syn of synonyms) {
+        expanded.add(syn);
+      }
+    }
+  }
+
+  return Array.from(expanded).join(" ");
+}
+
 // ── Chunk 文本 hash（用于去重） ─────────────────────────
 
 /** 计算 chunk 文本的 SHA-256 hash */

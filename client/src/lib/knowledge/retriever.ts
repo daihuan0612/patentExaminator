@@ -6,6 +6,7 @@ import type { EmbedderConfig } from "./embedder";
 import { embedSingle } from "./embedder";
 import { searchKnowledge } from "./vectorStore";
 import { getKnowledgeStats } from "./knowledgeRepo";
+import { expandQuery } from "./normalizers";
 import { createLogger } from "../logger";
 
 const log = createLogger("KnowledgeRetriever");
@@ -33,10 +34,12 @@ export async function retrieve(
     return [];
   }
 
-  log(`Retrieving for query: "${query.slice(0, 50)}..." (topK=${topK})`);
+  // Query 扩展：同义词扩展提升召回率
+  const expandedQuery = expandQuery(query);
+  log(`Retrieving for query: "${query.slice(0, 50)}..." (expanded: "${expandedQuery.slice(0, 80)}...", topK=${topK})`);
 
   // 将 query 向量化
-  const queryVector = await embedSingle(query, embedConfig);
+  const queryVector = await embedSingle(expandedQuery, embedConfig);
 
   // 检索
   const results = await searchKnowledge(queryVector, topK, scoreThreshold);
