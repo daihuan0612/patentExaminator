@@ -10,6 +10,7 @@ import {
   getAllSources,
   deleteSource,
   addChunks,
+  addVectors,
   getUnembeddedChunks,
   markChunkEmbedded,
   getAllVectors,
@@ -50,7 +51,7 @@ async function getEmbedder() {
         const results: number[][] = [];
         for (const text of texts) {
           // 截断到 512 token ≈ 750 字符
-          const truncated = text.length > 750 ? text.slice(0, 750) : text;
+          const truncated = text.length > 500 ? text.slice(0, 500) : text;
           const output = await pipe(truncated, { pooling: "mean", normalize: true });
           results.push(Array.from(output.data));
         }
