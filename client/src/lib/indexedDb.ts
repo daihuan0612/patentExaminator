@@ -146,7 +146,7 @@ export interface PatentExaminerDB extends DBSchema {
   knowledgeChunks: {
     key: string;
     value: KnowledgeChunk;
-    indexes: { "by-sourceId": string; "by-embedded": boolean };
+    indexes: { "by-sourceId": string; "by-embedded": number };
   };
   knowledgeVectors: {
     key: string;

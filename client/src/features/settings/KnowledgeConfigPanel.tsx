@@ -186,9 +186,9 @@ export function KnowledgeConfigPanel() {
       const provider = configuredProviders.find((p) => p.providerId === config.remoteProviderId);
       const embedConfig: EmbedderConfig = {
         type: config.embedProvider,
-        remoteBaseUrl: provider?.baseUrl,
-        remoteApiKey: provider?.apiKeyRef,
-        remoteModelId: config.remoteModelId,
+        ...(provider?.baseUrl ? { remoteBaseUrl: provider.baseUrl } : {}),
+        ...(provider?.apiKeyRef ? { remoteApiKey: provider.apiKeyRef } : {}),
+        ...(config.remoteModelId ? { remoteModelId: config.remoteModelId } : {}),
       };
 
       const vectors = await embedChunks(
@@ -221,7 +221,7 @@ export function KnowledgeConfigPanel() {
     try {
       const queryVector = await embedSingle(testQuery, {
         type: config.embedProvider,
-        remoteModelId: config.remoteModelId,
+        ...(config.remoteModelId ? { remoteModelId: config.remoteModelId } : {}),
       });
       const results = await searchKnowledge(queryVector, config.topK, config.scoreThreshold);
       setTestResults(formatRetrievedChunks(results) || "未找到相关内容");
@@ -270,7 +270,11 @@ export function KnowledgeConfigPanel() {
               type="radio"
               name="embedProvider"
               checked={config.embedProvider === "local"}
-              onChange={() => setConfig({ ...config, embedProvider: "local", remoteProviderId: undefined, remoteModelId: undefined })}
+              onChange={() => {
+                const { remoteProviderId: _rp, remoteModelId: _rm, ...rest } = config;
+                void _rp; void _rm;
+                setConfig({ ...rest, embedProvider: "local" });
+              }}
             />
             本地模型（Transformers.js + BGE-large-zh，首次需下载 ~400MB）
           </label>

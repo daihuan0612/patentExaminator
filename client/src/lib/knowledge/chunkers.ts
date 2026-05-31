@@ -257,7 +257,7 @@ function chunkByHeading(text: string, fileName: string): RawChunk[] {
           },
         });
       }
-      currentTitle = match[2].trim();
+      currentTitle = match[2]!.trim();
       currentLines = [line];
     } else {
       if (!currentTitle && line.trim()) {
@@ -336,7 +336,7 @@ function chunkByTableRow(extraction: ExtractionResult, fileName: string): RawChu
     return [{ text: extraction.text, metadata: { fileName, mediaType: "table" } }];
   }
 
-  const headerRow = columnNames ?? rows[0];
+  const headerRow = columnNames ?? rows[0] ?? [];
   const dataRows = columnNames ? rows : rows.slice(1); // 跳过表头行
 
   return dataRows.map((row, i) => {
@@ -346,16 +346,15 @@ function chunkByTableRow(extraction: ExtractionResult, fileName: string): RawChu
     });
     const text = cellTexts.join(" | ");
 
-    return {
-      text,
-      metadata: {
-        fileName,
-        mediaType: "table" as const,
-        sheetName,
-        rowIndex: i + 1,
-        columnNames: headerRow,
-      },
+    const metadata: Partial<ChunkMetadata> = {
+      fileName,
+      mediaType: "table",
+      rowIndex: i + 1,
+      columnNames: headerRow,
     };
+    if (sheetName !== undefined) metadata.sheetName = sheetName;
+
+    return { text, metadata };
   });
 }
 

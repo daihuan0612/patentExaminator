@@ -115,7 +115,7 @@ export async function embedSingle(
   config: EmbedderConfig
 ): Promise<number[]> {
   const results = await embedTexts([text], config);
-  return results[0];
+  return results[0] ?? [];
 }
 
 // ── 批量向量化 chunk ──────────────────────────────────
@@ -140,9 +140,11 @@ export async function embedChunks(
     const embeddings = await embedTexts(texts, config);
 
     for (let j = 0; j < batch.length; j++) {
+      const chunk = batch[j]!;
+      const embedding = embeddings[j]!;
       vectors.push({
-        chunkId: batch[j].id,
-        vector: embeddings[j],
+        chunkId: chunk.id,
+        vector: embedding,
         modelId,
         createdAt: now,
       });
@@ -163,9 +165,11 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   let normA = 0;
   let normB = 0;
   for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
+    const ai = a[i]!;
+    const bi = b[i]!;
+    dot += ai * bi;
+    normA += ai * ai;
+    normB += bi * bi;
   }
   const denom = Math.sqrt(normA) * Math.sqrt(normB);
   return denom === 0 ? 0 : dot / denom;

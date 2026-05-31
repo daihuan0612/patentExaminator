@@ -64,7 +64,7 @@ export async function getChunksBySource(sourceId: string): Promise<KnowledgeChun
 
 export async function getUnembeddedChunks(): Promise<KnowledgeChunk[]> {
   const db = await getDB();
-  return db.getAllFromIndex("knowledgeChunks", "by-embedded", false);
+  return db.getAllFromIndex("knowledgeChunks", "by-embedded", 0);
 }
 
 export async function markChunkEmbedded(chunkId: string): Promise<void> {

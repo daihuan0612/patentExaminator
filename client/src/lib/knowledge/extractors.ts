@@ -99,8 +99,8 @@ async function extractFromExcel(file: File): Promise<ExtractionResult> {
   const XLSX = await import("xlsx");
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: "array" });
-  const sheetName = workbook.SheetNames[0];
-  const sheet = workbook.Sheets[sheetName];
+  const sheetName = workbook.SheetNames[0] ?? "";
+  const sheet = workbook.Sheets[sheetName]!;
   const data = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
 
   if (data.length === 0) {
