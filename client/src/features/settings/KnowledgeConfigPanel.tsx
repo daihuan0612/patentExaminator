@@ -234,12 +234,21 @@ export function KnowledgeConfigPanel() {
 
   // ── 向量化（自动） ──────────────────────────────────
 
+  const [embedError, setEmbedError] = useState<string | null>(null);
+
   const autoVectorize = async () => {
     setEmbedding(true);
+    setEmbedError(null);
     setEmbedProgress({ done: 0, total: 0 });
     try {
       const unembedded = await getUnembeddedChunks();
       if (unembedded.length === 0) return;
+
+      // 检查 embedding 配置
+      if (config.embedProvider === "remote" && !config.remoteProviderId) {
+        setEmbedError("请先在设置中选择远程 embedding Provider");
+        return;
+      }
 
       const provider = configuredProviders.find((p) => p.providerId === config.remoteProviderId);
       const embedConfig: EmbedderConfig = {
@@ -266,7 +275,9 @@ export function KnowledgeConfigPanel() {
       await refresh();
       log(`Embedded ${vectors.length} chunks`);
     } catch (err) {
-      log(`Embed error: ${err}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      setEmbedError(`向量化失败: ${msg}`);
+      log(`Embed error: ${msg}`);
     } finally {
       setEmbedding(false);
     }
@@ -498,6 +509,8 @@ export function KnowledgeConfigPanel() {
         <h4>向量化状态</h4>
         {embedding ? (
           <p className="knowledge-hint">向量化中... {embedProgress.done}/{embedProgress.total}</p>
+        ) : embedError ? (
+          <p className="knowledge-hint" style={{ color: "var(--danger)" }}>❌ {embedError}</p>
         ) : stats.chunkCount === stats.embeddedCount && stats.chunkCount > 0 ? (
           <p className="knowledge-hint">✅ 全部已向量化（{stats.embeddedCount} 个 chunk）</p>
         ) : stats.chunkCount > 0 ? (
