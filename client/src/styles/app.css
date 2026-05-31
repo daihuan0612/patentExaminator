@@ -5166,3 +5166,45 @@ select.inline-edit-input {
 .knowledge-source-info p {
   margin: 0.25rem 0;
 }
+
+/* ── Chunk 预览 ─────────────────────────────────── */
+
+.btn-preview {
+  margin-left: auto;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.knowledge-chunk-preview {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: var(--bg-tertiary, #f5f5f5);
+  border-radius: 4px;
+}
+
+.chunk-preview-header {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.chunk-preview-item {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border-color, #eee);
+  font-size: 0.8rem;
+}
+
+.chunk-index {
+  color: var(--text-secondary);
+  min-width: 30px;
+  font-weight: 500;
+}
+
+.chunk-text {
+  flex: 1;
+  color: var(--text-primary);
+  word-break: break-all;
+}

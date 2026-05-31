@@ -45,6 +45,8 @@ export function KnowledgeConfigPanel() {
   const [urlInput, setUrlInput] = useState("");
   const [testQuery, setTestQuery] = useState("");
   const [testResults, setTestResults] = useState<string>("");
+  const [previewSourceId, setPreviewSourceId] = useState<string | null>(null);
+  const [previewChunks, setPreviewChunks] = useState<Array<{ index: number; text: string; metadata: Record<string, unknown> }>>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 所有已添加的 Provider 列表（用于远程 embedding 选择）
@@ -274,6 +276,20 @@ export function KnowledgeConfigPanel() {
     } catch (err) {
       setTestResults(`检索失败: ${err}`);
     }
+  };
+
+  // ── Chunk 预览 ──────────────────────────────────────
+
+  const handlePreview = async (sourceId: string) => {
+    if (previewSourceId === sourceId) {
+      setPreviewSourceId(null);
+      setPreviewChunks([]);
+      return;
+    }
+    const { getChunksBySource } = await import("../../lib/knowledge/knowledgeRepo");
+    const chunks = await getChunksBySource(sourceId);
+    setPreviewSourceId(sourceId);
+    setPreviewChunks(chunks.slice(0, 5).map((c) => ({ index: c.index, text: c.text.slice(0, 200), metadata: c.metadata as Record<string, unknown> })));
   };
 
   // ── 删除 ──────────────────────────────────────────
@@ -546,6 +562,14 @@ export function KnowledgeConfigPanel() {
                 <summary>
                   {s.name} ({s.chunkCount} 切片, {s.mediaType})
                   {s.documentCategory && <span className="doc-category-tag">{s.documentCategory}</span>}
+                  <button
+                    type="button"
+                    className="btn-preview"
+                    onClick={(e) => { e.preventDefault(); handlePreview(s.id); }}
+                    data-testid={`btn-preview-${s.id}`}
+                  >
+                    {previewSourceId === s.id ? "收起" : "预览"}
+                  </button>
                 </summary>
                 <div className="knowledge-source-info">
                   <p>格式: {s.format} | 大小: {s.size > 0 ? `${(s.size / 1024).toFixed(1)} KB` : "URL"}</p>
@@ -553,6 +577,17 @@ export function KnowledgeConfigPanel() {
                   {s.fileHash && <p>Hash: {s.fileHash.slice(0, 16)}...</p>}
                   <p>创建时间: {new Date(s.createdAt).toLocaleString()}</p>
                 </div>
+                {previewSourceId === s.id && previewChunks.length > 0 && (
+                  <div className="knowledge-chunk-preview">
+                    <p className="chunk-preview-header">前 {previewChunks.length} 个切片：</p>
+                    {previewChunks.map((c) => (
+                      <div key={c.index} className="chunk-preview-item">
+                        <span className="chunk-index">#{c.index}</span>
+                        <span className="chunk-text">{c.text}...</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </details>
             ))}
           </div>
