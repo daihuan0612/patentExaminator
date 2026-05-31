@@ -5,6 +5,7 @@ import { aiRouter } from "./routes/ai.js";
 import { settingsRouter } from "./routes/settings.js";
 import { searchRouter } from "./routes/search.js";
 import { syncRouter } from "./routes/sync.js";
+import { knowledgeRouter } from "./routes/knowledge.js";
 import { setApiKey } from "./security/keyStore.js";
 import { logger } from "./lib/logger.js";
 import { closeSyncDb } from "./lib/syncDb.js";
@@ -65,6 +66,7 @@ app.use("/api", rateLimiter, aiRouter);
 app.use("/api", settingsRouter);
 app.use("/api", rateLimiter, searchRouter);
 app.use("/api", syncRouter);
+app.use("/api", knowledgeRouter);
 
 // Serve client static files if dist exists
 const clientDist = path.resolve(__dirname, "../../client/dist");
