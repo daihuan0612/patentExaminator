@@ -238,7 +238,7 @@ export function OnboardingGuide({ onClose }: OnboardingGuideProps) {
               <button
                 type="button"
                 className="onboarding-sample-copy"
-                onClick={() => handleCopy(step.sampleFile!)}
+                onClick={() => handleCopy(step.sampleFile ?? "")}
               >
                 {copied === step.sampleFile ? "已复制 ✓" : "复制路径"}
               </button>

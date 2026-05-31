@@ -47,10 +47,10 @@ export async function searchPatents(
       const searchFn = providerId === "tavily" ? searchTavily
         : providerId === "serpapi" ? searchSerpApi
         : providerId === "epo" ? searchEpoAdapter
-        : config?.baseUrl ? (k: string, n: number, a: string) => searchCustom(k, n, a, config.baseUrl!)
+        : config?.baseUrl ? (k: string, n: number, a: string) => searchCustom(k, n, a, config.baseUrl as string)
         : null;
       if (!searchFn) return Promise.resolve([] as SearchResult[]);
-      return searchFn(q, perQuery, apiKey!).catch((err) => {
+      return searchFn(q, perQuery, apiKey as string).catch((err) => {
         logger.warn("Search query failed, skipping", { query: q, error: String(err).slice(0, 200) });
         return [] as SearchResult[];
       });

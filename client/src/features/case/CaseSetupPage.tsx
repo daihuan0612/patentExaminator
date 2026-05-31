@@ -489,7 +489,7 @@ export function CaseSetupPage() {
     }
     
     // 分类完成后，重新从 IndexedDB 加载所有文档，确保 store 与数据库同步
-    const allDocs = await readDocumentsByCaseId(caseId!);
+    const allDocs = await readDocumentsByCaseId(caseId ?? "");
     setDocuments(allDocs);
   };
 

@@ -444,12 +444,12 @@ export function OpinionComparisonWrapper() {
     async function loadOpinionData() {
       try {
         // Only load from IndexedDB if not already in memory store
-        const storedAnalysis = await readOpinionAnalysis(caseId!);
+        const storedAnalysis = await readOpinionAnalysis(caseId);
         if (storedAnalysis && !officeActionAnalysis) {
           setOfficeActionAnalysis(storedAnalysis);
         }
-        
-        const storedMappings = await readArgumentMappings(caseId!);
+
+        const storedMappings = await readArgumentMappings(caseId);
         if (storedMappings.length > 0 && argumentMappings.length === 0) {
           setArgumentMappings(storedMappings);
         }

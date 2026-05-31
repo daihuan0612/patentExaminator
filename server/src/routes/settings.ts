@@ -16,6 +16,10 @@ settingsRouter.get("/settings/providers", (_req, res) => {
 // Set provider API key
 settingsRouter.put("/settings/providers/:providerId", (req, res) => {
   const { providerId } = req.params;
+  if (!providerId) {
+    res.status(400).json({ error: "providerId is required" });
+    return;
+  }
   const { apiKey } = req.body as { apiKey?: string };
 
   if (!apiKey || typeof apiKey !== "string") {
@@ -23,21 +27,29 @@ settingsRouter.put("/settings/providers/:providerId", (req, res) => {
     return;
   }
 
-  setApiKey(providerId!, apiKey);
+  setApiKey(providerId, apiKey);
   res.json({ ok: true, providerId });
 });
 
 // Remove provider API key
 settingsRouter.delete("/settings/providers/:providerId", (req, res) => {
   const { providerId } = req.params;
-  const removed = removeApiKey(providerId!);
+  if (!providerId) {
+    res.status(400).json({ error: "providerId is required" });
+    return;
+  }
+  const removed = removeApiKey(providerId);
   res.json({ ok: removed, providerId });
 });
 
 // Check if provider has key
 settingsRouter.get("/settings/providers/:providerId", (req, res) => {
   const { providerId } = req.params;
-  const key = getApiKey(providerId!);
+  if (!providerId) {
+    res.status(400).json({ error: "providerId is required" });
+    return;
+  }
+  const key = getApiKey(providerId);
   res.json({ providerId, hasKey: !!key });
 });
 
@@ -52,7 +64,11 @@ settingsRouter.get("/providers/:providerId/models", async (req, res) => {
     return;
   }
 
-  const adapter = registry.get(providerId!);
+  if (!providerId) {
+    res.status(400).json({ error: "providerId is required" });
+    return;
+  }
+  const adapter = registry.get(providerId);
   if (!adapter) {
     res.status(404).json({ error: `Unknown provider: ${providerId}` });
     return;

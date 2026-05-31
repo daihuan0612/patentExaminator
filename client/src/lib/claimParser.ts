@@ -55,10 +55,10 @@ function locateClaimRegion(text: string): string | null {
   // Try: after "权利要求书" header
   const headerMatch = text.match(/权利\s*要求\s*书/);
   if (headerMatch) {
-    const start = headerMatch.index! + headerMatch[0].length;
+    const start = (headerMatch.index ?? 0) + headerMatch[0].length;
     // Find next section header
     const nextSection = text.slice(start).match(/\n\s*(说明书|说明书附图|摘要|权利要求)/);
-    const end = nextSection ? start + nextSection.index! : text.length;
+    const end = nextSection ? start + (nextSection.index ?? 0) : text.length;
     return text.slice(start, end).trim();
   }
 

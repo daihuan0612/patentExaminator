@@ -197,7 +197,7 @@ function parsePatentMeta(text: string, fileName: string) {
   );
   if (dateMatch) {
     const [, y, m, d] = dateMatch;
-    result.publicationDate = `${y}-${m!.padStart(2, "0")}-${d!.padStart(2, "0")}`;
+    result.publicationDate = `${y}-${(m ?? "").padStart(2, "0")}-${(d ?? "").padStart(2, "0")}`;
   }
 
   // Title: look for 发明名称 or Title field
