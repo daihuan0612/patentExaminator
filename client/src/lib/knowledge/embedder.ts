@@ -46,6 +46,13 @@ async function getLocalPipeline(modelId: string = DEFAULT_LOCAL_MODEL) {
   return localPipeline;
 }
 
+/** 截断文本以适配 BGE 模型 512 token 限制（中文约 1.5 字符/token） */
+function truncateForEmbedding(text: string, maxTokens: number = 512): string {
+  const maxChars = Math.floor(maxTokens * 1.5); // ~750 字符
+  if (text.length <= maxChars) return text;
+  return text.slice(0, maxChars);
+}
+
 async function embedLocal(texts: string[]): Promise<number[][]> {
   const pipe = (await getLocalPipeline()) as (
     text: string,
@@ -54,7 +61,8 @@ async function embedLocal(texts: string[]): Promise<number[][]> {
 
   const results: number[][] = [];
   for (const text of texts) {
-    const output = await pipe(text, { pooling: "mean", normalize: true });
+    const truncated = truncateForEmbedding(text);
+    const output = await pipe(truncated, { pooling: "mean", normalize: true });
     results.push(Array.from(output.data));
   }
   return results;
