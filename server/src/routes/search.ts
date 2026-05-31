@@ -930,8 +930,8 @@ searchRouter.post("/search-with-terms", async (req, res) => {
     }
 
     // Update candidate count
-    if (searchSummary.providerResults) {
-      searchSummary.providerResults[0]!.candidateCount = candidates.length;
+    if (searchSummary.providerResults?.[0]) {
+      searchSummary.providerResults[0].candidateCount = candidates.length;
     }
 
     res.json({ ok: true, candidates, searchQuery, searchSummary } satisfies SearchReferencesResponse);

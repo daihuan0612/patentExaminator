@@ -284,7 +284,7 @@ function chunkByHeading(text: string, fileName: string): RawChunk[] {
           },
         });
       }
-      currentTitle = match[2]!.trim();
+      currentTitle = (match[2] ?? "").trim();
       currentLines = [line];
     } else {
       if (!currentTitle && line.trim()) {

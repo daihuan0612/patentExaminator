@@ -100,11 +100,15 @@ export function downloadAllData(): Record<string, Array<{ id: string; data: unkn
 
   const result: Record<string, Array<{ id: string; data: unknown }>> = {};
   for (const row of rows) {
-    if (!result[row.store_name]) result[row.store_name] = [];
-    result[row.store_name]!.push({
-      id: row.record_id,
-      data: JSON.parse(row.data),
-    });
+    try {
+      if (!result[row.store_name]) result[row.store_name] = [];
+      (result[row.store_name] ?? []).push({
+        id: row.record_id,
+        data: JSON.parse(row.data),
+      });
+    } catch {
+      logger.warn(`Skipping corrupted record: store=${row.store_name}, id=${row.record_id}`);
+    }
   }
 
   logger.info(`Downloaded ${rows.length} records across ${Object.keys(result).length} stores`);

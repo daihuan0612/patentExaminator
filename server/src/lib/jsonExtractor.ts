@@ -10,7 +10,7 @@ function stripCodeFences(text: string): string {
   ];
   for (const pat of fencePatterns) {
     const m = text.match(pat);
-    if (m) return m[1]!.trim();
+    if (m?.[1]) return m[1].trim();
   }
   return text.trim();
 }

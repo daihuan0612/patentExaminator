@@ -333,7 +333,12 @@ export async function restoreFromBackup(file: File): Promise<{
   importedVectors: number;
 }> {
   const text = await file.text();
-  const data = JSON.parse(text) as KnowledgeExportData;
+  let data: KnowledgeExportData;
+  try {
+    data = JSON.parse(text) as KnowledgeExportData;
+  } catch {
+    throw new Error("备份文件格式无效：无法解析 JSON");
+  }
   if (data.version !== 1) {
     throw new Error(`Unsupported backup version: ${data.version}`);
   }

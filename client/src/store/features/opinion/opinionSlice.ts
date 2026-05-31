@@ -97,8 +97,9 @@ export const createOpinionSlice = (
   removeArgumentMapping: (code) =>
     set((prev) => {
       const newMappings = prev.argumentMappings.filter((m) => m.rejectionGroundCode !== code);
-      if (prev.argumentMappings.length > 0 && prev.argumentMappings[0]?.caseId) {
-        deleteArgumentMappings(prev.argumentMappings[0]!.caseId).catch((e) => log("error", "deleteArgumentMappings error:", e));
+      const firstMapping = prev.argumentMappings[0];
+      if (firstMapping?.caseId) {
+        deleteArgumentMappings(firstMapping.caseId).catch((e) => log("error", "deleteArgumentMappings error:", e));
         if (newMappings.length > 0) {
           saveArgumentMappings(newMappings).catch((e) => log("error", "saveArgumentMappings error:", e));
         }

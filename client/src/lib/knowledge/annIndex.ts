@@ -97,11 +97,14 @@ export class ANNIndex {
       scores.sort((a, b) => b.score - a.score);
     }
 
-    return scores.slice(0, topK).map(({ index, score }) => ({
-      chunkId: this.entries[index]!.chunkId,
-      chunk: this.entries[index]!.chunk,
-      score,
-    }));
+    return scores.slice(0, topK).map(({ index, score }) => {
+      const entry = this.entries[index];
+      return {
+        chunkId: entry?.chunkId ?? "",
+        chunk: entry?.chunk ?? {} as KnowledgeChunk,
+        score,
+      };
+    });
   }
 
   /** 索引大小 */
@@ -121,7 +124,7 @@ function partialSort(arr: Array<{ index: number; score: number }>, k: number): v
   for (let i = 0; i < k; i++) {
     let maxIdx = i;
     for (let j = i + 1; j < arr.length; j++) {
-      if (arr[j]!.score > arr[maxIdx]!.score) {
+      if ((arr[j]?.score ?? 0) > (arr[maxIdx]?.score ?? 0)) {
         maxIdx = j;
       }
     }
