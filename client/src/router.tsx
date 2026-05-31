@@ -90,6 +90,7 @@ export function SummaryWrapper() {
 
 const debugNoveltyLog = createLogger("NoveltyWrapper");
 const debugInventiveLog = createLogger("InventiveWrapper");
+const debugOpinionLog = createLogger("OpinionComparisonWrapper");
 
 export function NoveltyWrapper() {
   const { caseId } = useParams<{ caseId: string }>();
@@ -453,7 +454,7 @@ export function OpinionComparisonWrapper() {
           setArgumentMappings(storedMappings);
         }
       } catch (err) {
-        console.error("[OpinionComparisonWrapper] Failed to load from IndexedDB:", err);
+        debugOpinionLog("Failed to load from IndexedDB:", err);
       }
     }
     
@@ -542,7 +543,7 @@ export function OpinionComparisonWrapper() {
         updateWorkflowState("opinion-analyzed");
         // Persist to IndexedDB
         saveOpinionAnalysis(analysis).catch((err) => {
-          console.error("[OpinionComparisonWrapper] Failed to save opinion analysis:", err);
+          debugOpinionLog("Failed to save opinion analysis:", err);
         });
       }}
       onArgumentComplete={(result) => {
@@ -564,7 +565,7 @@ export function OpinionComparisonWrapper() {
         updateWorkflowState("argument-mapped");
         // Persist to IndexedDB
         saveArgumentMappings(mappings).catch((err) => {
-          console.error("[OpinionComparisonWrapper] Failed to save argument mappings:", err);
+          debugOpinionLog("Failed to save argument mappings:", err);
         });
       }}
     />

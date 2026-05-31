@@ -102,7 +102,7 @@ export function ChatPanel() {
           log("Called loadMessages");
         }
       } catch (error) {
-        console.error('[ChatPanel] Failed to load chat history from IndexedDB', error);
+        log('Failed to load chat history from IndexedDB', error);
         // Fallback: use in-memory store only if IndexedDB fails
       }
     })();

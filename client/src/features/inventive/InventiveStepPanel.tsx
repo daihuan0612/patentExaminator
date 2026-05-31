@@ -229,9 +229,9 @@ if (!isMountedRef.current || controller.signal.aborted) return;
     // Persist to IndexedDB
     try {
       await updateInventive(updatedAnalysis);
-      log("[InventiveStepPanel] handleSaveResponse: persisted to IndexedDB");
+      log("handleSaveResponse: persisted to IndexedDB");
     } catch (e) {
-      console.error("[InventiveStepPanel] handleSaveResponse: failed to persist to IndexedDB", e);
+      log("handleSaveResponse: failed to persist to IndexedDB", e);
     }
     log("[InventiveStepPanel] handleSaveResponse: updateAnalysis called");
   };
@@ -260,9 +260,9 @@ if (!isMountedRef.current || controller.signal.aborted) return;
     // Persist to IndexedDB
     try {
       await updateInventive(updatedAnalysis);
-      log("[InventiveStepPanel] handleUpdateEvidence: persisted to IndexedDB");
+      log("handleUpdateEvidence: persisted to IndexedDB");
     } catch (e) {
-      console.error("[InventiveStepPanel] handleUpdateEvidence: failed to persist to IndexedDB", e);
+      log("handleUpdateEvidence: failed to persist to IndexedDB", e);
     }
     log("[InventiveStepPanel] handleUpdateEvidence: updateAnalysis called");
   };
