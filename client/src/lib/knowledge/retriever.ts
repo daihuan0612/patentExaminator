@@ -8,6 +8,7 @@ import { searchKnowledge } from "./vectorStore";
 import { getKnowledgeStats } from "./knowledgeRepo";
 import { expandQuery, expandCrossLanguage } from "./normalizers";
 import { expandQueryWithGraph } from "./knowledgeGraph";
+import { rerank } from "./reranker";
 import { hybridSearch } from "./hybridSearch";
 import { createLogger } from "../logger";
 
@@ -102,10 +103,13 @@ export async function retrieve(
   const expandedQuery = expandCrossLanguage(expandQueryWithGraph(query));
 
   // 使用混合检索（语义 + BM25 RRF 融合）
-  const results = await hybridSearch(expandedQuery, config, embedConfig, topK);
+  const results = await hybridSearch(expandedQuery, config, embedConfig, topK * 2);
+
+  // 重排序：多信号评分
+  const rerankedResults = rerank(results, expandedQuery).slice(0, topK);
 
   // 父文档检索：为每个命中 chunk 补充相邻上下文
-  const enrichedResults = await enrichWithParentContext(results);
+  const enrichedResults = await enrichWithParentContext(rerankedResults);
 
   // 缓存结果
   searchCache.set(cacheKey, { results: enrichedResults, timestamp: Date.now() });

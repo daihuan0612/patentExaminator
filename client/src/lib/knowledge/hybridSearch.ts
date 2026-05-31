@@ -40,6 +40,8 @@ export interface SearchFilters {
   sourceId?: string;
   /** 表格语义查询：对表格 chunk 额外做列值匹配 */
   tableQuery?: string;
+  /** 包含图片结果：是否在检索结果中包含图片 chunk */
+  includeImages?: boolean;
 }
 
 /** 混合检索：语义 + BM25，RRF 融合 */
@@ -82,6 +84,8 @@ export async function hybridSearch(
     if (filters?.documentCategory && semanticResult.chunk.metadata.documentCategory !== filters.documentCategory) continue;
     if (filters?.mediaType && semanticResult.chunk.metadata.mediaType !== filters.mediaType) continue;
     if (filters?.sourceId && semanticResult.chunk.sourceId !== filters.sourceId) continue;
+    // 图片过滤：默认包含，设为 false 时排除
+    if (filters?.includeImages === false && semanticResult.chunk.metadata.mediaType === "image") continue;
 
     results.push(semanticResult);
   }
