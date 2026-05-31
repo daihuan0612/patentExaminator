@@ -6,7 +6,7 @@ import { ErrorBanner } from "../../lib/errorDisplay";
 
 function renderParagraphs(text: string): ReactNode {
   return text.split('\n\n').filter(Boolean).map((p, i) => (
-    <p key={i}>{p}</p>
+    <p key={`p-${i}-${p.slice(0, 10)}`}>{p}</p>
   ));
 }
 

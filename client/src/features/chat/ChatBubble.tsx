@@ -24,7 +24,7 @@ export function ChatBubble({ message, onAction }: ChatBubbleProps) {
       </div>
       <div className="chat-bubble__content">
         {displayContent.split("\n").map((line, i) => (
-          <p key={i}>{line || " "}</p>
+          <p key={`line-${i}-${line.slice(0, 10)}`}>{line || " "}</p>
         ))}
       </div>
       {isAssistant && actionTarget && onAction && (

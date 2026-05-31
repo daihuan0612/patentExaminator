@@ -216,9 +216,9 @@ export function OnboardingGuide({ onClose }: OnboardingGuideProps) {
     <div className="onboarding-overlay" data-testid="onboarding-guide">
       <div className="onboarding-card onboarding-card--wide">
         <div className="onboarding-progress">
-          {steps.map((_, i) => (
+          {steps.map((step, i) => (
             <span
-              key={i}
+              key={`dot-${step.title}`}
               className={`onboarding-dot ${i === current ? "onboarding-dot--active" : ""} ${i < current ? "onboarding-dot--done" : ""}`}
             />
           ))}
