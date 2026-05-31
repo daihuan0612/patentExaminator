@@ -4,6 +4,7 @@ import type { AppSettings, ProviderErrorMessage } from "@shared/types/agents";
 import type { KnowledgeConfig } from "@shared/types/knowledge";
 import { readSettings, writeSettings, syncProviderKeys } from "../../../lib/repositories/settingsRepo";
 import { createLogger } from "../../../lib/logger";
+import { idbWriteGuard } from "../../../lib/idbWriteGuard";
 
 const log = createLogger("SettingsSlice");
 
@@ -41,25 +42,25 @@ export const createSettingsSlice = (
 
   setSettings: (settings) => {
     set(() => ({ settings }));
-    writeSettings(settings).catch(log);
+    writeSettings(settings).catch(idbWriteGuard("settings"));
     if (settings.mode === "real") {
       syncProviderKeys(settings).then((result) => {
         if (!result.success) {
           log("Provider key sync partially failed:", result.failedProviders);
         }
-      }).catch(log);
+      }).catch(idbWriteGuard("settings"));
     }
   },
   updateMode: (mode) => {
     set((prev) => {
       const next = { ...prev.settings, mode };
-      writeSettings(next).catch(log);
+      writeSettings(next).catch(idbWriteGuard("settings"));
       if (mode === "real") {
         syncProviderKeys(next).then((result) => {
           if (!result.success) {
             log("Provider key sync partially failed:", result.failedProviders);
           }
-        }).catch(log);
+        }).catch(idbWriteGuard("settings"));
       }
       return { settings: next };
     });
@@ -71,14 +72,14 @@ export const createSettingsSlice = (
       const messages = prev.settings.providerErrorMessages ?? [];
       const entry: ProviderErrorMessage = { ...error, id };
       const updated = { ...prev.settings, providerErrorMessages: [entry, ...messages].slice(0, 50) };
-      writeSettings(updated).catch(log);
+      writeSettings(updated).catch(idbWriteGuard("settings"));
       return { settings: updated };
     });
   },
   updateKnowledgeConfig: (config) => {
     set((prev) => {
       const next = { ...prev.settings, knowledge: config };
-      writeSettings(next).catch(log);
+      writeSettings(next).catch(idbWriteGuard("settings"));
       return { settings: next };
     });
   },
@@ -92,7 +93,7 @@ export const createSettingsSlice = (
           if (!result.success) {
             log("Provider key sync partially failed:", result.failedProviders);
           }
-        }).catch(log);
+        }).catch(idbWriteGuard("settings"));
       }
     } catch (e) {
       log("Failed to load settings from DB:", e);
