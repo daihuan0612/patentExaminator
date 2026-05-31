@@ -38,6 +38,8 @@ export interface SearchFilters {
   documentCategory?: string;
   mediaType?: string;
   sourceId?: string;
+  /** 表格语义查询：对表格 chunk 额外做列值匹配 */
+  tableQuery?: string;
 }
 
 /** 混合检索：语义 + BM25，RRF 融合 */
@@ -82,6 +84,22 @@ export async function hybridSearch(
     if (filters?.sourceId && semanticResult.chunk.sourceId !== filters.sourceId) continue;
 
     results.push(semanticResult);
+  }
+
+  // 表格语义查询：如果有 tableQuery，额外匹配表格 chunk 的列值
+  if (filters?.tableQuery) {
+    const tableResults = searchBM25(filters.tableQuery, topK * 2);
+    const tableMap = new Map(tableResults.map((r) => [r.id, r.score]));
+
+    // 提升表格 chunk 的分数
+    for (const result of results) {
+      if (result.chunk.metadata.mediaType === "table") {
+        const tableBoost = tableMap.get(result.chunk.id);
+        if (tableBoost) {
+          result.score = Math.min(1, result.score + tableBoost * 0.3);
+        }
+      }
+    }
   }
 
   log(`Hybrid search: ${semanticResults.length} semantic + ${bm25Results.length} BM25 → ${results.length} fused results`);
