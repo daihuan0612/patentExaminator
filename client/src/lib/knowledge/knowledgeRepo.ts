@@ -214,6 +214,37 @@ export async function estimateStorage(): Promise<StorageEstimate> {
   };
 }
 
+// ── 浏览器兼容 ────────────────────────────────────────
+
+/** 检查 IndexedDB 可用性和存储配额 */
+export async function checkStorageQuota(): Promise<{
+  available: boolean;
+  usage: number;
+  quota: number;
+  usagePercent: string;
+  warning: string | null;
+}> {
+  try {
+    // 检查 IndexedDB 是否可用
+    const db = await getDB();
+    void db; // 验证能打开
+
+    // 检查存储配额
+    if (navigator.storage && navigator.storage.estimate) {
+      const estimate = await navigator.storage.estimate();
+      const usage = estimate.usage ?? 0;
+      const quota = estimate.quota ?? 0;
+      const percent = quota > 0 ? ((usage / quota) * 100).toFixed(1) : "0";
+      const warning = usage / quota > 0.8 ? "存储空间使用超过 80%，建议清理旧数据" : null;
+      return { available: true, usage, quota, usagePercent: percent, warning };
+    }
+
+    return { available: true, usage: 0, quota: 0, usagePercent: "未知", warning: null };
+  } catch {
+    return { available: false, usage: 0, quota: 0, usagePercent: "0", warning: "IndexedDB 不可用" };
+  }
+}
+
 // ── 导入/导出 ─────────────────────────────────────────
 
 export interface KnowledgeExportData {

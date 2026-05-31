@@ -14,8 +14,14 @@ const log = createLogger("KnowledgeVectorStore");
 let vectorIndex: Map<string, { vector: number[]; chunk: KnowledgeChunk }> | null = null;
 let indexBuiltAt = 0;
 
-/** 构建内存向量索引（首次检索时自动构建） */
+/** 构建内存向量索引（首次检索时自动构建，已构建则跳过） */
 export async function buildVectorIndex(): Promise<void> {
+  // 如果索引已构建且未失效，跳过重建
+  if (vectorIndex && vectorIndex.size > 0 && indexBuiltAt > 0) {
+    log(`Vector index already built (${vectorIndex.size} entries), skipping rebuild`);
+    return;
+  }
+
   const vectors = await repo.getAllVectors();
 
   // 获取所有 chunk

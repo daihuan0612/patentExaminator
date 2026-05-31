@@ -18,6 +18,14 @@ export interface RetrieveOptions {
   scoreThreshold?: number;
 }
 
+// 检索结果缓存：query hash → results
+const searchCache = new Map<string, { results: KnowledgeSearchResult[]; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 分钟缓存
+
+function getCacheKey(query: string, topK: number, scoreThreshold: number): string {
+  return `${query.trim().toLowerCase()}|${topK}|${scoreThreshold}`;
+}
+
 /**
  * 检索与 query 最相关的知识库 chunk
  */
@@ -35,8 +43,19 @@ export async function retrieve(
     return [];
   }
 
+  // 检查缓存
+  const cacheKey = getCacheKey(query, topK, scoreThreshold);
+  const cached = searchCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    log(`Retrieved ${cached.results.length} chunks from cache`);
+    return cached.results;
+  }
+
   // 使用混合检索（语义 + BM25 RRF 融合）
   const results = await hybridSearch(query, config, embedConfig, topK);
+
+  // 缓存结果
+  searchCache.set(cacheKey, { results, timestamp: Date.now() });
 
   log(`Retrieved ${results.length} chunks via hybrid search`);
 
