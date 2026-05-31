@@ -3,6 +3,8 @@ import type { InventiveStepAnalysis, ReferenceDocument } from "@shared/types/dom
 import type { InventiveRequest, InventiveResponse } from "../../agent/contracts";
 import { useInventiveStore } from "../../store";
 import { InlineEdit } from "../../components/InlineEdit";
+import { FeedbackButtons } from "../../components/FeedbackButtons";
+import { getFeedback, saveFeedback } from "../../lib/feedbackRepo";
 import { updateInventive } from "../../lib/repositories/inventiveRepo";
 import { createLogger } from "../../lib/logger";
 
@@ -425,6 +427,12 @@ if (!isMountedRef.current || controller.signal.aborted) return;
                 {analysis.cautions.length > 0 && (
                   <span> · 注意事项 {analysis.cautions.length} 条</span>
                 )}
+                <FeedbackButtons
+                  targetId={analysis.id}
+                  targetType="claim-feature"
+                  existingFeedback={getFeedback(analysis.id)}
+                  onSave={saveFeedback}
+                />
               </p>
 
               <textarea
