@@ -39,7 +39,7 @@ async function getLocalPipeline(modelId: string = DEFAULT_LOCAL_MODEL) {
   const { pipeline } = await import("@huggingface/transformers");
   localPipeline = await pipeline("feature-extraction", modelId, {
     dtype: "fp32",
-    device: "cpu",
+    device: "wasm",
   });
   localModelId = modelId;
   log(`Local model loaded: ${modelId}`);
