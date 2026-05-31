@@ -196,6 +196,36 @@ export function expandQuery(query: string): string {
   return Array.from(expanded).join(" ");
 }
 
+// ── 安全检查 ───────────────────────────────────────────
+
+/** 检测 chunk 是否包含 prompt injection 攻击模式 */
+export function containsPromptInjection(text: string): boolean {
+  const patterns = [
+    /ignore\s+(all\s+)?previous\s+instructions/i,
+    /忽略.*之前.*指令/i,
+    /忽略.*以上.*指令/i,
+    /你是一个.*助手.*你必须/i,
+    /system\s*:\s*/i,
+    /\[INST\]/i,
+    /<\|im_start\|>/i,
+    /jailbreak/i,
+    /DAN\s+mode/i,
+  ];
+  return patterns.some((p) => p.test(text));
+}
+
+/** 检测 chunk 是否包含敏感信息（未公开专利号等） */
+export function containsSensitiveInfo(text: string): boolean {
+  // 检测明显的未公开标记
+  const patterns = [
+    /保密专利/i,
+    /classified/i,
+    /confidential/i,
+    /内部文件.*不得外传/i,
+  ];
+  return patterns.some((p) => p.test(text));
+}
+
 // ── Chunk 文本 hash（用于去重） ─────────────────────────
 
 /** 计算 chunk 文本的 SHA-256 hash */

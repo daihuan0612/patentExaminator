@@ -6,7 +6,7 @@ import type {
   ChunkMetadata,
 } from "@shared/types/knowledge";
 import type { ExtractionResult } from "./extractors";
-import { isNoise, isGarbled, classifyDocument } from "./normalizers";
+import { isNoise, isGarbled, classifyDocument, containsPromptInjection, containsSensitiveInfo } from "./normalizers";
 import { createLogger } from "../logger";
 
 const log = createLogger("KnowledgeChunker");
@@ -405,11 +405,19 @@ function chunkImageOcr(text: string, fileName: string): RawChunk[] {
 
 // ── 后处理函数 ────────────────────────────────────────
 
-/** 过滤噪声 chunk */
+/** 过滤噪声 chunk（含安全检查） */
 function filterNoise(chunks: RawChunk[]): RawChunk[] {
   return chunks.filter((chunk) => {
     if (isNoise(chunk.text)) return false;
     if (isGarbled(chunk.text)) return false;
+    if (containsPromptInjection(chunk.text)) {
+      log(`Filtered chunk with potential prompt injection: ${chunk.text.slice(0, 50)}...`);
+      return false;
+    }
+    if (containsSensitiveInfo(chunk.text)) {
+      log(`Filtered chunk with sensitive info: ${chunk.text.slice(0, 50)}...`);
+      return false;
+    }
     return true;
   });
 }

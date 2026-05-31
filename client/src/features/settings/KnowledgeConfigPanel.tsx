@@ -35,9 +35,9 @@ const log = createLogger("KnowledgeConfigPanel");
 const ACCEPTED_FORMATS = ".pdf,.txt,.md,.docx,.doc,.json,.xlsx,.xls,.csv,.jpg,.jpeg,.png";
 
 export function KnowledgeConfigPanel() {
-  const { settings } = useSettingsStore();
+  const { settings, updateKnowledgeConfig } = useSettingsStore();
   const [sources, setSources] = useState<KnowledgeSource[]>([]);
-  const [config, setConfig] = useState<KnowledgeConfig>(DEFAULT_KNOWLEDGE_CONFIG);
+  const [config, setConfig] = useState<KnowledgeConfig>(settings.knowledge ?? DEFAULT_KNOWLEDGE_CONFIG);
   const [stats, setStats] = useState({ sourceCount: 0, chunkCount: 0, embeddedCount: 0 });
   const [importing, setImporting] = useState(false);
   const [embedding, setEmbedding] = useState(false);
@@ -58,6 +58,11 @@ export function KnowledgeConfigPanel() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // 配置变更时持久化到 settings
+  useEffect(() => {
+    updateKnowledgeConfig(config);
+  }, [config, updateKnowledgeConfig]);
 
   // ── 文件上传 ──────────────────────────────────────
 
