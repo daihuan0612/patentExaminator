@@ -64,19 +64,9 @@ npm run dev
 
 ## 知识库（RAG）
 
-设置页面"知识库"tab 支持上传法规文件，AI 在分析时自动检索相关法规注入 prompt，减少专业问题幻觉。
+设置页面"知识库"tab 支持上传文件，AI 在分析时自动检索相关知识注入 prompt，减少专业问题幻觉。
 
 **支持的输入格式**：PDF, TXT, MD, DOCX, JSON, Excel, CSV, PNG, 在线 URL
-
-**建议上传的法规文件**（用户自行下载，不随代码分发）：
-
-| 文件 | 来源 |
-|------|------|
-| 《专利审查指南》2023版 | cnipa.gov.cn |
-| 《专利法》2020修正 | cnipa.gov.cn |
-| 《专利法实施细则》2023修订 | cnipa.gov.cn |
-| 最高法专利授权确权司法解释 | 最高法公报 |
-| 复审无效典型案例汇编 | cnipa.gov.cn |
 
 **Embedding 模型**：默认使用本地 BGE-large-zh（Transformers.js），也可配置远程 API。
 
