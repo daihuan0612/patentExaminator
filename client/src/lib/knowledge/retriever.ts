@@ -7,6 +7,7 @@ import { embedSingle } from "./embedder";
 import { searchKnowledge } from "./vectorStore";
 import { getKnowledgeStats } from "./knowledgeRepo";
 import { expandQuery } from "./normalizers";
+import { hybridSearch } from "./hybridSearch";
 import { createLogger } from "../logger";
 
 const log = createLogger("KnowledgeRetriever");
@@ -34,17 +35,10 @@ export async function retrieve(
     return [];
   }
 
-  // Query 扩展：同义词扩展提升召回率
-  const expandedQuery = expandQuery(query);
-  log(`Retrieving for query: "${query.slice(0, 50)}..." (expanded: "${expandedQuery.slice(0, 80)}...", topK=${topK})`);
+  // 使用混合检索（语义 + BM25 RRF 融合）
+  const results = await hybridSearch(query, config, embedConfig, topK);
 
-  // 将 query 向量化
-  const queryVector = await embedSingle(expandedQuery, embedConfig);
-
-  // 检索
-  const results = await searchKnowledge(queryVector, topK, scoreThreshold);
-
-  log(`Retrieved ${results.length} chunks (scores: ${results.map((r) => r.score.toFixed(3)).join(", ")})`);
+  log(`Retrieved ${results.length} chunks via hybrid search`);
 
   return results;
 }

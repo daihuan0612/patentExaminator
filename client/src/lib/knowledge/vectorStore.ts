@@ -4,6 +4,7 @@
 import type { KnowledgeSearchResult, KnowledgeChunk } from "@shared/types/knowledge";
 import { cosineSimilarity } from "./embedder";
 import * as repo from "./knowledgeRepo";
+import { buildBM25Index } from "./bm25Search";
 import { createLogger } from "../logger";
 
 const log = createLogger("KnowledgeVectorStore");
@@ -37,7 +38,12 @@ export async function buildVectorIndex(): Promise<void> {
   }
 
   indexBuiltAt = Date.now();
-  log(`Built vector index: ${vectorIndex.size} entries`);
+
+  // 同时构建 BM25 索引
+  const allChunks = Array.from(chunkMap.values());
+  buildBM25Index(allChunks);
+
+  log(`Built vector index: ${vectorIndex.size} entries, BM25 index: ${allChunks.length} documents`);
 }
 
 export function invalidateVectorIndex(): void {
