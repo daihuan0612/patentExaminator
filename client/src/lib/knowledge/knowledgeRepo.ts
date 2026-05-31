@@ -134,6 +134,86 @@ export async function getKnowledgeStats(): Promise<{
   return { sourceCount: sources, chunkCount: chunks, embeddedCount: vectors };
 }
 
+// ── 一致性校验 ─────────────────────────────────────────
+
+export interface ConsistencyReport {
+  orphanedChunks: string[];   // 有 chunk 无 vector
+  orphanedVectors: string[];  // 有 vector 无 chunk
+  isConsistent: boolean;
+}
+
+/** 检查 chunk 和 vector 的一致性 */
+export async function checkConsistency(): Promise<ConsistencyReport> {
+  const db = await getDB();
+  const chunks = await db.getAll("knowledgeChunks");
+  const vectors = await db.getAll("knowledgeVectors");
+
+  const chunkIds = new Set(chunks.map((c) => c.id));
+  const vectorIds = new Set(vectors.map((v) => v.chunkId));
+
+  const orphanedChunks = chunks.filter((c) => !vectorIds.has(c.id)).map((c) => c.id);
+  const orphanedVectors = vectors.filter((v) => !chunkIds.has(v.chunkId)).map((v) => v.chunkId);
+
+  return {
+    orphanedChunks,
+    orphanedVectors,
+    isConsistent: orphanedChunks.length === 0 && orphanedVectors.length === 0,
+  };
+}
+
+/** 修复不一致：删除孤立的 vector */
+export async function fixConsistency(): Promise<ConsistencyReport> {
+  const report = await checkConsistency();
+  if (report.isConsistent) return report;
+
+  const db = await getDB();
+  const tx = db.transaction("knowledgeVectors", "readwrite");
+  for (const vectorId of report.orphanedVectors) {
+    await tx.store.delete(vectorId);
+  }
+  await tx.done;
+
+  log(`Fixed consistency: removed ${report.orphanedVectors.length} orphaned vectors`);
+  return { ...report, orphanedVectors: [], isConsistent: report.orphanedChunks.length === 0 };
+}
+
+// ── 存储空间 ──────────────────────────────────────────
+
+export interface StorageEstimate {
+  sourceCount: number;
+  chunkCount: number;
+  vectorCount: number;
+  estimatedBytes: number;
+  estimatedMB: string;
+}
+
+/** 估算知识库存储占用 */
+export async function estimateStorage(): Promise<StorageEstimate> {
+  const db = await getDB();
+  const sources = await db.getAll("knowledgeSources");
+  const chunks = await db.getAll("knowledgeChunks");
+  const vectors = await db.getAll("knowledgeVectors");
+
+  let totalBytes = 0;
+  for (const chunk of chunks) {
+    totalBytes += chunk.text.length * 3; // UTF-8 中文约 3 字节/字符
+  }
+  for (const vec of vectors) {
+    totalBytes += vec.vector.length * 8; // float64 = 8 bytes
+  }
+  for (const source of sources) {
+    totalBytes += 500; // 元数据约 500 字节
+  }
+
+  return {
+    sourceCount: sources.length,
+    chunkCount: chunks.length,
+    vectorCount: vectors.length,
+    estimatedBytes: totalBytes,
+    estimatedMB: (totalBytes / 1024 / 1024).toFixed(2),
+  };
+}
+
 // ── 清空 ─────────────────────────────────────────────
 
 export async function clearAllKnowledge(): Promise<void> {

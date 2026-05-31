@@ -37,6 +37,10 @@ export interface KnowledgeSource {
   blobKey?: string;
   /** URL 来源的原始地址 */
   sourceUrl?: string;
+  /** 法规生效日期（ISO 格式，用于版本管理） */
+  effectiveDate?: string;
+  /** 法规废止日期（ISO 格式，废止后检索时不返回） */
+  expiryDate?: string;
   /** 切片总数 */
   chunkCount: number;
   /** 向量化状态 */

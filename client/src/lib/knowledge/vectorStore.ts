@@ -60,9 +60,24 @@ export async function searchKnowledge(
     return [];
   }
 
+  // 构建 source 过期时间映射
+  const sources = await repo.getAllSources();
+  const expiredSourceIds = new Set<string>();
+  const now = new Date().toISOString();
+  for (const source of sources) {
+    if (source.expiryDate && source.expiryDate < now) {
+      expiredSourceIds.add(source.id);
+    }
+  }
+
   const scores: Array<{ chunkId: string; score: number }> = [];
 
-  for (const [chunkId, { vector }] of vectorIndex) {
+  for (const [chunkId, { vector, chunk }] of vectorIndex) {
+    // 版本管理：跳过已废止的 chunk
+    if (expiredSourceIds.has(chunk.sourceId)) {
+      continue;
+    }
+
     const score = cosineSimilarity(queryVector, vector);
     if (score >= scoreThreshold) {
       scores.push({ chunkId, score });
