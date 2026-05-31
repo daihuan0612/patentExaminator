@@ -13,6 +13,9 @@ import { createClaimNode } from "../../lib/repositories/claimRepo";
 import { readCaseById, createCase, updateCase } from "../../lib/repositories/caseRepo";
 import { useCaseStore, useDocumentsStore, useClaimsStore, useSettingsStore, useReferencesStore } from "../../store";
 import { AgentClient } from "../../agent/AgentClient";
+import { createLogger } from "../../lib/logger";
+
+const log = createLogger("CaseSetupPage");
 import { ErrorBanner } from "../../lib/errorDisplay";
 import type { DocumentClassification } from "../../agent/contracts";
 
@@ -448,7 +451,7 @@ export function CaseSetupPage() {
 
       // 显示警告（如有）
       if (result.warnings && result.warnings.length > 0) {
-        console.warn("AI 分类警告:", result.warnings);
+        log("AI 分类警告:", result.warnings);
       }
     } catch (err) {
       if (!isMountedRef.current) return;
@@ -503,7 +506,7 @@ export function CaseSetupPage() {
       setDocuments(documents.filter((d) => d.id !== docId));
     } catch (err) {
       if (!isMountedRef.current) return;
-      console.error("删除文档失败:", err);
+      log("删除文档失败:", err);
     } finally {
       abortControllersRef.current.delete(`deleteDoc-${docId}`);
     }
@@ -528,7 +531,7 @@ export function CaseSetupPage() {
       setDocuments(documents.map((d) => (d.id === docId ? updatedDoc : d)));
     } catch (err) {
       if (!isMountedRef.current) return;
-      console.error("移动文档失败:", err);
+      log("移动文档失败:", err);
     } finally {
       abortControllersRef.current.delete(`moveDoc-${docId}`);
     }

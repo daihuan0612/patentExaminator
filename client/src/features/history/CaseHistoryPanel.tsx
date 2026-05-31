@@ -4,6 +4,9 @@ import type { PatentCase } from "@shared/types/domain";
 import { readAllCases, deleteCase } from "../../lib/repositories/caseRepo";
 import { loadCaseById } from "../../lib/caseLoader";
 import { useCaseStore } from "../../store";
+import { createLogger } from "../../lib/logger";
+
+const log = createLogger("CaseHistoryPanel");
 
 export function CaseHistoryPanel() {
   const { cases, setCases } = useCaseStore();
@@ -51,7 +54,7 @@ export function CaseHistoryPanel() {
       }
     } catch (err) {
       if (!isMountedRef.current) return;
-      console.error("加载案件失败:", err);
+      log("加载案件失败:", err);
       setError(`加载案件失败: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       if (isMountedRef.current) setLoading(false);

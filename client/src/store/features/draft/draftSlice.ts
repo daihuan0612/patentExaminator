@@ -1,10 +1,13 @@
 import { create } from "zustand";
 import type { ReexamDraftResponse, SummaryResponse } from "../../../agent/contracts";
+import { createLogger } from "../../../lib/logger";
 import {
   saveReexamDraft,
   saveSummary,
   clearDraftData as clearDraftDataInDB
 } from "../../../lib/repositories/draftRepo.js";
+
+const log = createLogger("DraftSlice");
 
 export interface DraftSlice {
   reexamDrafts: Record<string, ReexamDraftResponse>; // caseId → draft
@@ -24,7 +27,7 @@ export const createDraftSlice = (
   summaries: {},
 
   setReexamDraft: (caseId, draft) => {
-    saveReexamDraft(caseId, draft).catch((e) => console.error("[DraftSlice] saveReexamDraft error:", e));
+    saveReexamDraft(caseId, draft).catch((e) => log("error", "saveReexamDraft error:", e));
     set((prev) => ({
       reexamDrafts: { ...prev.reexamDrafts, [caseId]: draft }
     }));
@@ -36,7 +39,7 @@ export const createDraftSlice = (
     }));
   },
   setSummary: (caseId, summary) => {
-    saveSummary(caseId, summary).catch((e) => console.error("[DraftSlice] saveSummary error:", e));
+    saveSummary(caseId, summary).catch((e) => log("error", "saveSummary error:", e));
     set((prev) => ({
       summaries: { ...prev.summaries, [caseId]: summary }
     }));
@@ -48,7 +51,7 @@ export const createDraftSlice = (
     }));
   },
   clearDraftData: (caseId) => {
-    clearDraftDataInDB(caseId).catch((e) => console.error("[DraftSlice] clearDraftData error:", e));
+    clearDraftDataInDB(caseId).catch((e) => log("error", "clearDraftData error:", e));
     set((prev) => {
       const nextDrafts = { ...prev.reexamDrafts };
       delete nextDrafts[caseId];

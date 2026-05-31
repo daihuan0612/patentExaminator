@@ -138,7 +138,7 @@ export class AgentClient {
   private async enhancePromptWithKnowledge(
     prompt: string,
     query: string,
-    agentType: string
+    _agentType: string
   ): Promise<string> {
     try {
       const { injectKnowledge } = await import("../lib/knowledge/promptInjector");

@@ -74,14 +74,14 @@ export const createReferencesSlice = (
   addReference: (ref) => {
     debugRefLog("addReference:", { id: ref.id, title: ref.title ?? ref.fileName });
     set((prev) => ({ references: [...prev.references, ref] }));
-    createDocument(ref).catch((e) => console.error("[ReferencesSlice] IDB createDocument error:", e));
+    createDocument(ref).catch((e) => debugRefLog("[ReferencesSlice] IDB createDocument error:", e));
   },
   updateReference: (ref) => {
     debugRefLog("updateReference:", { id: ref.id, title: ref.title ?? ref.fileName });
     set((prev) => ({
       references: prev.references.map((r) => (r.id === ref.id ? ref : r))
     }));
-    updateDocumentInDB(ref).catch((e) => console.error("[ReferencesSlice] IDB updateDocument error:", e));
+    updateDocumentInDB(ref).catch((e) => debugRefLog("[ReferencesSlice] IDB updateDocument error:", e));
   },
   removeReference: (id) => {
     debugRefLog("removeReference 被调用:", { id });
@@ -91,7 +91,7 @@ export const createReferencesSlice = (
       debugRefLog("removeReference 执行:", { before, after: after.map(r => r.id), removed: id });
       return { references: after };
     });
-    deleteDocument(id).catch((e) => console.error("[ReferencesSlice] IDB deleteDocument error:", e));
+    deleteDocument(id).catch((e) => debugRefLog("[ReferencesSlice] IDB deleteDocument error:", e));
   },
   setLoading: (v) => set(() => ({ isLoading: v })),
 
@@ -109,7 +109,7 @@ export const createReferencesSlice = (
       references: [...prev.references, accepted],
       candidates: prev.candidates.filter((c) => c.id !== candidateId)
     }));
-    createDocument(accepted).catch((e) => console.error("[ReferencesSlice] IDB createDocument (accept) error:", e));
+    createDocument(accepted).catch((e) => debugRefLog("[ReferencesSlice] IDB createDocument (accept) error:", e));
   },
   rejectCandidate: (candidateId) =>
     set((prev) => ({ candidates: prev.candidates.filter((c) => c.id !== candidateId) })),

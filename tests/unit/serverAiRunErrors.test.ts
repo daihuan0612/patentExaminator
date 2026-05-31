@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { extractJsonFromText } from "@server/lib/jsonExtractor";
 import { validateAgentResponse, isStructuredAgent } from "@shared/lib/responseValidator";
 

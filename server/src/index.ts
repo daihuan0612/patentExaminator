@@ -5,6 +5,7 @@ import { aiRouter } from "./routes/ai.js";
 import { settingsRouter } from "./routes/settings.js";
 import { searchRouter } from "./routes/search.js";
 import { setApiKey } from "./security/keyStore.js";
+import { logger } from "./lib/logger.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
@@ -19,15 +20,15 @@ const PORT = Number(process.env.PORT) || 3000;
 // Load default API keys from environment variables
 if (process.env.GEMINI_KEY) {
   setApiKey("gemini", process.env.GEMINI_KEY);
-  console.log("Loaded GEMINI_KEY from environment");
+  logger.info("Loaded GEMINI_KEY from environment");
 }
 if (process.env.MiMo_KEY) {
   setApiKey("mimo", process.env.MiMo_KEY);
-  console.log("Loaded MiMo_KEY from environment");
+  logger.info("Loaded MiMo_KEY from environment");
 }
 if (process.env.Openrouter_KEY) {
   setApiKey("openrouter", process.env.Openrouter_KEY);
-  console.log("Loaded Openrouter_KEY from environment");
+  logger.info("Loaded Openrouter_KEY from environment");
 }
 
 
@@ -72,7 +73,7 @@ if (fs.existsSync(clientDist)) {
 }
 
 const server = app.listen(PORT, () => {
-  console.log(`Server listening on http://localhost:${PORT}`);
+  logger.info(`Server listening on http://localhost:${PORT}`);
 });
 
 function shutdown() {

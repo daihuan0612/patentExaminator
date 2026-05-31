@@ -1,6 +1,9 @@
 import { getDB } from "../indexedDb.js";
 import type { AppSettings } from "@shared/types/agents";
 import { waitForServerReady } from "../serverReady";
+import { createLogger } from "../logger";
+
+const log = createLogger("settingsRepo");
 
 const SETTINGS_ID = "app";
 const LS_KEY = "patent-examiner-settings";
@@ -102,7 +105,7 @@ export async function readSettings(): Promise<AppSettings> {
       return result;
     }
   } catch (e) {
-    console.warn("IndexedDB read failed, trying localStorage:", e);
+    log("IndexedDB read failed, trying localStorage:", e);
   }
 
   // Fallback: try localStorage
@@ -110,7 +113,7 @@ export async function readSettings(): Promise<AppSettings> {
     const ls = localStorage.getItem(LS_KEY);
     if (ls) return JSON.parse(ls) as AppSettings;
   } catch (e) {
-    console.warn("[settingsRepo] localStorage JSON.parse failed, using defaults:", e);
+    log("localStorage JSON.parse failed, using defaults:", e);
   }
 
   return DEFAULT_SETTINGS;
@@ -125,7 +128,7 @@ export async function writeSettings(settings: AppSettings): Promise<void> {
     const db = await getDB();
     await db.put("settings", { ...settings, id: SETTINGS_ID });
   } catch (e) {
-    console.warn("IndexedDB write failed, settings saved to localStorage only:", e);
+    log("IndexedDB write failed, settings saved to localStorage only:", e);
   }
 }
 

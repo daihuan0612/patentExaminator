@@ -3,6 +3,9 @@ import type { AppMode } from "@shared/types/domain";
 import type { AppSettings, ProviderErrorMessage } from "@shared/types/agents";
 import type { KnowledgeConfig } from "@shared/types/knowledge";
 import { readSettings, writeSettings, syncProviderKeys } from "../../../lib/repositories/settingsRepo";
+import { createLogger } from "../../../lib/logger";
+
+const log = createLogger("SettingsSlice");
 
 export interface SettingsSlice {
   settings: AppSettings;
@@ -38,25 +41,25 @@ export const createSettingsSlice = (
 
   setSettings: (settings) => {
     set(() => ({ settings }));
-    writeSettings(settings).catch(console.error);
+    writeSettings(settings).catch(log);
     if (settings.mode === "real") {
       syncProviderKeys(settings).then((result) => {
         if (!result.success) {
-          console.warn("[SettingsSlice] Provider key sync partially failed:", result.failedProviders);
+          log("Provider key sync partially failed:", result.failedProviders);
         }
-      }).catch(console.error);
+      }).catch(log);
     }
   },
   updateMode: (mode) => {
     set((prev) => {
       const next = { ...prev.settings, mode };
-      writeSettings(next).catch(console.error);
+      writeSettings(next).catch(log);
       if (mode === "real") {
         syncProviderKeys(next).then((result) => {
           if (!result.success) {
-            console.warn("[SettingsSlice] Provider key sync partially failed:", result.failedProviders);
+            log("Provider key sync partially failed:", result.failedProviders);
           }
-        }).catch(console.error);
+        }).catch(log);
       }
       return { settings: next };
     });
@@ -68,14 +71,14 @@ export const createSettingsSlice = (
       const messages = prev.settings.providerErrorMessages ?? [];
       const entry: ProviderErrorMessage = { ...error, id };
       const updated = { ...prev.settings, providerErrorMessages: [entry, ...messages].slice(0, 50) };
-      writeSettings(updated).catch(console.error);
+      writeSettings(updated).catch(log);
       return { settings: updated };
     });
   },
   updateKnowledgeConfig: (config) => {
     set((prev) => {
       const next = { ...prev.settings, knowledge: config };
-      writeSettings(next).catch(console.error);
+      writeSettings(next).catch(log);
       return { settings: next };
     });
   },
@@ -87,12 +90,12 @@ export const createSettingsSlice = (
       if (saved.mode === "real") {
         syncProviderKeys(saved).then((result) => {
           if (!result.success) {
-            console.warn("[SettingsSlice] Provider key sync partially failed:", result.failedProviders);
+            log("Provider key sync partially failed:", result.failedProviders);
           }
-        }).catch(console.error);
+        }).catch(log);
       }
     } catch (e) {
-      console.error("Failed to load settings from DB:", e);
+      log("Failed to load settings from DB:", e);
       set(() => ({ isInitialized: true }));
     }
   }

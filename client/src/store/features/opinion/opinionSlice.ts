@@ -12,6 +12,9 @@ import {
   clearOpinionData
 } from "../../../lib/repositories/opinionRepo.js";
 import { saveRunMarker } from "../../../lib/repositories/runMarkerRepo.js";
+import { createLogger } from "../../../lib/logger";
+
+const log = createLogger("OpinionSlice");
 
 export interface OpinionSlice {
   officeActionAnalysis: OfficeActionAnalysis | null;
@@ -50,7 +53,7 @@ export const createOpinionSlice = (
   argumentRanCases: [],
 
   setOfficeActionAnalysis: (analysis) => {
-    saveOpinionAnalysis(analysis).catch((e) => console.error("[OpinionSlice] saveOpinionAnalysis error:", e));
+    saveOpinionAnalysis(analysis).catch((e) => log("error", "saveOpinionAnalysis error:", e));
     set(() => ({ officeActionAnalysis: analysis }));
   },
   loadOfficeActionAnalysis: (analysis) => {
@@ -58,11 +61,11 @@ export const createOpinionSlice = (
   },
   setArgumentMappings: (mappings) => {
     if (mappings.length > 0 && mappings[0]?.caseId) {
-      saveArgumentMappings(mappings).catch((e) => console.error("[OpinionSlice] saveArgumentMappings error:", e));
+      saveArgumentMappings(mappings).catch((e) => log("error", "saveArgumentMappings error:", e));
     } else if (mappings.length === 0) {
       const caseId = _get().argumentMappings[0]?.caseId;
       if (caseId) {
-        deleteArgumentMappings(caseId).catch((e) => console.error("[OpinionSlice] deleteArgumentMappings error:", e));
+        deleteArgumentMappings(caseId).catch((e) => log("error", "deleteArgumentMappings error:", e));
       }
     }
     set(() => ({ argumentMappings: mappings }));
@@ -75,7 +78,7 @@ export const createOpinionSlice = (
   addArgumentMapping: (mapping) => {
     set((prev) => {
       const newMappings = [...prev.argumentMappings, mapping];
-      saveArgumentMappings(newMappings).catch((e) => console.error("[OpinionSlice] saveArgumentMappings error:", e));
+      saveArgumentMappings(newMappings).catch((e) => log("error", "saveArgumentMappings error:", e));
       return { argumentMappings: newMappings };
     });
   },
@@ -86,7 +89,7 @@ export const createOpinionSlice = (
         m.rejectionGroundCode === code ? { ...m, ...patch } : m
       );
       if (newMappings.length > 0 && newMappings[0]?.caseId) {
-        saveArgumentMappings(newMappings).catch((e) => console.error("[OpinionSlice] saveArgumentMappings error:", e));
+        saveArgumentMappings(newMappings).catch((e) => log("error", "saveArgumentMappings error:", e));
       }
       return { argumentMappings: newMappings };
     }),
@@ -95,9 +98,9 @@ export const createOpinionSlice = (
     set((prev) => {
       const newMappings = prev.argumentMappings.filter((m) => m.rejectionGroundCode !== code);
       if (prev.argumentMappings.length > 0 && prev.argumentMappings[0]?.caseId) {
-        deleteArgumentMappings(prev.argumentMappings[0]!.caseId).catch((e) => console.error("[OpinionSlice] deleteArgumentMappings error:", e));
+        deleteArgumentMappings(prev.argumentMappings[0]!.caseId).catch((e) => log("error", "deleteArgumentMappings error:", e));
         if (newMappings.length > 0) {
-          saveArgumentMappings(newMappings).catch((e) => console.error("[OpinionSlice] saveArgumentMappings error:", e));
+          saveArgumentMappings(newMappings).catch((e) => log("error", "saveArgumentMappings error:", e));
         }
       }
       return { argumentMappings: newMappings };
@@ -112,7 +115,7 @@ export const createOpinionSlice = (
           g.code === code ? { ...g, ...patch } : g
         )
       };
-      saveOpinionAnalysis(newAnalysis).catch((e) => console.error("[OpinionSlice] saveOpinionAnalysis error:", e));
+      saveOpinionAnalysis(newAnalysis).catch((e) => log("error", "saveOpinionAnalysis error:", e));
       return { officeActionAnalysis: newAnalysis };
     }),
 
@@ -125,7 +128,7 @@ export const createOpinionSlice = (
           (g) => g.code !== code
         )
       };
-      saveOpinionAnalysis(newAnalysis).catch((e) => console.error("[OpinionSlice] saveOpinionAnalysis error:", e));
+      saveOpinionAnalysis(newAnalysis).catch((e) => log("error", "saveOpinionAnalysis error:", e));
       return { officeActionAnalysis: newAnalysis };
     }),
 
@@ -136,7 +139,7 @@ export const createOpinionSlice = (
         ...prev.officeActionAnalysis,
         rejectionGrounds: [...prev.officeActionAnalysis.rejectionGrounds, ground]
       };
-      saveOpinionAnalysis(newAnalysis).catch((e) => console.error("[OpinionSlice] saveOpinionAnalysis error:", e));
+      saveOpinionAnalysis(newAnalysis).catch((e) => log("error", "saveOpinionAnalysis error:", e));
       return { officeActionAnalysis: newAnalysis };
     }),
 
@@ -147,7 +150,7 @@ export const createOpinionSlice = (
         ...prev.officeActionAnalysis,
         citedReferences: [...prev.officeActionAnalysis.citedReferences, ref]
       };
-      saveOpinionAnalysis(newAnalysis).catch((e) => console.error("[OpinionSlice] saveOpinionAnalysis error:", e));
+      saveOpinionAnalysis(newAnalysis).catch((e) => log("error", "saveOpinionAnalysis error:", e));
       return { officeActionAnalysis: newAnalysis };
     }),
 
@@ -160,20 +163,20 @@ export const createOpinionSlice = (
           (r) => r.publicationNumber !== pubNumber
         )
       };
-      saveOpinionAnalysis(newAnalysis).catch((e) => console.error("[OpinionSlice] saveOpinionAnalysis error:", e));
+      saveOpinionAnalysis(newAnalysis).catch((e) => log("error", "saveOpinionAnalysis error:", e));
       return { officeActionAnalysis: newAnalysis };
     }),
 
   clearReexamData: (caseId) => {
     if (caseId) {
-      clearOpinionData(caseId).catch((e) => console.error("[OpinionSlice] clearOpinionData error:", e));
+      clearOpinionData(caseId).catch((e) => log("error", "clearOpinionData error:", e));
     }
     set(() => ({ officeActionAnalysis: null, argumentMappings: [], unmappedGrounds: [] }));
   },
   setLoading: (v) => set(() => ({ isLoading: v })),
   setArgumentRanCases: (caseIds) => set(() => ({ argumentRanCases: caseIds })),
   addArgumentRanCase: (caseId) => {
-    saveRunMarker(caseId, "argumentMapping").catch((e) => console.error("[OpinionSlice] saveRunMarker error:", e));
+    saveRunMarker(caseId, "argumentMapping").catch((e) => log("error", "saveRunMarker error:", e));
     set((prev) => ({
       argumentRanCases: prev.argumentRanCases.includes(caseId) ? prev.argumentRanCases : [...prev.argumentRanCases, caseId]
     }));

@@ -34,7 +34,7 @@ export const createInventiveSlice = (
     log("setAnalyses:", analyses.map(a => ({ id: a.id, closestPriorArtId: a.closestPriorArtId })));
     // Persist each analysis to IndexedDB
     for (const analysis of analyses) {
-      createInventive(analysis).catch((e) => console.error("[InventiveSlice] createInventive error:", e));
+      createInventive(analysis).catch((e) => log("[InventiveSlice] createInventive error:", e));
     }
     set(() => ({ analyses }));
   },
@@ -45,7 +45,7 @@ export const createInventiveSlice = (
   },
   addAnalysis: (analysis) => {
     log("addAnalysis:", { id: analysis.id, closestPriorArtId: analysis.closestPriorArtId });
-    createInventive(analysis).catch((e) => console.error("[InventiveSlice] createInventive error:", e));
+    createInventive(analysis).catch((e) => log("[InventiveSlice] createInventive error:", e));
     set((prev) => ({ analyses: [...prev.analyses, analysis] }));
   },
   updateAnalysis: (analysis) => {
@@ -54,7 +54,7 @@ export const createInventiveSlice = (
       closestPriorArtId: analysis.closestPriorArtId,
       fullAnalysis: analysis
     });
-    updateInventive(analysis).catch((e) => console.error("[InventiveSlice] updateInventive error:", e));
+    updateInventive(analysis).catch((e) => log("[InventiveSlice] updateInventive error:", e));
     set((prev) => {
       const newAnalyses = prev.analyses.map((a) => (a.id === analysis.id ? analysis : a));
       log("updateAnalysis result:", newAnalyses.map(a => ({ id: a.id, closestPriorArtId: a.closestPriorArtId })));
@@ -63,12 +63,12 @@ export const createInventiveSlice = (
   },
   removeAnalysis: (id) => {
     log("removeAnalysis:", { id });
-    deleteInventive(id).catch((e) => console.error("[InventiveSlice] deleteInventive error:", e));
+    deleteInventive(id).catch((e) => log("[InventiveSlice] deleteInventive error:", e));
     set((prev) => ({ analyses: prev.analyses.filter((a) => a.id !== id) }));
   },
   clearAnalysesByCase: (caseId) => {
     log("clearAnalysesByCase:", { caseId });
-    deleteInventiveByCaseId(caseId).catch((e) => console.error("[InventiveSlice] deleteInventiveByCaseId error:", e));
+    deleteInventiveByCaseId(caseId).catch((e) => log("[InventiveSlice] deleteInventiveByCaseId error:", e));
     set((prev) => ({ analyses: prev.analyses.filter((a) => a.caseId !== caseId) }));
   },
   setLoading: (v) => set(() => ({ isLoading: v }))

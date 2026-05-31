@@ -17,7 +17,6 @@ import {
   useDefectsStore,
   useOpinionStore
 } from "@client/store";
-import type { ModuleScope } from "@shared/types/domain";
 
 const CASE_ID = "tc-1";
 

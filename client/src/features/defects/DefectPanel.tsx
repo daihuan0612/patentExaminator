@@ -168,7 +168,7 @@ export function DefectPanel({
         addDefect(userDefect);
       }
     } catch (err) {
-      console.error("[DefectPanel] Error running defect check:", err);
+      log("[DefectPanel] Error running defect check:", err);
       if (isMountedRef.current) {
         setError(err);
       }

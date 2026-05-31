@@ -100,18 +100,16 @@ describe("documentsSlice IDB persistence (TC-1)", () => {
 
   it("IDB error does not break in-memory state", async () => {
     mockCreateDocument.mockRejectedValueOnce(new Error("IDB full"));
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const doc = makeDoc();
     useDocumentsStore.getState().addDocument(doc);
 
-    // In-memory state should still be updated
+    // In-memory state should still be updated even when IDB fails
     expect(useDocumentsStore.getState().documents).toHaveLength(1);
 
-    // Wait for the rejected promise to be caught
+    // Wait for the rejected promise to be caught (no crash)
     await new Promise((r) => setTimeout(r, 10));
-    expect(consoleSpy).toHaveBeenCalled();
-    consoleSpy.mockRestore();
+    expect(useDocumentsStore.getState().documents).toHaveLength(1);
   });
 });
 
@@ -189,15 +187,15 @@ describe("referencesSlice IDB persistence (TC-2)", () => {
 
   it("IDB error does not break in-memory state", async () => {
     mockCreateDocument.mockRejectedValueOnce(new Error("IDB full"));
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const ref = makeRef();
     useReferencesStore.getState().addReference(ref);
 
+    // In-memory state should still be updated even when IDB fails
     expect(useReferencesStore.getState().references).toHaveLength(1);
 
+    // Wait for the rejected promise to be caught (no crash)
     await new Promise((r) => setTimeout(r, 10));
-    expect(consoleSpy).toHaveBeenCalled();
-    consoleSpy.mockRestore();
+    expect(useReferencesStore.getState().references).toHaveLength(1);
   });
 });

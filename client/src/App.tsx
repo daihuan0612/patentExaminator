@@ -3,6 +3,9 @@ import { RouterProvider } from "react-router-dom";
 import { router } from "./router";
 import { useSettingsStore } from "./store";
 import { OnboardingGuide } from "./components/OnboardingGuide";
+import { createLogger } from "./lib/logger";
+
+const log = createLogger("App");
 
 const ONBOARDING_KEY = "patent-examiner-onboarding-done";
 
@@ -11,7 +14,7 @@ export function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
-    loadFromDb().catch((e) => console.warn("Settings load failed:", e));
+    loadFromDb().catch((e) => log("Settings load failed:", e));
 
     const done = localStorage.getItem(ONBOARDING_KEY);
     if (!done) setShowOnboarding(true);

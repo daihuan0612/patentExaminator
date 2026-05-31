@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 // TC-8 & TC-9: Abort behavior tests
 // Tests the AbortController patterns used in ChatPanel and other components

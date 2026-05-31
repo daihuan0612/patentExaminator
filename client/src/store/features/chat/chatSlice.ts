@@ -46,7 +46,7 @@ export const createChatSlice = (
   setSessions: (sessions) => {
     log("setSessions called with", sessions.length, "sessions");
     for (const session of sessions) {
-      createSession(session).catch((e) => console.error("[ChatSlice] createSession error:", e));
+      createSession(session).catch((e) => log("[ChatSlice] createSession error:", e));
     }
     set(() => ({ sessions }));
   },
@@ -57,13 +57,13 @@ export const createChatSlice = (
   },
   addSession: (session) => {
     log("addSession called:", session.id);
-    createSession(session).catch((e) => console.error("[ChatSlice] createSession error:", e));
+    createSession(session).catch((e) => log("[ChatSlice] createSession error:", e));
     set((prev) => ({ sessions: [...prev.sessions, session] }));
   },
   removeSession: (id) => {
     log("removeSession called:", id);
-    deleteSession(id).catch((e) => console.error("[ChatSlice] deleteSession error:", e));
-    deleteMessagesBySessionId(id).catch((e) => console.error("[ChatSlice] deleteMessagesBySessionId error:", e));
+    deleteSession(id).catch((e) => log("[ChatSlice] deleteSession error:", e));
+    deleteMessagesBySessionId(id).catch((e) => log("[ChatSlice] deleteMessagesBySessionId error:", e));
     set((prev) => ({
       sessions: prev.sessions.filter((s) => s.id !== id),
       messages: prev.messages.filter((m) => m.sessionId !== id),
@@ -75,7 +75,7 @@ export const createChatSlice = (
       const session = prev.sessions.find((s) => s.id === id);
       if (session) {
         const updatedSession = { ...session, title, updatedAt: new Date().toISOString() };
-        updateSession(updatedSession).catch((e) => console.error("[ChatSlice] updateSession error:", e));
+        updateSession(updatedSession).catch((e) => log("[ChatSlice] updateSession error:", e));
       }
       return {
         sessions: prev.sessions.map((s) => (s.id === id ? { ...s, title, updatedAt: new Date().toISOString() } : s))
@@ -85,7 +85,7 @@ export const createChatSlice = (
   setMessages: (messages) => {
     log("setMessages called with", messages.length, "messages");
     for (const msg of messages) {
-      createMessage(msg).catch((e) => console.error("[ChatSlice] createMessage error:", e));
+      createMessage(msg).catch((e) => log("[ChatSlice] createMessage error:", e));
     }
     set(() => ({ messages }));
   },
@@ -96,7 +96,7 @@ export const createChatSlice = (
   },
   addMessage: (message) => {
     log("addMessage called:", message.id);
-    createMessage(message).catch((e) => console.error("[ChatSlice] createMessage error:", e));
+    createMessage(message).catch((e) => log("[ChatSlice] createMessage error:", e));
     set((prev) => ({ messages: [...prev.messages, message] }));
   },
 

@@ -7,6 +7,9 @@ import { ToastContainer } from "./ToastContainer";
 import { useCaseStore } from "../store";
 import { loadCaseById } from "../lib/caseLoader";
 import { useTokenUsageStore } from "../store/features/tokenUsage/tokenUsageSlice";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("AppShell");
 
 interface AppShellProps {
   children: ReactNode;
@@ -60,7 +63,7 @@ export function AppShell({ children }: AppShellProps) {
     if (!caseId || caseId === "new") return;
     if (currentCase?.id === caseId) return;
     loadCaseById(caseId).catch((err) =>
-      console.error("[AppShell] Failed to restore case data:", err)
+      log("Failed to restore case data:", err)
     );
   }, [caseId, currentCase?.id]);
 

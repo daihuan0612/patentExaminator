@@ -7,6 +7,9 @@ import {
   deleteDefectsByCaseId
 } from "../../../lib/repositories/defectRepo.js";
 import { saveRunMarker } from "../../../lib/repositories/runMarkerRepo.js";
+import { createLogger } from "../../../lib/logger";
+
+const log = createLogger("DefectsSlice");
 
 export interface DefectsSlice {
   defects: FormalDefect[];
@@ -34,7 +37,7 @@ export const createDefectsSlice = (
 
   setDefects: (defects) => {
     for (const defect of defects) {
-      createDefect(defect).catch((e) => console.error("[DefectsSlice] createDefect error:", e));
+      createDefect(defect).catch(log);
     }
     set(() => ({ defects }));
   },
@@ -42,27 +45,27 @@ export const createDefectsSlice = (
     set(() => ({ defects }));
   },
   addDefect: (defect) => {
-    createDefect(defect).catch((e) => console.error("[DefectsSlice] createDefect error:", e));
+    createDefect(defect).catch(log);
     set((prev) => ({ defects: [...prev.defects, defect] }));
   },
   updateDefect: (defect) => {
-    updateDefect(defect).catch((e) => console.error("[DefectsSlice] updateDefect error:", e));
+    updateDefect(defect).catch(log);
     set((prev) => ({
       defects: prev.defects.map((d) => (d.id === defect.id ? defect : d))
     }));
   },
   removeDefect: (id) => {
-    deleteDefect(id).catch((e) => console.error("[DefectsSlice] deleteDefect error:", e));
+    deleteDefect(id).catch(log);
     set((prev) => ({ defects: prev.defects.filter((d) => d.id !== id) }));
   },
   clearDefectsByCase: (caseId) => {
-    deleteDefectsByCaseId(caseId).catch((e) => console.error("[DefectsSlice] deleteDefectsByCaseId error:", e));
+    deleteDefectsByCaseId(caseId).catch(log);
     set((prev) => ({ defects: prev.defects.filter((d) => d.caseId !== caseId) }));
   },
   setLoading: (v) => set(() => ({ isLoading: v })),
   setRanCases: (caseIds) => set(() => ({ ranCases: caseIds })),
   addRanCase: (caseId) => {
-    saveRunMarker(caseId, "defects").catch((e) => console.error("[DefectsSlice] saveRunMarker error:", e));
+    saveRunMarker(caseId, "defects").catch(log);
     set((prev) => ({
       ranCases: prev.ranCases.includes(caseId) ? prev.ranCases : [...prev.ranCases, caseId]
     }));

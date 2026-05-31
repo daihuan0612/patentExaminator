@@ -88,7 +88,7 @@ export async function loadCaseById(caseId: string) {
       log("Session", s.id, "has", msgs.length, "messages");
       allMessages.push(...msgs);
     } catch (err) {
-      console.warn(`Failed to load messages for session ${s.id}:`, err);
+      log(`Failed to load messages for session ${s.id}:`, err);
     }
   }
   log("Total chat messages loaded:", allMessages.length);

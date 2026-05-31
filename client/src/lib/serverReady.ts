@@ -1,3 +1,7 @@
+import { createLogger } from "./logger";
+
+const log = createLogger("serverReady");
+
 const MAX_RETRIES = 10;
 const RETRY_DELAY_MS = 500;
 
@@ -42,7 +46,7 @@ export async function waitForServerReady(gatewayUrl: string = "/api", forceCheck
   }
   
   isServerReadyCache = false;
-  console.warn("[serverReady] Server health check failed after max retries, proceeding anyway");
+  log("Server health check failed after max retries, proceeding anyway");
 }
 
 export function clearServerReadyCache(): void {

@@ -3,6 +3,9 @@ import {
   saveInterpretSummaries,
   deleteInterpretSummaries
 } from "../../../lib/repositories/interpretRepo.js";
+import { createLogger } from "../../../lib/logger";
+
+const log = createLogger("InterpretSlice");
 
 export const LEGACY_INTERPRET_KEY = "__legacy__";
 
@@ -33,7 +36,7 @@ export const createInterpretSlice = (
     });
     // Persist to IndexedDB (async, fire-and-forget)
     saveInterpretSummaries(caseId, nextSummaries).catch((err) => {
-      console.error(`Failed to save interpret summaries for case ${caseId}:`, err);
+      log(`Failed to save interpret summaries for case ${caseId}:`, err);
     });
   },
 
@@ -50,7 +53,7 @@ export const createInterpretSlice = (
     });
     // Delete from IndexedDB (async, fire-and-forget)
     deleteInterpretSummaries(caseId).catch((err) => {
-      console.error(`Failed to delete interpret summaries for case ${caseId}:`, err);
+      log(`Failed to delete interpret summaries for case ${caseId}:`, err);
     });
   }
 });

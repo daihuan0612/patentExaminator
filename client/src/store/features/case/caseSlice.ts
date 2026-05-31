@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import type { PatentCase, CaseWorkflowState } from "@shared/types/domain";
 import { updateCase } from "../../../lib/repositories/caseRepo";
+import { createLogger } from "../../../lib/logger";
+
+const log = createLogger("CaseSlice");
 
 export interface CaseSlice {
   currentCase: PatentCase | null;
@@ -23,7 +26,7 @@ export const createCaseSlice = (
 
   setCurrentCase: (c) => {
     set(() => ({ currentCase: c }));
-    if (c) updateCase(c).catch((e) => console.error("[CaseSlice] IDB setCurrentCase error:", e));
+    if (c) updateCase(c).catch((e) => log("IDB setCurrentCase error:", e));
   },
   setCases: (cases) => set(() => ({ cases })),
   setLoading: (v) => set(() => ({ isLoading: v })),
@@ -31,7 +34,7 @@ export const createCaseSlice = (
     set((prev) => {
       if (prev.currentCase) {
         const updated = { ...prev.currentCase, workflowState: state, updatedAt: new Date().toISOString() };
-        updateCase(updated).catch((e) => console.error("[CaseSlice] updateCase error:", e));
+        updateCase(updated).catch((e) => log("updateCase error:", e));
         return { currentCase: updated };
       }
       return { currentCase: null };

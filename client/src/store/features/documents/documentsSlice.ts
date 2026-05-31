@@ -5,6 +5,9 @@ import {
   updateDocument as updateDocumentInDB,
   deleteDocument
 } from "../../../lib/repositories/documentRepo";
+import { createLogger } from "../../../lib/logger";
+
+const log = createLogger("DocumentsSlice");
 
 export interface DocumentsSlice {
   documents: SourceDocument[];
@@ -27,17 +30,17 @@ export const createDocumentsSlice = (
   setDocuments: (documents) => set(() => ({ documents })),
   addDocument: (doc) => {
     set((prev) => ({ documents: [...prev.documents, doc] }));
-    createDocument(doc).catch((e) => console.error("[DocumentsSlice] IDB createDocument error:", e));
+    createDocument(doc).catch((e) => log("error", "IDB createDocument error:", e));
   },
   updateDocument: (doc) => {
     set((prev) => ({
       documents: prev.documents.map((d) => (d.id === doc.id ? doc : d))
     }));
-    updateDocumentInDB(doc).catch((e) => console.error("[DocumentsSlice] IDB updateDocument error:", e));
+    updateDocumentInDB(doc).catch((e) => log("error", "IDB updateDocument error:", e));
   },
   removeDocument: (id) => {
     set((prev) => ({ documents: prev.documents.filter((d) => d.id !== id) }));
-    deleteDocument(id).catch((e) => console.error("[DocumentsSlice] IDB deleteDocument error:", e));
+    deleteDocument(id).catch((e) => log("error", "IDB deleteDocument error:", e));
   },
   setLoading: (v) => set(() => ({ isLoading: v }))
 });
