@@ -23,6 +23,7 @@ import {
 } from "../lib/knowledgeDb.js";
 import { extractText, extractFromUrl } from "../lib/knowledgeExtract.js";
 import { logger } from "../lib/logger.js";
+import { localRerank } from "../lib/reranker.js";
 
 export const knowledgeRouter = Router();
 
@@ -661,17 +662,28 @@ knowledgeRouter.post("/knowledge/search", express.json(), async (req, res) => {
 
     scores.sort((a, b) => b.score - a.score);
 
-    // nf-9: Re-ranker 集成
+    // bg-41: Re-ranker 集成 — 有远程用远程，没有用本地启发式算法
     let rerankedScores = scores;
+    const topCandidates = scores.slice(0, topK * 3);
+    // 构建 localRerank 需要的格式
+    const candidatesForRerank = topCandidates.map((s) => {
+      const chunk = chunkMap.get(s.chunkId)!;
+      return {
+        chunkId: s.chunkId,
+        text: chunk.text,
+        metadata: JSON.parse(chunk.metadata) as Record<string, unknown>,
+        score: s.score,
+      };
+    });
+
     if (reranker?.baseUrl && reranker?.apiKey && reranker?.modelId) {
+      // 远程 Re-ranker
       try {
         const rerankUrl = reranker.baseUrl.endsWith("/v1")
           ? `${reranker.baseUrl}/rerank`
           : `${reranker.baseUrl}/v1/rerank`;
 
-        // 取 top-K * 3 的候选给 reranker
-        const candidates = scores.slice(0, topK * 3);
-        const documents = candidates.map((s) => {
+        const documents = topCandidates.map((s) => {
           const chunk = chunkMap.get(s.chunkId);
           return chunk?.text ?? "";
         });
@@ -695,20 +707,31 @@ knowledgeRouter.post("/knowledge/search", express.json(), async (req, res) => {
             results: Array<{ index: number; relevance_score: number }>;
           };
 
-          // 将 reranker 结果映射回原始 chunkId
           rerankedScores = rerankData.results.map((r) => ({
-            chunkId: candidates[r.index]!.chunkId,
+            chunkId: topCandidates[r.index]!.chunkId,
             score: r.relevance_score,
           }));
 
-          logger.info(`Re-ranker applied: ${rerankedScores.length} results from ${candidates.length} candidates`);
+          logger.info(`Remote re-ranker applied: ${rerankedScores.length} results`);
         } else {
           const errorText = await rerankRes.text();
-          logger.warn(`Re-ranker failed (${rerankRes.status}), falling back to vector search: ${errorText}`);
+          logger.warn(`Remote re-ranker failed (${rerankRes.status}), falling back to local: ${errorText}`);
+          // 远程失败，回退到本地 reranker
+          const localResults = localRerank(candidatesForRerank, query);
+          rerankedScores = localResults.map((r) => ({ chunkId: r.chunkId, score: r.score }));
+          logger.info(`Local re-ranker applied as fallback: ${rerankedScores.length} results`);
         }
       } catch (rerankErr) {
-        logger.warn(`Re-ranker error, falling back to vector search: ${rerankErr}`);
+        logger.warn(`Remote re-ranker error, falling back to local: ${rerankErr}`);
+        const localResults = localRerank(candidatesForRerank, query);
+        rerankedScores = localResults.map((r) => ({ chunkId: r.chunkId, score: r.score }));
+        logger.info(`Local re-ranker applied as fallback: ${rerankedScores.length} results`);
       }
+    } else {
+      // bg-41: 没有远程 Re-ranker 时，使用本地启发式重排序（不再跳过）
+      const localResults = localRerank(candidatesForRerank, query);
+      rerankedScores = localResults.map((r) => ({ chunkId: r.chunkId, score: r.score }));
+      logger.info(`Local re-ranker applied: ${rerankedScores.length} results`);
     }
 
     const topResults = rerankedScores.slice(0, topK).map((s) => {
