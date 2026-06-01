@@ -132,31 +132,57 @@ function isNoise(text: string): boolean {
   return false;
 }
 
+/** 乱码检测：有意义字符占比低于 30% 视为乱码 */
+function isGarbled(text: string): boolean {
+  const meaningful = text.match(/[\w一-鿿]/g);
+  const ratio = meaningful ? meaningful.length / text.length : 0;
+  return ratio < 0.3;
+}
+
+/** 繁简转换（常用字映射，覆盖专利法律领域常见字） */
+const TRADITIONAL_MAP: Record<string, string> = {
+  "專": "专", "權": "权", "請": "请", "發": "发", "審": "审",
+  "標": "标", "準": "准", "術": "术", "證": "证", "據": "据",
+  "議": "议", "論": "论", "題": "题", "實": "实", "義": "义", "務": "务",
+  "處": "处", "報": "报", "關": "关", "開": "开", "問": "问", "間": "间",
+  "書": "书", "記": "记", "設": "设", "計": "计", "資": "资", "運": "运",
+  "過": "过", "達": "达", "進": "进", "選": "选", "還": "还", "適": "适",
+  "類": "类", "點": "点", "號": "号", "統": "统", "續": "续", "維": "维",
+  "組": "组", "結": "结", "絕": "绝", "總": "总", "經": "经", "網": "网",
+  "規": "规", "認": "认", "護": "护", "質": "质", "輸": "输", "轉": "转",
+  "載": "载", "銷": "销", "鏈": "链", "閱": "阅", "雲": "云",
+  "電": "电", "響": "响", "預": "预", "驗": "验", "體": "体", "優": "优",
+};
+
+function normalizeTraditional(text: string): string {
+  return text.replace(/[一-鿿]/g, (ch) => TRADITIONAL_MAP[ch] ?? ch);
+}
+
 /** 完整预处理流水线 */
-function preprocessText(text: string, fileName: string): string {
+function preprocessText(text: string, _fileName: string): string {
   let result = text;
-  result = cleanText(result);
-  result = normalizeLegalReference(result);
-  result = normalizeDate(result);
-  result = normalizeWidth(result);
+  result = cleanText(result);            // 去页眉页脚水印
+  result = normalizeLegalReference(result); // 法条引用规范化
+  result = normalizeDate(result);        // 日期规范化
+  result = normalizeWidth(result);       // 全角转半角
+  result = normalizeTraditional(result); // 繁简转换
   return result;
 }
 
-// ── 简化切片 ─────────────────────────────────────────
+// ── 切片引擎（含合并/拆分/重叠/上下文补充） ──────────
 
 function simpleChunk(text: string, fileName: string): Array<{ text: string; metadata: Record<string, unknown> }> {
-  const chunks: Array<{ text: string; metadata: Record<string, unknown> }> = [];
+  const rawChunks: Array<{ text: string; metadata: Record<string, unknown> }> = [];
   const lines = text.split("\n");
   let current: string[] = [];
   let sectionId = "";
 
   for (const line of lines) {
-    // 检测章节/条文标题
     const sectionMatch = line.match(/^(第[一二三四五六七八九十百千\d]+[部分章节条款]|[一二三四五六七八九十]+\s*[、.])/);
     const articleMatch = line.match(/^第[一二三四五六七八九十百千零\d]+条/);
 
     if ((sectionMatch || articleMatch) && current.length > 0 && current.join("\n").trim().length >= 20) {
-      chunks.push({
+      rawChunks.push({
         text: current.join("\n").trim(),
         metadata: { fileName, mediaType: "text", sectionId },
       });
@@ -167,14 +193,88 @@ function simpleChunk(text: string, fileName: string): Array<{ text: string; meta
   }
 
   if (current.length > 0 && current.join("\n").trim().length >= 20) {
-    chunks.push({
+    rawChunks.push({
       text: current.join("\n").trim(),
       metadata: { fileName, mediaType: "text", sectionId },
     });
   }
 
-  // 合并过小的 chunk
-  return chunks;
+  // 合并过小 chunk + 拆分过大 chunk
+  const merged = mergeAndSplitChunks(rawChunks, 200, 2000);
+
+  // 上下文补充：prepend 章节标题
+  const enriched = merged.map((chunk) => {
+    const sid = chunk.metadata.sectionId as string;
+    if (sid && !chunk.text.startsWith(sid)) {
+      return { ...chunk, text: `【${sid}】\n${chunk.text}` };
+    }
+    return chunk;
+  });
+
+  // 重叠窗口：相邻 chunk 保留 80 字重叠
+  return addOverlap(enriched, 80);
+}
+
+/** 合并过小 chunk，拆分过大 chunk */
+function mergeAndSplitChunks(
+  chunks: Array<{ text: string; metadata: Record<string, unknown> }>,
+  minSize: number,
+  maxSize: number
+): Array<{ text: string; metadata: Record<string, unknown> }> {
+  // 合并过小
+  const merged: Array<{ text: string; metadata: Record<string, unknown> }> = [];
+  let pending: { text: string; metadata: Record<string, unknown> } | null = null;
+
+  for (const chunk of chunks) {
+    if (!pending) {
+      pending = { ...chunk };
+    } else if (pending.text.length < minSize) {
+      pending.text += "\n\n" + chunk.text;
+    } else {
+      merged.push(pending);
+      pending = { ...chunk };
+    }
+  }
+  if (pending) merged.push(pending);
+
+  // 拆分过大
+  const result: Array<{ text: string; metadata: Record<string, unknown> }> = [];
+  for (const chunk of merged) {
+    if (chunk.text.length <= maxSize) {
+      result.push(chunk);
+    } else {
+      const paragraphs = chunk.text.split("\n\n");
+      let current = "";
+      for (const para of paragraphs) {
+        if (current.length + para.length > maxSize && current.length > 0) {
+          result.push({ text: current.trim(), metadata: chunk.metadata });
+          current = para;
+        } else {
+          current += (current ? "\n\n" : "") + para;
+        }
+      }
+      if (current.trim()) {
+        result.push({ text: current.trim(), metadata: chunk.metadata });
+      }
+    }
+  }
+  return result;
+}
+
+/** 重叠窗口：相邻 chunk 保留 overlapSize 字符的重叠 */
+function addOverlap(
+  chunks: Array<{ text: string; metadata: Record<string, unknown> }>,
+  overlapSize: number
+): Array<{ text: string; metadata: Record<string, unknown> }> {
+  if (chunks.length <= 1 || overlapSize <= 0) return chunks;
+
+  const result = [chunks[0]];
+  for (let i = 1; i < chunks.length; i++) {
+    const prevText = chunks[i - 1].text;
+    const overlap = prevText.slice(-overlapSize);
+    result.push({ ...chunks[i], text: overlap + chunks[i].text });
+  }
+  return result;
 }
 
 // ── API 端点 ─────────────────────────────────────────
@@ -208,7 +308,8 @@ knowledgeRouter.post("/knowledge/upload", upload.single("file"), async (req, res
     }
 
     const sourceId = `ks-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const fileName = file.originalname;
+    // 修复 multer 中文文件名编码问题
+    const fileName = Buffer.from(file.originalname, "latin1").toString("utf8");
 
     // Step 1: 提取文本
     sendEvent({ step: "extracting", message: `提取 ${fileName} 文本...` });
@@ -224,9 +325,17 @@ knowledgeRouter.post("/knowledge/upload", upload.single("file"), async (req, res
     sendEvent({ step: "chunking", message: "切片处理中..." });
     const rawChunks = simpleChunk(cleanedText, fileName);
 
-    // Step 4: 噪声过滤 + 元数据增强
+    // Step 4: 噪声过滤 + 乱码过滤 + Chunk 级去重 + 元数据增强
     const docCategory = classifyDocument(fileName, cleanedText);
-    const filteredChunks = rawChunks.filter((rc) => !isNoise(rc.text));
+    const dedupHashes = new Set<string>();
+    const filteredChunks: typeof rawChunks = [];
+    for (const rc of rawChunks) {
+      if (isNoise(rc.text) || isGarbled(rc.text)) continue;
+      const hash = crypto.createHash("sha256").update(rc.text.replace(/[\s　]/g, "").toLowerCase()).digest("hex");
+      if (dedupHashes.has(hash)) continue;
+      dedupHashes.add(hash);
+      filteredChunks.push(rc);
+    }
     for (const chunk of filteredChunks) {
       chunk.metadata.documentCategory = docCategory;
       chunk.metadata.articleRefs = extractArticleRefs(chunk.text);
