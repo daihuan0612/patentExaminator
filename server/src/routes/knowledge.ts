@@ -701,8 +701,9 @@ knowledgeRouter.post("/knowledge/providers/test", express.json(), async (req, re
     }
 
     if (providerType === "embedding") {
-      // 测试 Embedding API
-      const response = await fetch(`${baseUrl}/v1/embeddings`, {
+      // 测试 Embedding API（baseUrl 可能已包含 /v1）
+      const embeddingsUrl = baseUrl.endsWith("/v1") ? `${baseUrl}/embeddings` : `${baseUrl}/v1/embeddings`;
+      const response = await fetch(embeddingsUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -722,8 +723,9 @@ knowledgeRouter.post("/knowledge/providers/test", express.json(), async (req, re
 
       res.json({ ok: true });
     } else if (providerType === "reranker") {
-      // 测试 Re-ranker API
-      const response = await fetch(`${baseUrl}/v1/rerank`, {
+      // 测试 Re-ranker API（baseUrl 可能已包含 /v1）
+      const rerankUrl = baseUrl.endsWith("/v1") ? `${baseUrl}/rerank` : `${baseUrl}/v1/rerank`;
+      const response = await fetch(rerankUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
