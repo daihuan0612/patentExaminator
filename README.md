@@ -69,8 +69,6 @@ npm run dev
 
 **支持的输入格式**：PDF, TXT, MD, DOCX, JSON, Excel, CSV, PNG, 在线 URL
 
-**Embedding 模型**：默认使用本地 BGE-large-zh（Transformers.js），也可配置远程 API。
-
 ---
 
 ## 技术栈
