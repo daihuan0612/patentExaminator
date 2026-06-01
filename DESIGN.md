@@ -141,7 +141,7 @@ flowchart LR
     U["审查员"] --> UI["React UI"]
     UI -->|"读写（防抖400ms）"| IDB["IndexedDB\n(案件/文档/分析结果/知识库)"]
     UI --> AC["AgentClient"]
-    AC -->|"检索知识库"| KB["Knowledge Module\n(混合检索+重排序+图谱扩展)"]
+    AC -->|"检索知识库\n(/api/knowledge/search)"| KB["Server Knowledge Module\n(BM25+语义+RRF融合+三级重排序+图谱扩展)"]
     AC -->|"读取案件数据"| IDB
     AC -->|"Mock 模式"| MP["MockProvider\n(本地 fixture)"]
     AC -->|"真实模式"| CF["ExternalSendConfirm\n(用户确认 + 可选脱敏)"]
@@ -879,7 +879,7 @@ v0.1.0 的 Agent 为逻辑角色，通过 `AgentClient` 统一调度（架构参
 
 > **PRD Agent 名 ↔ Design Agent ID 映射：** B-008 后新增复审 Agent：审查意见解析 → `opinion-analysis`；答辩理由映射 → `argument-analysis`；复审意见草稿 → `reexam-draft`。文档解读 Agent → `interpret`（`moduleScope: "case"`）；创新点研读 Agent 对应 `claim-chart` + `novelty`；创造性复核 Agent → `inventive`；HTML 格式转换不作为 Agent，由导出模块直接处理。Orchestrator 落地为前端 AgentClient + 后端 AI Gateway（见 ADR-001）。
 
-> **B-018 知识库增强：** `claim-chart`、`novelty`、`inventive`、`opinion-analysis`、`argument-analysis`、`reexam-draft` 六个 Agent 在调用前自动检索知识库相关内容并注入 system prompt。增强为可选降级——知识库未配置或检索失败时退化为原始行为。详见 `client/src/lib/knowledge/`。
+> **B-018 知识库增强：** `claim-chart`、`novelty`、`inventive`、`opinion-analysis`、`argument-analysis`、`reexam-draft` 六个 Agent 在调用前自动检索知识库相关内容并注入 system prompt。增强为可选降级——知识库未配置或检索失败时退化为原始行为。检索全部在服务端完成：混合检索（语义 + BM25 RRF 融合）+ 三级重排序（远程 API → 本地 cross-encoder → 启发式）+ query 扩展（跨语言 + 法律同义词 + 法条图谱）。Embedding 为可选远程 API，无配置时降级纯 BM25。详见 `server/src/routes/knowledge.ts`、`server/src/lib/`。
 
 ### 6.2 Prompt 设计原则
 
@@ -1265,7 +1265,7 @@ Supabase（后端服务）
 | `runMarkers` | `id` (composite `caseId::module`) | `caseId`, `module` | 标记某 case 的某个模块（`defects`/`claimChart`/`argumentMapping`）已完成 AI 分析，用于区分"未运行"和"运行后无结果"。v8 新增。 |
 | `knowledgeSources` | `id` | `mediaType` | 知识库来源元数据（文件/URL）。v10 新增。 |
 | `knowledgeChunks` | `id` | `sourceId`, `embedded` | 知识库切片（文本 chunk）。v10 新增。 |
-| `knowledgeVectors` | `chunkId` | `modelId` | 知识库向量（embedding）。v10 新增。 |
+| `knowledgeVectors` | `chunkId` | `modelId` | 知识库向量（embedding）。v10 新增。向量主存储已迁移到服务端 SQLite（`kb_vectors` 表），IndexedDB 仅用于客户端备份/恢复/导出。 |
 
 **迁移策略：** `open(db, version, { upgrade(db, oldV, newV, tx) })`，按版本分支处理。禁止破坏性清库（除非 major 版本变更并在 UI 提示）。
 
@@ -1385,16 +1385,18 @@ Supabase（后端服务）
 
 | 日期 | 变更摘要 | 影响范围 | 关联 commit |
 |------|---------|---------|------------|
+| 2026-06-02 | cr-1/bg-70~74: 知识库架构重构 — 移除本地 embedding 模型，embedding 改为可选远程 API（无配置降级纯 BM25）；Embedding API 失败时 catch 降级 BM25；Query 扩展迁移到服务端（queryExpand.ts）；移除客户端死代码（hybridSearch.ts/vectorStore.ts/bm25Search.ts/embedder.ts）；URL 导入 null guard + BM25 索引 invalidate | `server/src/routes/knowledge.ts`、`server/src/lib/queryExpand.ts`、`client/src/lib/knowledge/`、`shared/src/types/knowledge.ts` | 待提交 |
+| 2026-06-02 | cr-2: 本地 re-ranker 升级为 cross-encoder — 新增 `crossEncoderRerank()` 使用 `Xenova/bge-reranker-v2-m3`，三级降级链：远程 API → 本地 cross-encoder → 本地启发式（5 信号加权） | `server/src/lib/reranker.ts`、`server/src/routes/knowledge.ts` | 待提交 |
 | 2026-06-01 | B-037: 安全边界文档修正 — "浏览器端 IndexedDB 保存所有数据" 改为 "数据保存在应用内（前端 IndexedDB + 后端 SQLite）" | §1.1 关键原则、PRD §7.1 | 待提交 |
-| 2026-06-01 | fix(B-021): 客户端知识库死代码清理 — 删除 5 个死代码文件（chunkers.ts/extractors.ts/cozeCompat.ts/evalSet.ts/faithfulness.ts），清理 normalizers.ts 中 8 个未使用函数，保留活跃函数（isNoise/isGarbled/classifyDocument/expandCrossLanguage/expandQuery 等） | `client/src/lib/knowledge/` 8 个文件 | 待提交 |
+| 2026-06-01 | fix(B-021): 客户端知识库死代码清理 — 删除 5 个死代码文件（chunkers.ts/extractors.ts/cozeCompat.ts/evalSet.ts/faithfulness.ts），清理 normalizers.ts 中未使用函数。注：expandCrossLanguage/expandQuery/expandQueryWithGraph 后续已迁移到服务端 queryExpand.ts（bg-71） | `client/src/lib/knowledge/` 8 个文件 | 待提交 |
 | 2026-06-01 | feat(B-033): 知识库 embedding 批处理优化 — batch_size 20→100、断点续传（text_hash + findChunksByHashes）、短 chunk 过滤（<50字）、长度排序减少 padding；11 文件上传耗时从 15-20 分钟降到 ~12 分钟 | `server/src/lib/knowledgeDb.ts`、`server/src/routes/knowledge.ts` | 待提交 |
 | 2026-05-31 | feat(B-019): 反馈按钮 UI 接入 — ClaimChartTable/NoveltyComparisonTable/InventiveStepPanel 新增 FeedbackButtons 列，数据通过 feedbackRepo 持久化到 localStorage | `ClaimChartTable.tsx`、`NoveltyComparisonTable.tsx`、`InventiveStepPanel.tsx` | 待提交 |
-| 2026-05-31 | feat(B-018-2): RAG 增强 — 新增 annIndex.ts/bm25Search.ts/hybridSearch.ts/reranker.ts/faithfulness.ts/evalSet.ts/knowledgeGraph.ts/cozeCompat.ts；retriever 集成混合检索+重排序+多语言扩展+知识图谱扩展+父文档检索；promptInjector 添加分Agent注入格式+注入量控制+主动注入+审计日志；knowledgeRepo 添加导入导出/备份恢复/冲突检测/存储估算/文档摘要/分页；KnowledgeConfigPanel 添加远程 embedding 配置/清空确认/模型切换提示/统计面板/知识库浏览器/Chunk 预览 | `client/src/lib/knowledge/` 12 个模块、`KnowledgeConfigPanel.tsx`、`shared/src/types/knowledge.ts` | 待提交 |
-| 2026-05-31 | feat(B-018-1): 知识库数据预处理 — 新增 normalizers.ts（文本清洗/法条规范化/日期规范化/编码统一/噪声过滤/文档类型分类/chunk hash）、extractors 集成规范化、chunkers 添加 filterNoise/enrichContext/addOverlap 后处理、KnowledgeConfigPanel 文件级+chunk 级去重、5 个新 E2E 测试用例 | `shared/src/types/knowledge.ts`、`client/src/lib/knowledge/normalizers.ts`、`extractors.ts`、`chunkers.ts`、`KnowledgeConfigPanel.tsx`、`tests/knowledge-base-e2e.mjs` | 待提交 |
+| 2026-05-31 | feat(B-018-2): RAG 增强 — 混合检索（语义 + BM25 RRF 融合）迁移到服务端、重排序（远程 API + 本地启发式）、多语言扩展 + 知识图谱扩展；promptInjector 添加分 Agent 注入格式 + 注入量控制；KnowledgeConfigPanel 添加远程 embedding 配置 / 统计面板 / 知识库浏览器 / Chunk 预览。注：客户端 annIndex.ts/bm25Search.ts/hybridSearch.ts/embedder.ts 后续已移除（bg-72） | `server/src/lib/`、`server/src/routes/knowledge.ts`、`KnowledgeConfigPanel.tsx`、`shared/src/types/knowledge.ts` | 待提交 |
+| 2026-05-31 | feat(B-018-1): 知识库数据预处理 — 文本清洗/法条规范化/日期规范化/编码统一/噪声过滤/文档类型分类，切片后处理（merge/split/overlap/context enrichment），文件级 + chunk 级去重。注：预处理逻辑已迁移到服务端（`server/src/routes/knowledge.ts`），客户端 extractors.ts/chunkers.ts 后续已删除 | `shared/src/types/knowledge.ts`、`server/src/routes/knowledge.ts`、`KnowledgeConfigPanel.tsx` | 待提交 |
 | 2026-05-27 | fix(bg-28): AI 检索文献 Invalid API Key — `runWithFallback` 新增 `providerApiKeys` 参数，各调用点（`ai.ts`、`search.ts`）按 provider 分别传入 API Key；`search.ts` schema 新增 `modelFallbacks`/`enableModelFallback`/`providerBaseUrls` 字段，搜索三步（extract/translate/filter）均传递完整 fallback 配置 | `server/src/providers/registry.ts`、`server/src/routes/ai.ts`、`server/src/routes/search.ts`、`client/src/agent/AgentClient.ts` | 待提交 |
 | 2026-05-27 | fix(bg-28): 推理模型 maxTokens 不足致输出为空 — extract 800→8192、translate 500→4096、filter 2000→8192；`ProviderAdapter` 移除 `reasoning_content` fallback、增强空响应日志 | `server/src/routes/search.ts`、`server/src/providers/ProviderAdapter.ts`、`server/src/providers/gemini.ts` | 待提交 |
 | 2026-05-31 | feat(B-020): 服务器端数据同步 — 新增 syncDb.ts（SQLite 存储）、sync.ts（同步 API 路由）、syncClient.ts（客户端同步模块）、SyncConfigPanel.tsx（同步设置 UI），设置页面新增"同步" tab | `server/src/lib/syncDb.ts`、`server/src/routes/sync.ts`、`client/src/lib/syncClient.ts`、`client/src/features/settings/SyncConfigPanel.tsx`、`server/src/index.ts`、`settingsSlice.ts` | 待提交 |
-| 2026-05-31 | feat(B-018): 法规知识库 RAG 系统 — 新增知识库类型定义、多格式提取器（PDF/TXT/MD/DOCX/JSON/Excel/CSV/PNG/URL）、切片引擎（6 种策略）、向量化引擎（本地 Transformers.js BGE-large-zh + 远程 API）、IndexedDB 向量存储、余弦相似度检索、Prompt 注入、设置页面知识库 tab、7 个 Agent 集成、17 个 E2E 测试用例 | `shared/src/types/knowledge.ts`、`client/src/lib/knowledge/*`、`client/src/lib/indexedDb.ts`、`client/src/agent/AgentClient.ts`、`client/src/features/settings/KnowledgeConfigPanel.tsx`、`tests/knowledge-base-e2e.mjs` | 待提交 |
+| 2026-05-31 | feat(B-018): 法规知识库 RAG 系统 — 新增知识库类型定义、多格式提取器（PDF/TXT/MD/DOCX/JSON/Excel/CSV/PNG/URL）、切片引擎（6 种策略）、远程 Embedding API 向量化、服务端 SQLite 向量存储（kb_vectors）、混合检索（语义 + BM25 RRF 融合）、三级重排序（远程 API → 本地 cross-encoder → 启发式）、Prompt 注入、设置页面知识库 tab、7 个 Agent 集成 | `shared/src/types/knowledge.ts`、`server/src/routes/knowledge.ts`、`server/src/lib/`、`client/src/agent/AgentClient.ts`、`client/src/features/settings/KnowledgeConfigPanel.tsx` | 待提交 |
 | 2026-05-27 | fix(bg-28): Provider 重排不生效 — `ProvidersConfigPanel` 拖拽重排后同步更新 `settings.providers` 数组 | `client/src/features/settings/ProvidersConfigPanel.tsx` | 待提交 |
 | 2026-05-27 | fix(bg-28): ECONNREFUSED health check 失败 — 移除 `checkServerHealth` 中冗余的 `/health` 路径拼接 | `client/src/lib/serverReady.ts` | 待提交 |
 | 2026-05-27 | fix(bg-28): lint error 修复 — `jsonExtractor.ts` 移除不必要的转义字符、`ProviderAdapter.ts` `let`→`const` | `server/src/lib/jsonExtractor.ts`、`server/src/providers/ProviderAdapter.ts` | 待提交 |
