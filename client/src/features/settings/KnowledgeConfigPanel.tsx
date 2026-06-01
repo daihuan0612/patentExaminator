@@ -263,6 +263,99 @@ export function KnowledgeConfigPanel() {
         <span>知识条目: {stats.chunkCount}</span>
       </div>
 
+      {/* Embedding 配置 */}
+      <div className="knowledge-config-section">
+        <h4>Embedding 模型</h4>
+        <div className="knowledge-embed-options">
+          <label>
+            <input
+              type="radio"
+              name="embedProvider"
+              checked={config.embedProvider === "local"}
+              onChange={() => {
+                if (stats.embeddedCount > 0 && config.embedProvider !== "local") {
+                  if (!window.confirm(`切换 embedding 模型后，已有的 ${stats.embeddedCount} 个向量需要全部重新生成。确定切换吗？`)) return;
+                }
+                setConfig({ ...config, embedProvider: "local", remoteProviderId: undefined, remoteModelId: undefined });
+              }}
+            />
+            本地模型（BGE-large-zh，服务端运行，首次需下载 ~400MB）
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="embedProvider"
+              checked={config.embedProvider === "remote"}
+              onChange={() => {
+                if (stats.embeddedCount > 0 && config.embedProvider !== "remote") {
+                  if (!window.confirm(`切换 embedding 模型后，已有的 ${stats.embeddedCount} 个向量需要全部重新生成。确定切换吗？`)) return;
+                }
+                setConfig({ ...config, embedProvider: "remote" });
+              }}
+            />
+            远程 API（复用已配置的 Provider）
+          </label>
+        </div>
+
+        {config.embedProvider === "remote" && (
+          <div className="knowledge-remote-config">
+            {configuredProviders.length === 0 ? (
+              <p className="knowledge-hint" style={{ color: "var(--danger)" }}>
+                请先在"模型连接" tab 中配置至少一个 Provider 并填写 API Key。
+              </p>
+            ) : (
+              <>
+                <div className="knowledge-config-row">
+                  <label>Provider:</label>
+                  <select
+                    value={config.remoteProviderId ?? ""}
+                    onChange={(e) => {
+                      const pid = e.target.value as ProviderId;
+                      setConfig({ ...config, remoteProviderId: pid, remoteModelId: "" });
+                    }}
+                  >
+                    <option value="">选择 Provider</option>
+                    {PRESET_MODEL_PROVIDERS.map((preset) => {
+                      const configured = configuredProviders.find((p) => p.providerId === preset.id);
+                      const hasKey = !!configured?.apiKeyRef;
+                      return (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.displayName} — {preset.desc}{hasKey ? "" : " (未配置 API Key)"}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+                {config.remoteProviderId && (() => {
+                  const configured = configuredProviders.find((p) => p.providerId === config.remoteProviderId);
+                  if (!configured?.apiKeyRef) {
+                    return (
+                      <p className="knowledge-hint" style={{ color: "var(--danger)" }}>
+                        该 Provider 未配置 API Key，请先在"模型连接" tab 中添加。
+                      </p>
+                    );
+                  }
+                  return (
+                    <div className="knowledge-config-row">
+                      <label>Embedding 模型 ID:</label>
+                      <input
+                        type="text"
+                        value={config.remoteModelId ?? ""}
+                        onChange={(e) => setConfig({ ...config, remoteModelId: e.target.value })}
+                        placeholder="如 embedding-3、text-embedding-3-small"
+                      />
+                    </div>
+                  );
+                })()}
+                <p className="knowledge-hint">
+                  支持 OpenAI-compatible Embedding API。常见：GLM embedding-3、OpenRouter text-embedding-3-small。
+                </p>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* 文件上传 */}
       <div className="knowledge-config-section">
         <h4>上传文件</h4>

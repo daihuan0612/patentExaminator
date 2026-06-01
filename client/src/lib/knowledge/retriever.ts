@@ -73,24 +73,22 @@ function getCacheKey(query: string, topK: number, scoreThreshold: number): strin
 }
 
 /**
- * 检索与 query 最相关的知识库 chunk
+ * 检索与 query 最相关的知识库 chunk（调用 server API）
  */
 export async function retrieve(
   options: RetrieveOptions,
   config: KnowledgeConfig,
-  embedConfig: EmbedderConfig
+  _embedConfig: EmbedderConfig
 ): Promise<KnowledgeSearchResult[]> {
-  const { query, topK = config.topK, scoreThreshold = config.scoreThreshold } = options;
+  const { query, topK = config.topK } = options;
 
-  // 检查知识库是否启用且有内容
-  const stats = await getKnowledgeStats();
-  if (!config.enabled || stats.chunkCount === 0 || stats.embeddedCount === 0) {
-    log("Knowledge base disabled or empty, skipping retrieval");
+  if (!config.enabled) {
+    log("Knowledge base disabled, skipping retrieval");
     return [];
   }
 
   // 检查缓存
-  const cacheKey = getCacheKey(query, topK, scoreThreshold);
+  const cacheKey = getCacheKey(query, topK, 0);
   const cached = searchCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     log(`Retrieved ${cached.results.length} chunks from cache`);
@@ -100,22 +98,47 @@ export async function retrieve(
   // 多语言扩展 + 法条图谱扩展
   const expandedQuery = expandCrossLanguage(expandQueryWithGraph(query));
 
-  // 使用混合检索（语义 + BM25 RRF 融合）
-  const results = await hybridSearch(expandedQuery, config, embedConfig, topK * 2);
+  // 调用 server 端检索 API
+  try {
+    const res = await fetch("/api/knowledge/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: expandedQuery, topK }),
+    });
+    const data = await res.json() as {
+      ok: boolean;
+      results?: Array<{ chunkId: string; text: string; metadata: Record<string, unknown>; score: number }>;
+    };
 
-  // 重排序：多信号评分
-  const rerankedResults = rerank(results, expandedQuery).slice(0, topK);
+    if (!data.ok || !data.results) {
+      log("Server search returned no results");
+      return [];
+    }
 
-  // 父文档检索：为每个命中 chunk 补充相邻上下文
-  const enrichedResults = await enrichWithParentContext(rerankedResults);
+    const results: KnowledgeSearchResult[] = data.results.map((r) => ({
+      chunk: {
+        id: r.chunkId,
+        sourceId: (r.metadata?.sourceId as string) ?? "",
+        index: (r.metadata?.index as number) ?? 0,
+        text: r.text,
+        strategy: "auto" as const,
+        metadata: r.metadata,
+        embedded: true,
+        createdAt: new Date().toISOString(),
+      },
+      score: r.score,
+    }));
 
-  // 缓存结果
-  searchCache.set(cacheKey, { results: enrichedResults, timestamp: Date.now() });
+    // 缓存结果
+    searchCache.set(cacheKey, { results, timestamp: Date.now() });
+    recordRetrievalLog(query, topK, results);
+    log(`Retrieved ${results.length} chunks via server API`);
 
-  recordRetrievalLog(query, topK, enrichedResults);
-  log(`Retrieved ${enrichedResults.length} chunks via hybrid search`);
-
-  return enrichedResults;
+    return results;
+  } catch (err) {
+    log(`Server search failed: ${err}`);
+    return [];
+  }
 }
 
 /** 父文档检索：为命中 chunk 补充相邻上下文 */

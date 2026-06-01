@@ -25,6 +25,7 @@ const ROOT = path.resolve(__dirname, "..");
 const SAMPLES_DIR = path.join(ROOT, "samples", "knowledge-base");
 const CLIENT_SRC = path.join(ROOT, "client", "src");
 const SHARED_SRC = path.join(ROOT, "shared", "src");
+const BASE = process.env.TEST_BASE || "http://localhost:3000/api";
 
 let passed = 0;
 let failed = 0;
@@ -40,6 +41,25 @@ function fileExists(p) {
 
 function readFile(p) {
   return fs.readFileSync(p, "utf-8");
+}
+
+/** 上传文件到知识库并返回最终结果 */
+async function uploadKnowledgeFile(fileName) {
+  const filePath = path.join(SAMPLES_DIR, fileName);
+  const buffer = fs.readFileSync(filePath);
+  const blob = new Blob([buffer]);
+  const form = new FormData();
+  form.append("file", blob, fileName);
+  const res = await fetch(`${BASE}/knowledge/upload`, { method: "POST", body: form });
+  const text = await res.text();
+  const lines = text.split("\n").filter(l => l.startsWith("data: "));
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const data = JSON.parse(lines[i].slice(6));
+      if (data.step === "done" || data.step === "error") return data;
+    } catch { /* skip */ }
+  }
+  return { ok: false, error: "No done event found" };
 }
 
 async function runTest(name, fn) {
@@ -288,6 +308,66 @@ async function testDocumentCategoryField() {
   assert(code.includes("documentCategory"), "Missing documentCategory in ChunkMetadata");
 }
 
+// ── 端到端集成测试 ────────────────────────────────────
+
+async function testUploadAndSearchChain() {
+  await fetch(`${BASE}/knowledge/clear`, { method: "DELETE" });
+  const uploadResult = await uploadKnowledgeFile("专利法条文速查.md");
+  assert(uploadResult.ok === true, `Upload failed: ${JSON.stringify(uploadResult)}`);
+  assert(uploadResult.chunkCount > 0, `No chunks: ${uploadResult.chunkCount}`);
+
+  const searchRes = await fetch(`${BASE}/knowledge/search`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query: "新颖性判断", topK: 3 }),
+  });
+  const searchData = await searchRes.json();
+  assert(searchData.ok === true, `Search failed: ${JSON.stringify(searchData)}`);
+  assert(searchData.results.length > 0, "Search returned no results");
+  assert(searchData.results[0].text.length > 0, "Result text is empty");
+}
+
+async function testSearchResultMetadata() {
+  const searchRes = await fetch(`${BASE}/knowledge/search`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query: "专利法", topK: 1 }),
+  });
+  const searchData = await searchRes.json();
+  assert(searchData.ok === true, "Search failed");
+  assert(searchData.results.length > 0, "No results");
+
+  const result = searchData.results[0];
+  assert(typeof result.score === "number", "Missing score");
+  assert(typeof result.text === "string" && result.text.length > 0, "Missing text");
+  assert(typeof result.metadata === "object", "Missing metadata");
+  assert(typeof result.chunkId === "string", "Missing chunkId");
+}
+
+async function testMultiFileUploadAndSearch() {
+  await fetch(`${BASE}/knowledge/clear`, { method: "DELETE" });
+
+  const files = ["专利法条文速查.md", "测试案例.json", "审查标准速查表.csv"];
+  for (const f of files) {
+    const result = await uploadKnowledgeFile(f);
+    assert(result.ok === true, `Upload ${f} failed`);
+  }
+
+  const statsRes = await fetch(`${BASE}/knowledge/stats`);
+  const stats = await statsRes.json();
+  assert(stats.sourceCount >= 3, `Expected >= 3 sources, got ${stats.sourceCount}`);
+  assert(stats.chunkCount >= 3, `Expected >= 3 chunks, got ${stats.chunkCount}`);
+
+  const searchRes = await fetch(`${BASE}/knowledge/search`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query: "创造性", topK: 5 }),
+  });
+  const searchData = await searchRes.json();
+  assert(searchData.ok === true, "Search failed");
+  assert(searchData.results.length > 0, "No results for multi-file search");
+}
+
 // ── Main ─────────────────────────────────────────────
 
 async function main() {
@@ -322,6 +402,11 @@ async function main() {
   await runTest("T-RAG-020: extractors.ts 集成 normalizeText", testExtractorNormalization);
   await runTest("T-RAG-021: KnowledgeSource 包含 fileHash 字段", testFileHashField);
   await runTest("T-RAG-022: ChunkMetadata 包含 documentCategory 字段", testDocumentCategoryField);
+
+  console.log("\n── 端到端集成测试 ──");
+  await runTest("T-RAG-023: 上传→检索完整链路", testUploadAndSearchChain);
+  await runTest("T-RAG-024: 检索结果包含元数据", testSearchResultMetadata);
+  await runTest("T-RAG-025: 多文件上传后检索", testMultiFileUploadAndSearch);
 
   // Summary
   console.log("\n" + "═".repeat(50));
