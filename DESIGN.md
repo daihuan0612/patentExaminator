@@ -8,6 +8,7 @@
 
 | 版本 | 日期 | 变更摘要 |
 |------|------|---------|
+| v0.1.0-r37 | 2026-06-01 | B-023: 文件导入流程死代码清理 — 删除 ImportPage.tsx/ImportedFileRow.tsx/DeleteFileDialog.tsx/case-gate.ts（已被 CaseSetupPage 替代），移除 Import Gate 测试 | ImportPage.tsx, ImportedFileRow.tsx, DeleteFileDialog.tsx, case-gate.ts, businessLogic.test.ts |
 | v0.1.0-r36 | 2026-06-01 | B-021: 客户端知识库死代码清理 — 删除 chunkers.ts/extractors.ts/cozeCompat.ts/evalSet.ts/faithfulness.ts（5 个死代码文件），清理 normalizers.ts 中未使用函数（cleanText/normalizeLegalReference/normalizeDate/normalizeWidth/normalizeTraditional/normalizeText/detectLanguage/hashChunkText），保留活跃函数 | chunkers.ts, extractors.ts, cozeCompat.ts, evalSet.ts, faithfulness.ts, normalizers.ts, index.ts |
 | v0.1.0-r35 | 2026-06-01 | B-033: 知识库 embedding 批处理优化 — batch_size 20→100、断点续传（text_hash + findChunksByHashes）、短 chunk 过滤（<50字）、长度排序；knowledgeDb.ts 增量升级 text_hash 列 + 索引 | knowledgeDb.ts, knowledge.ts |
 | v0.1.0-r34 | 2026-05-27 | nf-7: AI 辅助检索两步式流程 — 新增 extract-search-terms/search-with-terms 端点、SearchSession IndexedDB 存储（v8→v9）、searchSessionRepo、ReferenceSearchPanel 两步 UI（可编辑检索词 + 逐 Provider 结果计数 + 持久化） | search.ts, indexedDb.ts, searchSessionRepo.ts, referencesSlice.ts, AgentClient.ts, ReferenceSearchPanel.tsx, app.css, api.ts, domain.ts, contracts.ts |

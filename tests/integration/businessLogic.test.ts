@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { checkImportGate, getMissingRequiredFiles, getMissingOptionalFiles, type ImportedFile } from "@client/lib/case-gate";
+// case-gate tests removed — ImportPage.tsx deleted in B-023, replaced by CaseSetupPage
 import { matchCitation } from "@client/lib/citationMatch";
 import { extractFigureCaptions, isFigureSectionHeader, isLikelyFigurePage, buildFigureId, estimateFigurePages } from "@client/lib/figureExtract";
 import { renderCaseMarkdown } from "@client/lib/exportMarkdown";
@@ -16,82 +16,7 @@ import { extractCaseFieldsFallback } from "@client/lib/caseFieldExtractor";
 
 import type { Citation, TextIndex } from "@shared/types/domain";
 
-// ═══════════════════════════════════════════════════════════════
-// Import Gate — 复审必传文件校验
-// ═══════════════════════════════════════════════════════════════
-describe("Import Gate (case-gate)", () => {
-  function makeFile(overrides: Partial<ImportedFile>): ImportedFile {
-    return {
-      id: "f-1",
-      fileName: "test.pdf",
-      fileType: "reexam-request",
-      fileSize: 1024,
-      mimeType: "application/pdf",
-      uploadedAt: "2024-01-01T00:00:00.000Z",
-      required: true,
-      ...overrides
-    };
-  }
-
-  it("全部必传文件 + 可选文件齐全 → ready", () => {
-    const files: ImportedFile[] = [
-      makeFile({ id: "1", fileType: "reexam-request" }),
-      makeFile({ id: "2", fileType: "rejection-decision" }),
-      makeFile({ id: "3", fileType: "original-application" }),
-      makeFile({ id: "4", fileType: "comparison-document" })
-    ];
-    expect(checkImportGate(files)).toBe("ready");
-  });
-
-  it("仅必传文件齐全，缺可选文件 → warning", () => {
-    const files: ImportedFile[] = [
-      makeFile({ id: "1", fileType: "reexam-request" }),
-      makeFile({ id: "2", fileType: "rejection-decision" }),
-      makeFile({ id: "3", fileType: "original-application" })
-    ];
-    expect(checkImportGate(files)).toBe("warning");
-  });
-
-  it("缺必传文件 → incomplete", () => {
-    const files: ImportedFile[] = [
-      makeFile({ id: "1", fileType: "reexam-request" }),
-      makeFile({ id: "2", fileType: "rejection-decision" })
-    ];
-    expect(checkImportGate(files)).toBe("incomplete");
-  });
-
-  it("完全无文件 → incomplete", () => {
-    expect(checkImportGate([])).toBe("incomplete");
-  });
-
-  it("getMissingRequiredFiles → 返回缺失的必传文件类型", () => {
-    const files: ImportedFile[] = [
-      makeFile({ id: "1", fileType: "reexam-request" })
-    ];
-    const missing = getMissingRequiredFiles(files);
-    expect(missing).toHaveLength(2);
-    expect(missing).toContain("rejection-decision");
-    expect(missing).toContain("original-application");
-  });
-
-  it("getMissingRequiredFiles → 全齐 → 空数组", () => {
-    const files: ImportedFile[] = [
-      makeFile({ id: "1", fileType: "reexam-request" }),
-      makeFile({ id: "2", fileType: "rejection-decision" }),
-      makeFile({ id: "3", fileType: "original-application" })
-    ];
-    expect(getMissingRequiredFiles(files)).toHaveLength(0);
-  });
-
-  it("getMissingOptionalFiles → 返回缺失的可选文件类型", () => {
-    const files: ImportedFile[] = [
-      makeFile({ id: "1", fileType: "reexam-request" })
-    ];
-    const missing = getMissingOptionalFiles(files);
-    expect(missing).toHaveLength(1);
-    expect(missing).toContain("comparison-document");
-  });
-});
+// Import Gate tests removed — ImportPage.tsx deleted in B-023, replaced by CaseSetupPage
 
 // ═══════════════════════════════════════════════════════════════
 // Citation Match — 四级引用匹配
