@@ -38,6 +38,7 @@ export function KnowledgeConfigPanel() {
   const [testQuery, setTestQuery] = useState("");
   const [testResults, setTestResults] = useState<string>("");
   const [importResult, setImportResult] = useState<string | null>(null);
+  const [importProgress, setImportProgress] = useState<{ step: string; stepNum: number; totalSteps: number; detail?: string; percent: number } | null>(null);
   const [searching, setSearching] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -119,15 +120,35 @@ export function KnowledgeConfigPanel() {
           const step = data.step as string;
 
           if (step === "done") {
+            setImportProgress(null);
             if (data.skipped) {
               return `⏭ ${file.name} — ${data.message}`;
             }
             return (data.message as string) ?? `✅ ${file.name}`;
           } else if (step === "error") {
+            setImportProgress(null);
             return `❌ ${file.name} — ${data.error}`;
           } else if (step === "embedding" && data.progress) {
-            lastProgress = `向量化 ${data.progress}/${data.total}`;
-            setImportResult(`⏳ ${file.name} — ${lastProgress}`);
+            const stepNum = (data.stepNum as number) ?? 5;
+            const totalSteps = (data.totalSteps as number) ?? 5;
+            const embedPercent = Math.round(((data.progress as number) / (data.total as number)) * 100);
+            // embedding 是最后一步，占总进度的剩余部分
+            const overallPercent = Math.round(((stepNum - 1) / totalSteps * 100) + (embedPercent / totalSteps));
+            setImportProgress({ step: "向量化", stepNum, totalSteps, detail: `${data.progress}/${data.total}`, percent: overallPercent });
+          } else if (data.step && data.stepNum) {
+            const stepNum = data.stepNum as number;
+            const totalSteps = data.totalSteps as number;
+            const stepLabels: Record<string, string> = {
+              extracting: "提取文本",
+              preprocessing: "清洗规范化",
+              chunking: "切片处理",
+              storing: "存储入库",
+              embedding: "向量化",
+              "loading-model": "加载模型",
+            };
+            const label = stepLabels[step] ?? step;
+            const percent = Math.round(((stepNum - 1) / totalSteps) * 100);
+            setImportProgress({ step: label, stepNum, totalSteps, detail: data.message as string, percent });
           } else if (data.message) {
             setImportResult(`⏳ ${file.name} — ${data.message}`);
           }
@@ -239,7 +260,19 @@ export function KnowledgeConfigPanel() {
           disabled={importing}
           data-testid="knowledge-file-input"
         />
-        {importing && <span className="knowledge-status">处理中...</span>}
+        {importing && !importProgress && <span className="knowledge-status">处理中...</span>}
+        {importing && importProgress && (
+          <div className="knowledge-progress">
+            <div className="knowledge-progress-bar">
+              <div className="knowledge-progress-fill" style={{ width: `${importProgress.percent}%` }} />
+            </div>
+            <span className="knowledge-progress-text">
+              {importProgress.step}（{importProgress.stepNum}/{importProgress.totalSteps}）
+              {importProgress.detail ? ` — ${importProgress.detail}` : ""}
+              {" "}{importProgress.percent}%
+            </span>
+          </div>
+        )}
       </div>
 
       {/* URL 导入 */}

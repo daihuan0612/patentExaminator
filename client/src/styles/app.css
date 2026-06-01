@@ -5218,3 +5218,29 @@ select.inline-edit-input {
   font-size: 0.9rem;
   padding: 0.25rem 0;
 }
+
+/* ── 知识库进度条 ───────────────────────────────── */
+
+.knowledge-progress {
+  margin-top: 0.5rem;
+}
+
+.knowledge-progress-bar {
+  height: 6px;
+  background: var(--bg-secondary, #eee);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 0.25rem;
+}
+
+.knowledge-progress-fill {
+  height: 100%;
+  background: var(--primary, #4a90d9);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.knowledge-progress-text {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}

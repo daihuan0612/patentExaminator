@@ -311,21 +311,23 @@ knowledgeRouter.post("/knowledge/upload", upload.single("file"), async (req, res
     // 修复 multer 中文文件名编码问题
     const fileName = Buffer.from(file.originalname, "latin1").toString("utf8");
 
-    // Step 1: 提取文本
-    sendEvent({ step: "extracting", message: `提取 ${fileName} 文本...` });
+    const TOTAL_STEPS = 5;
+
+    // Step 1/5: 提取文本
+    sendEvent({ step: "extracting", stepNum: 1, totalSteps: TOTAL_STEPS, message: `提取 ${fileName} 文本...` });
     const extraction = await extractText(file.buffer, fileName);
-    sendEvent({ step: "extracting", done: true, chars: extraction.text.length });
+    sendEvent({ step: "extracting", stepNum: 1, totalSteps: TOTAL_STEPS, done: true, chars: extraction.text.length });
 
-    // Step 2: 预处理（清洗 + 规范化）
-    sendEvent({ step: "preprocessing", message: "文本清洗与规范化..." });
+    // Step 2/5: 预处理（清洗 + 规范化）
+    sendEvent({ step: "preprocessing", stepNum: 2, totalSteps: TOTAL_STEPS, message: "文本清洗与规范化..." });
     const cleanedText = preprocessText(extraction.text, fileName);
-    sendEvent({ step: "preprocessing", done: true });
+    sendEvent({ step: "preprocessing", stepNum: 2, totalSteps: TOTAL_STEPS, done: true });
 
-    // Step 3: 切片
-    sendEvent({ step: "chunking", message: "切片处理中..." });
+    // Step 3/5: 切片
+    sendEvent({ step: "chunking", stepNum: 3, totalSteps: TOTAL_STEPS, message: "切片处理中..." });
     const rawChunks = simpleChunk(cleanedText, fileName);
 
-    // Step 4: 噪声过滤 + 乱码过滤 + Chunk 级去重 + 元数据增强
+    // Step 4/5: 噪声过滤 + 乱码过滤 + Chunk 级去重 + 元数据增强
     const docCategory = classifyDocument(fileName, cleanedText);
     const dedupHashes = new Set<string>();
     const filteredChunks: typeof rawChunks = [];
@@ -340,10 +342,10 @@ knowledgeRouter.post("/knowledge/upload", upload.single("file"), async (req, res
       chunk.metadata.documentCategory = docCategory;
       chunk.metadata.articleRefs = extractArticleRefs(chunk.text);
     }
-    sendEvent({ step: "chunking", done: true, total: filteredChunks.length });
+    sendEvent({ step: "chunking", stepNum: 3, totalSteps: TOTAL_STEPS, done: true, total: filteredChunks.length });
 
-    // Step 4: 存储
-    sendEvent({ step: "storing", message: `存储 ${filteredChunks.length} 条知识...` });
+    // Step 4/5: 存储
+    sendEvent({ step: "storing", stepNum: 4, totalSteps: TOTAL_STEPS, message: `存储 ${filteredChunks.length} 条知识...` });
     addSource({
       id: sourceId,
       name: fileName,
@@ -366,13 +368,12 @@ knowledgeRouter.post("/knowledge/upload", upload.single("file"), async (req, res
     }));
     addChunks(chunks);
 
-    // Step 5: 向量化（分批报告进度）
+    // Step 5/5: 向量化（分批报告进度）
     if (chunks.length > 0) {
-      // 首次使用时模型需要加载，通过 SSE 通知客户端
       if (!embedder) {
-        sendEvent({ step: "loading-model", message: "首次使用，正在加载 AI 模型（约 400MB）..." });
+        sendEvent({ step: "loading-model", stepNum: 5, totalSteps: TOTAL_STEPS, message: "首次使用，正在加载 AI 模型（约 400MB）..." });
       }
-      sendEvent({ step: "embedding", message: `向量化 ${chunks.length} 条知识...`, total: chunks.length });
+      sendEvent({ step: "embedding", stepNum: 5, totalSteps: TOTAL_STEPS, message: `向量化 ${chunks.length} 条知识...`, total: chunks.length });
       const emb = await getEmbedder();
       const batchSize = 5;
 
@@ -389,7 +390,7 @@ knowledgeRouter.post("/knowledge/upload", upload.single("file"), async (req, res
         for (const chunk of batch) {
           markChunkEmbedded(chunk.id);
         }
-        sendEvent({ step: "embedding", progress: Math.min(i + batchSize, chunks.length), total: chunks.length });
+        sendEvent({ step: "embedding", stepNum: 5, totalSteps: TOTAL_STEPS, progress: Math.min(i + batchSize, chunks.length), total: chunks.length });
       }
     }
 
