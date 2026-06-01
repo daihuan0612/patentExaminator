@@ -33,6 +33,15 @@ export function KnowledgeConfigPanel() {
   const { settings, updateKnowledgeConfig } = useSettingsStore();
   const [sources, setSources] = useState<SourceInfo[]>([]);
   const [config, setConfig] = useState<KnowledgeConfig>(settings.knowledge ?? DEFAULT_KNOWLEDGE_CONFIG);
+  const [configLoaded, setConfigLoaded] = useState(false);
+
+  // settings 加载完成后同步 config
+  useEffect(() => {
+    if (settings.knowledge && !configLoaded) {
+      setConfig(settings.knowledge);
+      setConfigLoaded(true);
+    }
+  }, [settings.knowledge, configLoaded]);
   const [stats, setStats] = useState({ sourceCount: 0, chunkCount: 0, embeddedCount: 0 });
   const [importing, setImporting] = useState(false);
   const [urlInput, setUrlInput] = useState("");
@@ -60,7 +69,12 @@ export function KnowledgeConfigPanel() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  useEffect(() => { updateKnowledgeConfig(config); }, [config, updateKnowledgeConfig]);
+  // 配置变更时持久化（仅在用户主动修改后）
+  useEffect(() => {
+    if (configLoaded) {
+      updateKnowledgeConfig(config);
+    }
+  }, [config, configLoaded, updateKnowledgeConfig]);
 
   // ── 文件上传（server 端处理） ─────────────────────
 
