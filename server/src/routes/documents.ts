@@ -165,3 +165,29 @@ documentsRouter.post("/documents/parse-claims", express.json(), async (req, res)
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
+
+/** POST /api/documents/match-citation — 引用匹配 */
+documentsRouter.post("/documents/match-citation", express.json(), async (req, res) => {
+  try {
+    const { citation, textIndex } = req.body as { citation: unknown; textIndex: unknown };
+    if (!citation || !textIndex) {
+      res.status(400).json({ ok: false, error: "Missing citation or textIndex" });
+      return;
+    }
+
+    logger.info(`Match citation request`);
+
+    const { matchCitation } = await import("../lib/citationMatch.js");
+    const result = matchCitation(citation as Parameters<typeof matchCitation>[0], textIndex as Parameters<typeof matchCitation>[1]);
+
+    logger.info(`Match citation completed: ${result.status}, ${result.confidence}`);
+
+    res.json({
+      ok: true,
+      ...result,
+    });
+  } catch (err) {
+    logger.error("Match citation error: " + (err instanceof Error ? err.message : String(err)));
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});

@@ -9,61 +9,24 @@ export interface MatchResult {
 
 /**
  * Four-level citation matching against a TextIndex.
- *
- * 1. Exact paragraph number match → high confidence
- * 2. ±1 paragraph neighbor → medium confidence
- * 3. Quote substring search (≥10 chars, unique) → medium confidence
- * 4. All fail → not-found
+ * MIGRATE-010: 调用后端 API 进行引用匹配
  */
-export function matchCitation(citation: Citation, index: TextIndex): MatchResult {
-  // Level 1: Exact paragraph number match
-  if (citation.paragraph) {
-    const normalized = normalizeParagraphNumber(citation.paragraph);
-    const exact = index.paragraphs.find(
-      (p) => p.paragraphNumber && normalizeParagraphNumber(p.paragraphNumber) === normalized
-    );
-    if (exact) {
-      return { status: "found", confidence: "high", matchedParagraphId: exact.id };
-    }
+export async function matchCitation(citation: Citation, index: TextIndex): Promise<MatchResult> {
+  const res = await fetch("/api/documents/match-citation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ citation, textIndex: index }),
+  });
 
-    // Level 2: ±1 neighbor
-    const num = parseInt(normalized, 10);
-    if (!isNaN(num)) {
-      const neighbor = index.paragraphs.find((p) => {
-        if (!p.paragraphNumber) return false;
-        const pNum = parseInt(normalizeParagraphNumber(p.paragraphNumber), 10);
-        return !isNaN(pNum) && Math.abs(pNum - num) === 1;
-      });
-      if (neighbor) {
-        return { status: "found", confidence: "medium", matchedParagraphId: neighbor.id };
-      }
-    }
+  if (!res.ok) {
+    throw new Error(`Match citation failed: ${res.status} ${res.statusText}`);
   }
 
-  // Level 3: Quote substring search
-  if (citation.quote && citation.quote.length >= 10) {
-    const quote = citation.quote;
-    const matches = index.paragraphs.filter((p) => p.text.includes(quote));
-    if (matches.length === 1) {
-      const match = matches[0];
-      if (!match) return null;
-      const startOffset = match.text.indexOf(quote);
-      return {
-        status: "found",
-        confidence: "medium",
-        matchedParagraphId: match.id,
-        matchedOffset: {
-          start: match.startOffset + startOffset,
-          end: match.startOffset + startOffset + quote.length
-        }
-      };
-    }
-  }
-
-  // Level 4: not-found
-  return { status: "not-found", confidence: "low" };
-}
-
-function normalizeParagraphNumber(paragraph: string): string {
-  return paragraph.replace(/^0+/, "").trim();
+  const data = await res.json() as { ok: boolean } & MatchResult;
+  return {
+    status: data.status,
+    confidence: data.confidence,
+    matchedParagraphId: data.matchedParagraphId,
+    matchedOffset: data.matchedOffset,
+  };
 }
