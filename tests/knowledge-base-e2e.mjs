@@ -251,16 +251,17 @@ async function testKnowledgeRepo() {
   assert(code.includes("clearAllKnowledge"), "Missing clearAllKnowledge");
 }
 
-// ── T-RAG-018: normalizers.ts 验证 ────────────────────
-// MIGRATE-007: 文本预处理函数已迁移到服务端，客户端仅保留查询扩展
+// ── T-RAG-018: 查询扩展验证 ────────────────────
+// bg-71: 查询扩展已从客户端 normalizers.ts 迁移到服务端 queryExpand.ts
 
 async function testNormalizerCodeExists() {
-  const normalizerPath = path.join(CLIENT_SRC, "lib", "knowledge", "normalizers.ts");
-  assert(fileExists(normalizerPath), "normalizers.ts not found");
-  const code = readFile(normalizerPath);
+  const queryExpandPath = path.join(SERVER_SRC, "lib", "queryExpand.ts");
+  assert(fileExists(queryExpandPath), "server queryExpand.ts not found");
+  const code = readFile(queryExpandPath);
   assert(code.includes("expandCrossLanguage"), "Missing expandCrossLanguage");
   assert(code.includes("expandQuery"), "Missing expandQuery");
-  assert(code.includes("hashChunkText"), "Missing hashChunkText");
+  assert(code.includes("expandQueryWithGraph"), "Missing expandQueryWithGraph");
+  assert(code.includes("expandQueryFull"), "Missing expandQueryFull");
 }
 
 // ── T-RAG-019: 切片预处理验证（已移至服务端）──────────

@@ -25,6 +25,7 @@ import { extractText, extractFromUrl } from "../lib/knowledgeExtract.js";
 import { logger } from "../lib/logger.js";
 import { localRerank } from "../lib/reranker.js";
 import { invalidateBM25Index } from "../lib/hybridSearch.js";
+import { expandQueryFull } from "../lib/queryExpand.js";
 
 export const knowledgeRouter = Router();
 
@@ -665,6 +666,9 @@ knowledgeRouter.post("/knowledge/search", express.json(), async (req, res) => {
       return;
     }
 
+    // bg-71: 服务端查询扩展（跨语言 + 法律同义词 + 法条图谱）
+    const expandedQuery = expandQueryFull(query);
+
     // bg-41: 设置远程 embedding 配置（如果有）
     if (embedding?.baseUrl && embedding?.apiKey && embedding?.modelId) {
       setRemoteEmbedder(embedding);
@@ -685,7 +689,7 @@ knowledgeRouter.post("/knowledge/search", express.json(), async (req, res) => {
 
     if (emb) {
       try {
-        const queryVector = (await emb.embed([query]))[0]!;
+        const queryVector = (await emb.embed([expandedQuery]))[0]!;
         for (const [chunkId, vec] of vectorMap) {
           const chunk = chunkMap.get(chunkId);
           if (!chunk) continue;
@@ -713,7 +717,7 @@ knowledgeRouter.post("/knowledge/search", express.json(), async (req, res) => {
 
     // bg-41: 混合检索 — 向量相似度 + BM25，RRF 融合
     const { hybridSearch } = await import("../lib/hybridSearch.js");
-    const hybridScores = hybridSearch(query, scores, topK * 3);
+    const hybridScores = hybridSearch(expandedQuery, scores, topK * 3);
 
     // bg-41: Re-ranker 集成 — 有远程用远程，没有用本地启发式算法
     // 过滤掉 chunkMap 中不存在的 chunkId（BM25 可能返回已删除的 chunk）

@@ -1,10 +1,9 @@
 /**
- * 知识库检索器 — 将用户 query 向量化后检索相关 chunk
- * MIGRATE-004: 检索已迁移到后端，客户端只做缓存和扩展
+ * 知识库检索器 — 将用户 query 发送到后端检索
+ * MIGRATE-004: 检索已迁移到后端
+ * bg-71: 查询扩展已迁移到服务端 queryExpand.ts
  */
 import type { KnowledgeSearchResult, KnowledgeConfig } from "@shared/types/knowledge";
-import { expandCrossLanguage } from "./normalizers";
-import { expandQueryWithGraph } from "./knowledgeGraph";
 import { createLogger } from "../logger";
 
 const log = createLogger("KnowledgeRetriever");
@@ -91,10 +90,7 @@ export async function retrieve(
     return cached.results;
   }
 
-  // 多语言扩展 + 法条图谱扩展
-  const expandedQuery = expandCrossLanguage(expandQueryWithGraph(query));
-
-  // 调用 server 端检索 API
+  // 调用 server 端检索 API（bg-71: 查询扩展已迁移到服务端）
   try {
     // nf-9: 传递 Re-ranker + Embedding 配置
     const { readSettings } = await import("../repositories/settingsRepo");
@@ -110,7 +106,7 @@ export async function retrieve(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        query: expandedQuery,
+        query,
         topK,
         reranker: rerankerProvider ? {
           baseUrl: rerankerProvider.baseUrl,
