@@ -557,8 +557,9 @@ knowledgeRouter.post("/knowledge/import-url", express.json(), async (req, res) =
     addChunks(chunks);
 
     // B-033 优化：断点续传 + 批处理优化
-    if (chunks.length > 0) {
-      const emb = await getEmbedder();
+    // bg-73: 无 embedding 配置时跳过向量化，纯 BM25 存储
+    const emb = await getEmbedder();
+    if (chunks.length > 0 && emb) {
 
       // 断点续传：跳过已有 embedding 的 chunk
       const chunkHashes = chunks.map((c) => computeTextHash(c.text));
@@ -615,6 +616,8 @@ knowledgeRouter.post("/knowledge/import-url", express.json(), async (req, res) =
           markChunkEmbedded(chunk.id);
         }
       }
+    } else if (chunks.length > 0 && !emb) {
+      logger.info("No embedding provider configured, URL import stored as BM25-only");
     }
 
     res.json({ ok: true, sourceId, chunkCount: chunks.length, message: `✅ ${url} — ${chunks.length} 条知识已入库` });
