@@ -194,11 +194,25 @@ function formatDate(iso: string): string {
   }
 }
 
+// B-032: 重写 WORKFLOW_LABELS，覆盖 CaseWorkflowState 的全部 19 个状态
 const WORKFLOW_LABELS: Record<string, string> = {
   empty: "空白",
-  "docs-imported": "已导入文献",
-  "chart-reviewed": "Chart 已审核",
-  "novelty-done": "新颖性完成",
-  "inventive-done": "创造性完成",
-  complete: "已完成"
+  "case-ready": "案件就绪",
+  "documents-uploaded": "文档已上传",
+  "text-extracted": "文本已提取",
+  "ocr-running": "OCR 识别中",
+  "ocr-failed": "OCR 失败",
+  "ocr-review": "OCR 待审核",
+  "text-confirmed": "文本已确认",
+  "opinion-analyzed": "意见已分析",
+  "argument-mapped": "论点已映射",
+  "references-ready": "文献就绪",
+  "timeline-checked": "时间轴已校验",
+  "claim-chart-ready": "Claim Chart 就绪",
+  "claim-chart-reviewed": "Claim Chart 已审核",
+  "novelty-ready": "新颖性就绪",
+  "inventive-ready": "创造性就绪",
+  "defects-ready": "缺陷就绪",
+  "draft-ready": "草稿就绪",
+  "export-ready": "导出就绪"
 };
