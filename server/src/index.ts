@@ -35,15 +35,11 @@ if (process.env.Openrouter_KEY) {
 }
 
 
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "1mb", charset: "utf-8" }));
 
-// 确保所有 JSON 响应使用 UTF-8 编码
+// 确保所有响应使用 UTF-8 编码
 app.use((_req, res, next) => {
-  const originalJson = res.json.bind(res);
-  res.json = (body: unknown) => {
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-    return originalJson(body);
-  };
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
   next();
 });
 
