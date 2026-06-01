@@ -38,7 +38,7 @@ if (process.env.Openrouter_KEY) {
 }
 
 
-app.use(express.json({ limit: "1mb", charset: "utf-8" }));
+app.use(express.json({ limit: "10mb", charset: "utf-8" }));
 
 // 确保所有响应使用 UTF-8 编码
 app.use((_req, res, next) => {

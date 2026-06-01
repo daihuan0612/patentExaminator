@@ -346,6 +346,32 @@ export function KnowledgeConfigPanel() {
         )}
       </div>
 
+      {/* nf-9: Re-ranker Provider 配置 */}
+      <div className="knowledge-config-section">
+        <h4>Re-ranker Provider（可选）</h4>
+        <p className="knowledge-hint" style={{ marginBottom: "8px" }}>
+          Re-ranker 对检索结果进行二次排序，提升相关性。未配置时使用向量相似度排序。
+        </p>
+        {PRESET_KNOWLEDGE_PROVIDERS.filter((p) => p.providerType === "reranker").map((preset) => {
+          const existing = knowledgeProviders.find(
+            (p) => p.providerType === "reranker" && p.providerId === preset.providerId
+          );
+          return (
+            <KnowledgeProviderCard
+              key={preset.providerId}
+              preset={preset}
+              existing={existing}
+              onUpdate={(updated) => {
+                const others = knowledgeProviders.filter(
+                  (p) => !(p.providerType === "reranker" && p.providerId === preset.providerId)
+                );
+                updateSettings({ knowledgeProviders: [...others, updated] });
+              }}
+            />
+          );
+        })}
+      </div>
+
       {/* 文件上传 */}
       <div className="knowledge-config-section">
         <h4>上传文件</h4>
