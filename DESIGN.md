@@ -8,6 +8,7 @@
 
 | 版本 | 日期 | 变更摘要 |
 |------|------|---------|
+| v0.1.0-r38 | 2026-06-02 | B-038: 前端 AgentClient 切换到 /api/agent/run — 13 个 AI agent 方法从调用 /api/ai/run 改为调用 /api/agent/run，移除客户端 prompt 构造和知识库增强逻辑（已迁移到后端 orchestrator），AgentClient 从 1727 行简化为 ~1575 行 | AgentClient.ts, agentClient.test.ts, security.test.ts |
 | v0.1.0-r37 | 2026-06-01 | B-023: 文件导入流程死代码清理 — 删除 ImportPage.tsx/ImportedFileRow.tsx/DeleteFileDialog.tsx/case-gate.ts（已被 CaseSetupPage 替代），移除 Import Gate 测试 | ImportPage.tsx, ImportedFileRow.tsx, DeleteFileDialog.tsx, case-gate.ts, businessLogic.test.ts |
 | v0.1.0-r36 | 2026-06-01 | B-021: 客户端知识库死代码清理 — 删除 chunkers.ts/extractors.ts/cozeCompat.ts/evalSet.ts/faithfulness.ts（5 个死代码文件），清理 normalizers.ts 中未使用函数（cleanText/normalizeLegalReference/normalizeDate/normalizeWidth/normalizeTraditional/normalizeText/detectLanguage/hashChunkText），保留活跃函数 | chunkers.ts, extractors.ts, cozeCompat.ts, evalSet.ts, faithfulness.ts, normalizers.ts, index.ts |
 | v0.1.0-r35 | 2026-06-01 | B-033: 知识库 embedding 批处理优化 — batch_size 20→100、断点续传（text_hash + findChunksByHashes）、短 chunk 过滤（<50字）、长度排序；knowledgeDb.ts 增量升级 text_hash 列 + 索引 | knowledgeDb.ts, knowledge.ts |
@@ -877,7 +878,7 @@ v0.1.0 的 Agent 为逻辑角色，通过 `AgentClient` 统一调度（架构参
 | draft | — | 四分区当前内容 | `draftSchema` | 1500 |
 | chat | §4.3.7 | 模块上下文 + 用户消息 | 自由文本 | 1200 |
 
-> **PRD Agent 名 ↔ Design Agent ID 映射：** B-008 后新增复审 Agent：审查意见解析 → `opinion-analysis`；答辩理由映射 → `argument-analysis`；复审意见草稿 → `reexam-draft`。文档解读 Agent → `interpret`（`moduleScope: "case"`）；创新点研读 Agent 对应 `claim-chart` + `novelty`；创造性复核 Agent → `inventive`；HTML 格式转换不作为 Agent，由导出模块直接处理。Orchestrator 落地为前端 AgentClient + 后端 AI Gateway（见 ADR-001）。
+> **PRD Agent 名 ↔ Design Agent ID 映射：** B-008 后新增复审 Agent：审查意见解析 → `opinion-analysis`；答辩理由映射 → `argument-analysis`；复审意见草稿 → `reexam-draft`。文档解读 Agent → `interpret`（`moduleScope: "case"`）；创新点研读 Agent 对应 `claim-chart` + `novelty`；创造性复核 Agent → `inventive`；HTML 格式转换不作为 Agent，由导出模块直接处理。B-038 后 Orchestrator 完全迁移到服务端：前端 AgentClient 仅负责调用 `/api/agent/run`，prompt 构造、知识库增强、AI Gateway 调用全部在后端 `server/src/lib/orchestrator.ts` 完成（见 ADR-001）。
 
 > **B-018 知识库增强：** `claim-chart`、`novelty`、`inventive`、`opinion-analysis`、`argument-analysis`、`reexam-draft` 六个 Agent 在调用前自动检索知识库相关内容并注入 system prompt。增强为可选降级——知识库未配置或检索失败时退化为原始行为。检索全部在服务端完成：混合检索（语义 + BM25 RRF 融合）+ 三级重排序（远程 API → 本地 cross-encoder → 启发式）+ query 扩展（跨语言 + 法律同义词 + 法条图谱）。Embedding 为可选远程 API，无配置时降级纯 BM25。详见 `server/src/routes/knowledge.ts`、`server/src/lib/`。
 

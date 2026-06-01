@@ -27,9 +27,7 @@ describe("AgentClient real mode", () => {
   it("returns parsed JSON on success", async () => {
     const mockResponse = {
       ok: true,
-      provider: "gemini",
-      modelId: "gemini-2.5-flash-lite",
-      outputJson: {
+      output: {
         claimNumber: 1,
         features: [
           {
@@ -43,7 +41,8 @@ describe("AgentClient real mode", () => {
         pendingSearchQuestions: [],
         legalCaution: "test"
       },
-      durationMs: 100
+      tokenUsage: { input: 100, output: 50, total: 150 },
+      attempts: [{ providerId: "gemini", modelId: "gemini-2.5-flash-lite", duration: 100 }]
     };
 
     const originalFetch = global.fetch;
@@ -75,7 +74,7 @@ describe("AgentClient real mode", () => {
       return new Response(
         JSON.stringify({
           ok: true,
-          outputJson: {
+          output: {
             claimNumber: 1,
             features: [
               {
@@ -88,7 +87,9 @@ describe("AgentClient real mode", () => {
             warnings: [],
             pendingSearchQuestions: [],
             legalCaution: "test"
-          }
+          },
+          tokenUsage: { input: 100, output: 50, total: 150 },
+          attempts: [{ providerId: "gemini", modelId: "gemini-2.5-flash-lite", duration: 100 }]
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
@@ -104,18 +105,13 @@ describe("AgentClient real mode", () => {
 
     expect(capturedBody).toMatchObject({
       agent: "claim-chart",
+      caseId: "g1-led",
       providerPreference: expect.arrayContaining(["gemini"]),
-      modelId: "gemini-3.1-flash-lite-preview",
-      sanitized: false,
-      metadata: {
-        caseId: "g1-led",
-        moduleScope: "claim-chart"
-      }
+      modelId: "gemini-3.1-flash-lite-preview"
     });
-    const body = capturedBody as { prompt: string };
-    expect(body.prompt).toContain("严格输出以下 JSON");
-    expect(body.prompt).toContain("featureCode");
-    expect(body.prompt).not.toBe("一种LED散热装置");
+    const body = capturedBody as { request: Record<string, unknown> };
+    expect(body.request).toBeDefined();
+    expect(body.request.claimText).toBe("一种LED散热装置");
 
     global.fetch = originalFetch;
   });

@@ -36,7 +36,6 @@ import {
   type AiErrorType
 } from "./contracts";
 import type { ClaimFeature } from "@shared/types/domain";
-import type { AiRunRequest, AiRunResponse } from "@shared/types/api";
 import type { ProviderId, ProviderConnection, AgentAssignment, AppSettings, ProviderErrorMessage } from "@shared/types/agents";
 import { useSettingsStore } from "../store/features/settings/settingsSlice";
 import { waitForServerReady, clearServerReadyCache } from "../lib/serverReady";
@@ -138,29 +137,6 @@ export class AgentClient {
     };
   }
 
-  /**
-   * 知识库增强：检索相关知识并注入到 prompt 尾部
-   * 失败时静默降级，返回原始 prompt
-   */
-  private async enhancePromptWithKnowledge(
-    prompt: string,
-    query: string,
-    _agentType: string
-  ): Promise<{ prompt: string; knowledgeCitations: Array<{ source: string; score: number; excerpt: string }> }> {
-    try {
-      const { injectKnowledge, getInjectionCitations } = await import("../lib/knowledge/promptInjector");
-      const { readSettings } = await import("../lib/repositories/settingsRepo");
-      const settings = await readSettings();
-      const knowledgeConfig = settings.knowledge ?? { enabled: false, topK: 5, scoreThreshold: 0.3 };
-
-      const enhanced = await injectKnowledge({ query, systemPrompt: prompt, config: knowledgeConfig });
-      const citations = getInjectionCitations();
-      return { prompt: enhanced, knowledgeCitations: citations };
-    } catch {
-      return { prompt, knowledgeCitations: [] };
-    }
-  }
-
   async runClaimChart(
     request: ClaimChartRequest,
     options?: AgentRunOptions
@@ -168,15 +144,8 @@ export class AgentClient {
     if (this.mode === "mock") {
       return mockClaimChart(request);
     }
-    const { prompt, knowledgeCitations } = await this.enhancePromptWithKnowledge(
-      buildClaimChartPrompt(request),
-      request.claims?.map((c) => c.rawText).join(" ") ?? "",
-      "claim-chart"
-    );
-    AgentClient.lastKnowledgeCitations = knowledgeCitations;
-    const raw = await this.callGateway<unknown>("claim-chart", prompt, {
+    const raw = await this.callGateway<unknown>("claim-chart", request as unknown as Record<string, unknown>, {
       caseId: request.caseId,
-      moduleScope: "claim-chart",
       ...options
     });
     return mapClaimChartOutput(request.caseId, request.claimNumber, raw);
@@ -189,14 +158,8 @@ export class AgentClient {
     if (this.mode === "mock") {
       return this.callGatewayMock<NoveltyResponse>("novelty", request.caseId, "novelty");
     }
-    const { prompt } = await this.enhancePromptWithKnowledge(
-      buildNoveltyPrompt(request),
-      request.features?.map((f) => f.description).join(" ") ?? "",
-      "novelty"
-    );
-    return this.callGateway<NoveltyResponse>("novelty", prompt, {
+    return this.callGateway<NoveltyResponse>("novelty", request as unknown as Record<string, unknown>, {
       caseId: request.caseId,
-      moduleScope: "novelty",
       ...options
     });
   }
@@ -208,14 +171,8 @@ export class AgentClient {
     if (this.mode === "mock") {
       return mockInventive(request);
     }
-    const { prompt } = await this.enhancePromptWithKnowledge(
-      buildInventivePrompt(request),
-      request.features?.map((f) => f.description).join(" ") ?? "",
-      "inventive"
-    );
-    return this.callGateway<InventiveResponse>("inventive", prompt, {
+    return this.callGateway<InventiveResponse>("inventive", request as unknown as Record<string, unknown>, {
       caseId: request.caseId,
-      moduleScope: "inventive",
       ...options
     });
   }
@@ -227,10 +184,8 @@ export class AgentClient {
     if (this.mode === "mock") {
       return mockDefectCheck(request);
     }
-    const prompt = buildDefectPrompt(request);
-    return this.callGateway<DefectResponse>("defects", prompt, {
+    return this.callGateway<DefectResponse>("defects", request as unknown as Record<string, unknown>, {
       caseId: request.caseId,
-      moduleScope: "defects",
       ...options
     });
   }
@@ -242,21 +197,14 @@ export class AgentClient {
     if (this.mode === "mock") {
       return mockChat(request);
     }
-    const { prompt, knowledgeCitations } = await this.enhancePromptWithKnowledge(
-      buildChatPrompt(request),
-      request.messages?.[request.messages.length - 1]?.content ?? "",
-      request.moduleScope ?? "chat"
-    );
-    AgentClient.lastKnowledgeCitations = knowledgeCitations;
-    const result = await this.callGateway<ChatResponse>("chat", prompt, {
+    const result = await this.callGateway<ChatResponse>("chat", request as unknown as Record<string, unknown>, {
       caseId: request.caseId,
-      moduleScope: request.moduleScope,
       ...options
     });
 
     // 如果有知识库引用，附加到回复末尾
-    if (knowledgeCitations.length > 0) {
-      const citationBlock = knowledgeCitations
+    if (AgentClient.lastKnowledgeCitations.length > 0) {
+      const citationBlock = AgentClient.lastKnowledgeCitations
         .map((c) => `> 【${c.source} · 相似度 ${c.score.toFixed(2)}】${c.excerpt}...`)
         .join("\n");
       result.reply = `${result.reply}\n\n---\n**📚 参考知识库：**\n${citationBlock}`;
@@ -405,7 +353,7 @@ export class AgentClient {
     options?: AgentRunOptions
   ): Promise<SearchReferencesResponse> {
     if (this.mode === "mock") {
-      return mockSearchReferences({ caseId: request.caseId, claimText: request.claimText, features: request.features, maxResults: request.maxResults });
+      return mockSearchReferences({ caseId: request.caseId, claimText: request.claimText, features: request.features, maxResults: request.maxResults ?? 5 });
     }
 
     await waitForServerReady(this.gatewayUrl);
@@ -473,10 +421,8 @@ export class AgentClient {
     if (this.mode === "mock") {
       return mockExtractCaseFields(request);
     }
-    const prompt = buildExtractCaseFieldsPrompt(request);
-    return this.callGateway<ExtractCaseFieldsResponse>("extract-case-fields", prompt, {
+    return this.callGateway<ExtractCaseFieldsResponse>("extract-case-fields", request as unknown as Record<string, unknown>, {
       caseId: request.caseId,
-      moduleScope: "case",
       ...options
     });
   }
@@ -488,10 +434,8 @@ export class AgentClient {
     if (this.mode === "mock") {
       return mockInterpret(request);
     }
-    const prompt = buildInterpretPrompt(request);
-    return this.callGateway<InterpretResponse>("interpret", prompt, {
+    return this.callGateway<InterpretResponse>("interpret", request as unknown as Record<string, unknown>, {
       caseId: request.caseId,
-      moduleScope: "interpret",
       ...options
     });
   }
@@ -507,14 +451,8 @@ export class AgentClient {
         "opinion-analysis"
       );
     }
-    const { prompt } = await this.enhancePromptWithKnowledge(
-      buildOpinionAnalysisPrompt(request),
-      request.opinionText?.slice(0, 500) ?? "",
-      "opinion-analysis"
-    );
-    return this.callGateway<OpinionAnalysisResponse>("opinion-analysis", prompt, {
+    return this.callGateway<OpinionAnalysisResponse>("opinion-analysis", request as unknown as Record<string, unknown>, {
       caseId: request.caseId,
-      moduleScope: "opinion-analysis",
       ...options
     });
   }
@@ -530,14 +468,8 @@ export class AgentClient {
         "argument-mapping"
       );
     }
-    const { prompt } = await this.enhancePromptWithKnowledge(
-      buildArgumentAnalysisPrompt(request),
-      request.argumentText?.slice(0, 500) ?? "",
-      "argument-analysis"
-    );
-    return this.callGateway<ArgumentAnalysisResponse>("argument-analysis", prompt, {
+    return this.callGateway<ArgumentAnalysisResponse>("argument-analysis", request as unknown as Record<string, unknown>, {
       caseId: request.caseId,
-      moduleScope: "argument-mapping",
       ...options
     });
   }
@@ -549,14 +481,8 @@ export class AgentClient {
     if (this.mode === "mock") {
       return this.callGatewayMock<ReexamDraftResponse>("reexam-draft", request.caseId, "draft");
     }
-    const { prompt } = await this.enhancePromptWithKnowledge(
-      buildReexamDraftPrompt(request),
-      request.rejectionGrounds?.map((r) => r.summary).join(" ") ?? "",
-      "reexam-draft"
-    );
-    return this.callGateway<ReexamDraftResponse>("reexam-draft", prompt, {
+    return this.callGateway<ReexamDraftResponse>("reexam-draft", request as unknown as Record<string, unknown>, {
       caseId: request.caseId,
-      moduleScope: "draft",
       ...options
     });
   }
@@ -568,10 +494,8 @@ export class AgentClient {
     if (this.mode === "mock") {
       return this.callGatewayMock<SummaryResponse>("summary", request.caseId, "summary");
     }
-    const prompt = buildSummaryPrompt(request);
-    return this.callGateway<SummaryResponse>("summary", prompt, {
+    return this.callGateway<SummaryResponse>("summary", request as unknown as Record<string, unknown>, {
       caseId: request.caseId,
-      moduleScope: "summary",
       ...options
     });
   }
@@ -583,10 +507,8 @@ export class AgentClient {
     if (this.mode === "mock") {
       return this.callGatewayMock<TranslateResponse>("translate", request.caseId, "translate");
     }
-    const prompt = buildTranslatePrompt(request);
-    return this.callGateway<TranslateResponse>("translate", prompt, {
+    return this.callGateway<TranslateResponse>("translate", request as unknown as Record<string, unknown>, {
       caseId: request.caseId,
-      moduleScope: "translate",
       ...options
     });
   }
@@ -602,25 +524,21 @@ export class AgentClient {
         "documents"
       );
     }
-    const prompt = buildClassifyDocumentsPrompt(request);
-    return this.callGateway<ClassifyDocumentsResponse>("classify-documents", prompt, {
+    return this.callGateway<ClassifyDocumentsResponse>("classify-documents", request as unknown as Record<string, unknown>, {
       caseId: request.caseId,
-      moduleScope: "documents",
       ...options
     });
   }
 
   private async callGateway<T>(
-    agent: AiRunRequest["agent"],
-    prompt: string,
-    meta: { caseId: string; moduleScope: string; providerId?: string; modelId?: string; signal?: AbortSignal | null }
+    agent: string,
+    request: Record<string, unknown>,
+    meta: { caseId: string; signal?: AbortSignal | null }
   ): Promise<T> {
     // Wait for server to be ready before making API calls
     await waitForServerReady(this.gatewayUrl);
 
-    const resolved = meta.providerId && meta.modelId
-      ? { providerId: meta.providerId as ProviderId, modelId: meta.modelId, maxTokens: undefined as number | undefined }
-      : this.resolveAgent(agent) ?? { providerId: this.fallbackProvider, modelId: this.fallbackModel, maxTokens: undefined };
+    const resolved = this.resolveAgent(agent) ?? { providerId: this.fallbackProvider, modelId: this.fallbackModel, maxTokens: undefined };
 
     const modelFallbacks: Partial<Record<ProviderId, string[]>> = {};
     const enableModelFallback: Partial<Record<ProviderId, boolean>> = {};
@@ -637,28 +555,19 @@ export class AgentClient {
       ? [resolved.providerId, ...this.enabledProviders.filter((p) => p !== resolved.providerId)]
       : [resolved.providerId];
 
-    // MIGRATE-008: 传递知识库配置给 server
-    const knowledgeEnabled = this.knowledgeConfig?.enabled ?? false;
-
-    const request: AiRunRequest = {
+    const body = {
       agent,
+      caseId: meta.caseId,
+      request,
       providerPreference: providerPreference as ProviderId[],
       modelId: resolved.modelId,
       ...(resolved.maxTokens != null ? { maxTokens: resolved.maxTokens } : {}),
       modelFallbacks,
       enableModelFallback,
       providerBaseUrls,
-      prompt,
-      sanitized: false,
-      metadata: {
-        caseId: meta.caseId,
-        moduleScope: meta.moduleScope,
-        tokenEstimate: estimateTokens(prompt),
-        knowledgeEnabled,
-      }
     };
 
-    log("Calling gateway", {
+    log("Calling agent gateway", {
       agent,
       providerPreference,
       modelId: resolved.modelId,
@@ -669,10 +578,10 @@ export class AgentClient {
     });
 
     const doFetch = async (): Promise<Response> => {
-      return fetch(`${this.gatewayUrl}/ai/run`, {
+      return fetch(`${this.gatewayUrl}/agent/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(request),
+        body: JSON.stringify(body),
         ...(meta.signal ? { signal: meta.signal } : {})
       });
     };
@@ -700,7 +609,7 @@ export class AgentClient {
     if (!res.ok) {
       const errorBody = await res.json().catch(() => ({ error: { message: res.statusText } }));
       const msg = errorBody.error?.message ?? `Gateway error: ${res.status}`;
-      const attempts = errorBody.attempts as AiRunResponse["attempts"] | undefined;
+      const attempts = errorBody.attempts as Array<{ providerId: string; errorCode?: string }> | undefined;
       this.trackProviderErrors(attempts, agent, meta.caseId);
       const errorType = classifyGatewayError(res.status, errorBody, attempts);
       const detail = attempts?.length
@@ -709,24 +618,22 @@ export class AgentClient {
       throw new AiGatewayError(errorType, `${msg}${detail}`, attempts);
     }
 
-    const data = (await res.json()) as AiRunResponse;
+    const data = await res.json() as { ok: boolean; output?: unknown; tokenUsage?: { input: number; output: number; total: number }; attempts?: Array<{ providerId: string; modelId: string; errorCode?: string; duration: number }>; error?: { type: string; message: string }; knowledgeCitations?: Array<{ source: string; score: number; excerpt: string }> };
     if (!data.ok) {
       const msg = data.error?.message ?? "Gateway returned error";
-      const attempts = data.attempts;
+      const attempts = data.attempts?.map(a => {
+        const result: { providerId: string; errorCode?: string } = { providerId: a.providerId };
+        if (a.errorCode !== undefined) result.errorCode = a.errorCode;
+        return result;
+      });
       this.trackProviderErrors(attempts, agent, meta.caseId);
-      const errorType = classifyGatewayError(res.status, data, attempts);
-      const detail = attempts?.length
-        ? ` (${attempts.map((a) => `${a.providerId}: ${a.errorCode ?? "failed"}`).join("; ")})`
+      const errorBody: { error?: { code?: string } } = {};
+      if (data.error) errorBody.error = { code: data.error.type };
+      const errorType = classifyGatewayError(res.status, errorBody, attempts);
+      const detail = data.attempts?.length
+        ? ` (${data.attempts.map((a) => `${a.providerId}: ${a.errorCode ?? "failed"}`).join("; ")})`
         : "";
       throw new AiGatewayError(errorType, `${msg}${detail}`, attempts);
-    }
-
-    if (data.structureErrors?.length) {
-      const detail = data.structureErrors.slice(0, 3).join("; ");
-      throw new AiGatewayError(
-        "structure",
-        `AI 返回结构校验失败（${agent}）：${detail}。请确认 AI Provider 配置正确或切换为 Mock 模式重试。`
-      );
     }
 
     // Track token usage
@@ -736,39 +643,26 @@ export class AgentClient {
         caseId: meta.caseId,
         agent,
         providerId: data.attempts?.[0]?.providerId ?? "unknown",
-        modelId: request.modelId ?? "unknown",
+        modelId: body.modelId ?? "unknown",
         inputTokens: data.tokenUsage.input,
         outputTokens: data.tokenUsage.output,
         totalTokens: data.tokenUsage.total
       });
     }
 
-    if (data.outputJson) {
-      return data.outputJson as T;
+    // Update knowledge citations
+    if (data.knowledgeCitations) {
+      AgentClient.lastKnowledgeCitations = data.knowledgeCitations;
     }
-    if (data.rawText) {
-      try {
-        return JSON.parse(stripCodeFences(data.rawText)) as T;
-      } catch (parseError) {
-        if (agent === "chat" || agent === "interpret") {
-          return { reply: data.rawText } as T;
-        }
-        // If there are structure errors, include them in the error message
-        const structureErrorInfo = data.structureErrors ? ` 结构错误: ${data.structureErrors.join("; ")}` : "";
-        throw new Error(
-          `AI 返回格式异常：未返回结构化 JSON 数据。` +
-          `Agent: ${agent}。` +
-          `JSON 解析失败: ${parseError instanceof Error ? parseError.message : String(parseError)}` +
-          `${structureErrorInfo}` +
-          `。请确认 AI Provider 配置正确或切换为 Mock 模式重试。`
-        );
-      }
+
+    if (data.output) {
+      return data.output as T;
     }
     throw new Error("Empty response from gateway");
   }
 
   private trackProviderErrors(
-    attempts: AiRunResponse["attempts"] | undefined,
+    attempts: Array<{ providerId: string; ok?: boolean; errorCode?: string }> | undefined,
     agent: string,
     caseId: string
   ): void {
@@ -793,31 +687,30 @@ export class AgentClient {
   }
 
   private async callGatewayMock<T>(
-    agent: AiRunRequest["agent"],
+    agent: string,
     caseId: string,
-    moduleScope: string
+    _moduleScope: string
   ): Promise<T> {
     // Wait for server to be ready before making API calls
     await waitForServerReady(this.gatewayUrl);
 
-    const res = await fetch(`${this.gatewayUrl}/ai/run`, {
+    const res = await fetch(`${this.gatewayUrl}/agent/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         agent,
+        caseId,
+        request: {},
         providerPreference: ["gemini"],
         modelId: "mock",
-        prompt: `[Mock] ${agent}`,
-        sanitized: false,
         mock: true,
-        metadata: { caseId, moduleScope, tokenEstimate: 0 }
       })
     });
-    const data = (await res.json()) as AiRunResponse;
+    const data = await res.json() as { ok: boolean; output?: unknown; error?: { message: string } };
     if (!res.ok || !data.ok) {
       throw new Error(data.error?.message ?? `Mock gateway error: ${res.status}`);
     }
-    return data.outputJson as T;
+    return data.output as T;
   }
 }
 
@@ -844,51 +737,6 @@ function normalizeSpecificationCitations(
     if (typeof cite.lineEnd === "number") normalized.lineEnd = cite.lineEnd;
     return normalized;
   });
-}
-
-function buildClaimChartPrompt(request: ClaimChartRequest): string {
-  const specExcerpt = truncateForModel(request.specificationText, 8000);
-  return [
-    `你是一位资深专利审查员助理，任务是对权利要求 ${request.claimNumber} 进行技术特征拆解（Claim Chart）。`,
-    ``,
-    `约束：`,
-    `- 只能基于给定的权利要求文本与说明书片段；不得编造段落号或引用。`,
-    `- 每个技术特征必须给出可映射到说明书段落号的 specificationCitations；若无法定位，citationStatus 必须为 "needs-review"。`,
-    `- 不得输出新颖性/创造性等法律结论。`,
-    `- 严格按下方 JSON 格式输出，不要输出 markdown 代码块或任何解释性文字。`,
-    ``,
-    `权利要求 ${request.claimNumber} 文本：`,
-    request.claimText,
-    ``,
-    `说明书片段（含段落号，如有）：`,
-    specExcerpt || "（未提供说明书片段）",
-    ``,
-    `请严格输出以下 JSON 格式（字段名必须完全一致，使用双引号）：`,
-    `{`,
-    `  "claimNumber": ${request.claimNumber},`,
-    `  "features": [`,
-    `    {`,
-    `      "featureCode": "A",`,
-    `      "description": "技术特征描述",`,
-    `      "specificationCitations": [`,
-    `        { "label": "[0001]", "paragraph": "0001", "quote": "说明书原文摘录", "confidence": "high" }`,
-    `      ],`,
-    `      "citationStatus": "confirmed"`,
-    `    }`,
-    `  ],`,
-    `  "warnings": [`,
-    `    { "type": "other", "message": "可选警告说明" }`,
-    `  ],`,
-    `  "pendingSearchQuestions": ["待检索问题，最多5条"],`,
-    `  "legalCaution": "以上为候选事实整理，不构成法律结论。"`,
-    `}`,
-    ``,
-    `注意：`,
-    `- featureCode 使用大写字母 A、B、C…（从 A 起连续编号）`,
-    `- features 至少 1 项；citationStatus 只能是 confirmed / needs-review / not-found`,
-    `- specificationCitations 中 confidence 只能是 high / medium / low`,
-    `- warnings 可为空数组 []；pendingSearchQuestions 最多 5 条`
-  ].join("\n");
 }
 
 function mapClaimChartOutput(
@@ -990,7 +838,7 @@ function mockClaimChart(request: ClaimChartRequest): ClaimChartResponse {
   };
 }
 
-function buildNoveltyPrompt(request: NoveltyRequest): string {
+function _buildNoveltyPrompt(request: NoveltyRequest): string {
   const parts = [
     `你是一名专利复审辅助系统，负责在复审阶段逐特征重新评估新颖性对照。`,
     ``,
@@ -1059,7 +907,7 @@ function buildNoveltyPrompt(request: NoveltyRequest): string {
   return parts.join("\n");
 }
 
-function buildInventivePrompt(request: InventiveRequest): string {
+function _buildInventivePrompt(request: InventiveRequest): string {
   const parts = [
     `你是一名专利复审辅助系统，负责在复审阶段进行创造性三步法分析。`,
     ``,
@@ -1121,14 +969,14 @@ function buildInventivePrompt(request: InventiveRequest): string {
   return parts.join("\n");
 }
 
-function stripCodeFences(text: string): string {
+function _stripCodeFences(text: string): string {
   return text.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/, "").trim();
 }
 
 function classifyGatewayError(
   status: number,
   errorBody: { error?: { code?: string } },
-  attempts?: AiRunResponse["attempts"]
+  attempts?: Array<{ providerId: string; errorCode?: string }>
 ): AiErrorType {
   if (attempts?.length) {
     const errorCodes = attempts.map((a) => a.errorCode);
@@ -1147,13 +995,13 @@ function classifyGatewayError(
   return "other";
 }
 
-function estimateTokens(text: string): number {
+function _estimateTokens(text: string): number {
   const zhChars = (text.match(/[一-鿿＀-￯]/g) ?? []).length;
   const latinChars = text.length - zhChars;
   return Math.ceil(zhChars * 0.6 + latinChars * 0.3);
 }
 
-function buildDefectPrompt(request: DefectRequest): string {
+function _buildDefectPrompt(request: DefectRequest): string {
   return [
     `你是一位资深专利审查员，擅长识别专利申请文件中的形式缺陷。`,
     `案件 ID: ${request.caseId}`,
@@ -1280,7 +1128,7 @@ function mockInventive(request: InventiveRequest): InventiveResponse {
   };
 }
 
-function buildChatPrompt(request: ChatRequest): string {
+function _buildChatPrompt(request: ChatRequest): string {
   const parts = [
     `案件 ID: ${request.caseId}`,
     `当前模块: ${request.moduleScope}`,
@@ -1333,7 +1181,7 @@ const INTERPRET_TEMPLATES: Record<InterpretDocumentType, { title: string; instru
   }
 };
 
-function buildInterpretPrompt(request: InterpretRequest): string {
+function _buildInterpretPrompt(request: InterpretRequest): string {
   const template = INTERPRET_TEMPLATES[request.documentType] ?? INTERPRET_TEMPLATES.application;
   const relatedDocuments = request.relatedDocuments?.length
     ? request.relatedDocuments.map((doc) => `- ${doc.fileName}（${INTERPRET_DOCUMENT_LABELS[doc.documentType]}）`).join("\n")
@@ -1369,7 +1217,7 @@ function mockInterpret(request: InterpretRequest): InterpretResponse {
   };
 }
 
-function buildOpinionAnalysisPrompt(request: OpinionAnalysisRequest): string {
+function _buildOpinionAnalysisPrompt(request: OpinionAnalysisRequest): string {
   return [
     `你是一位资深专利审查员，擅长分析审查意见通知书。`,
     `案件 ID: ${request.caseId}`,
@@ -1409,7 +1257,7 @@ function buildOpinionAnalysisPrompt(request: OpinionAnalysisRequest): string {
   ].join("\n");
 }
 
-function buildArgumentAnalysisPrompt(request: ArgumentAnalysisRequest): string {
+function _buildArgumentAnalysisPrompt(request: ArgumentAnalysisRequest): string {
   const parts = [
     `你是一位资深专利审查员，擅长分析意见陈述书中的答辩理由与驳回理由之间的对应关系。`,
     `案件 ID: ${request.caseId}`,
@@ -1455,7 +1303,7 @@ function buildArgumentAnalysisPrompt(request: ArgumentAnalysisRequest): string {
   return parts.join("\n");
 }
 
-function buildReexamDraftPrompt(request: ReexamDraftRequest): string {
+function _buildReexamDraftPrompt(request: ReexamDraftRequest): string {
   return [
     `你是一位资深专利审查员，负责起草复审意见草稿。`,
     `案件 ID: ${request.caseId}`,
@@ -1501,7 +1349,7 @@ function buildReexamDraftPrompt(request: ReexamDraftRequest): string {
   ].join("\n");
 }
 
-function buildSummaryPrompt(request: SummaryRequest): string {
+function _buildSummaryPrompt(request: SummaryRequest): string {
   return [
     `你是一位资深专利审查员，负责撰写审查意见简述。`,
     `案件基线: ${request.caseBaseline}`,
@@ -1529,7 +1377,7 @@ function buildSummaryPrompt(request: SummaryRequest): string {
   ].join("\n");
 }
 
-function buildTranslatePrompt(request: TranslateRequest): string {
+function _buildTranslatePrompt(request: TranslateRequest): string {
   return truncateForModel(request.documentText, 12000);
 }
 
@@ -1576,7 +1424,7 @@ function mockChat(request: ChatRequest): ChatResponse {
   };
 }
 
-function buildExtractCaseFieldsPrompt(request: ExtractCaseFieldsRequest): string {
+function _buildExtractCaseFieldsPrompt(request: ExtractCaseFieldsRequest): string {
   const docSections = request.documents.map((doc, i) => {
     return `=== 文件 ${i + 1}: ${doc.fileName} ===\n${doc.text}`;
   });
@@ -1647,7 +1495,7 @@ function mockExtractCaseFields(request: ExtractCaseFieldsRequest): ExtractCaseFi
   };
 }
 
-function buildClassifyDocumentsPrompt(request: ClassifyDocumentsRequest): string {
+function _buildClassifyDocumentsPrompt(request: ClassifyDocumentsRequest): string {
   const docSections = request.documents.map((doc) => {
     return `=== 文件 ${doc.fileIndex}: ${doc.fileName} ===\n${doc.textSample}`;
   });

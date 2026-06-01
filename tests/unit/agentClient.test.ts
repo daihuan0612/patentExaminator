@@ -40,7 +40,7 @@ describe("AgentClient (mock mode)", () => {
       new Response(
         JSON.stringify({
           ok: true,
-          outputJson: {
+          output: {
             claimNumber: 1,
             features: [
               {
@@ -53,7 +53,9 @@ describe("AgentClient (mock mode)", () => {
             warnings: [{ type: "other", message: "功能语言" }],
             pendingSearchQuestions: ["待查 D1"],
             legalCaution: "候选事实"
-          }
+          },
+          tokenUsage: { input: 100, output: 50, total: 150 },
+          attempts: [{ providerId: "gemini", modelId: "gemini-2.5-flash-lite", duration: 100 }]
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       )
@@ -77,7 +79,7 @@ describe("AgentClient (mock mode)", () => {
       new Response(
         JSON.stringify({
           ok: true,
-          outputJson: {
+          output: {
             claimNumber: 1,
             features: [
               {
@@ -92,7 +94,9 @@ describe("AgentClient (mock mode)", () => {
             warnings: [],
             pendingSearchQuestions: [],
             legalCaution: "test"
-          }
+          },
+          tokenUsage: { input: 100, output: 50, total: 150 },
+          attempts: [{ providerId: "gemini", modelId: "gemini-2.5-flash-lite", duration: 100 }]
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       )
@@ -109,13 +113,12 @@ describe("AgentClient (mock mode)", () => {
     expect(result.features[0]!.specificationCitations[0]?.paragraph).toBe("5");
   });
 
-  it("real mode throws when gateway returns structureErrors", async () => {
+  it("real mode throws when gateway returns error", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
-          ok: true,
-          structureErrors: ["features.0.featureCode: Invalid"],
-          rawText: "{}"
+          ok: false,
+          error: { type: "structure", message: "结构校验失败: features.0.featureCode: Invalid" }
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       )
