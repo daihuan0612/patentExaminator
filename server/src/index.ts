@@ -37,6 +37,16 @@ if (process.env.Openrouter_KEY) {
 
 app.use(express.json({ limit: "1mb" }));
 
+// 确保所有 JSON 响应使用 UTF-8 编码
+app.use((_req, res, next) => {
+  const originalJson = res.json.bind(res);
+  res.json = (body: unknown) => {
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    return originalJson(body);
+  };
+  next();
+});
+
 // Simple rate limiter for expensive API endpoints (no external deps)
 const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
