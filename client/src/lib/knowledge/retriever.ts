@@ -3,7 +3,6 @@
  * MIGRATE-004: 检索已迁移到后端，客户端只做缓存和扩展
  */
 import type { KnowledgeSearchResult, KnowledgeConfig } from "@shared/types/knowledge";
-import type { EmbedderConfig } from "./embedder";
 import { expandCrossLanguage } from "./normalizers";
 import { expandQueryWithGraph } from "./knowledgeGraph";
 import { createLogger } from "../logger";
@@ -75,8 +74,7 @@ function getCacheKey(query: string, topK: number, scoreThreshold: number): strin
  */
 export async function retrieve(
   options: RetrieveOptions,
-  config: KnowledgeConfig,
-  _embedConfig: EmbedderConfig
+  config: KnowledgeConfig
 ): Promise<KnowledgeSearchResult[]> {
   const { query, topK = config.topK } = options;
 
@@ -161,38 +159,6 @@ export async function retrieve(
     log(`Server search failed: ${err}`);
     return [];
   }
-}
-
-/** 父文档检索：为命中 chunk 补充相邻上下文 */
-async function enrichWithParentContext(
-  results: KnowledgeSearchResult[]
-): Promise<KnowledgeSearchResult[]> {
-  const { getChunksBySource } = await import("./knowledgeRepo");
-  const enriched: KnowledgeSearchResult[] = [];
-
-  for (const result of results) {
-    enriched.push(result);
-
-    // 获取同源的相邻 chunk
-    const sourceChunks = await getChunksBySource(result.chunk.sourceId);
-    const currentIndex = result.chunk.index;
-
-    // 添加前一个 chunk（如果存在且未在结果中）
-    if (currentIndex > 0) {
-      const prevChunk = sourceChunks.find((c) => c.index === currentIndex - 1);
-      if (prevChunk && !results.some((r) => r.chunk.id === prevChunk.id)) {
-        enriched.push({ chunk: prevChunk, score: result.score * 0.8 });
-      }
-    }
-
-    // 添加后一个 chunk（如果存在且未在结果中）
-    const nextChunk = sourceChunks.find((c) => c.index === currentIndex + 1);
-    if (nextChunk && !results.some((r) => r.chunk.id === nextChunk.id)) {
-      enriched.push({ chunk: nextChunk, score: result.score * 0.8 });
-    }
-  }
-
-  return enriched;
 }
 
 /**

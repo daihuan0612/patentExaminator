@@ -25,6 +25,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const SAMPLES_DIR = path.join(ROOT, "samples", "knowledge-base");
 const CLIENT_SRC = path.join(ROOT, "client", "src");
+const SERVER_SRC = path.join(ROOT, "server", "src");
 const SHARED_SRC = path.join(ROOT, "shared", "src");
 
 // 测试隔离：使用临时目录作为数据库路径
@@ -155,15 +156,15 @@ async function testPngValidity() {
 // chunkers.ts 已删除，切片逻辑已移至 server/src/routes/knowledge.ts
 
 // ── T-RAG-010: 向量化引擎代码验证 ────────────────────
+// bg-72: embedder.ts 已移除（死代码），embedding 已迁移到服务端
+// 验证服务端 knowledge 路由包含 embedding 逻辑
 
 async function testEmbedderCodeExists() {
-  const embedderPath = path.join(CLIENT_SRC, "lib", "knowledge", "embedder.ts");
-  assert(fileExists(embedderPath), "embedder.ts not found");
-  const code = readFile(embedderPath);
-  assert(code.includes("embedRemote"), "Missing embedRemote");
-  assert(code.includes("embedChunks"), "Missing embedChunks");
-  assert(code.includes("cosineSimilarity"), "Missing cosineSimilarity");
-  // cr-1: 移除本地 embedding 模型，不再检查 embedLocal 和 bge-large-zh
+  const knowledgeRoutePath = path.join(SERVER_SRC, "routes", "knowledge.ts");
+  assert(fileExists(knowledgeRoutePath), "server knowledge.ts not found");
+  const code = readFile(knowledgeRoutePath);
+  // 服务端应包含 embedding 相关逻辑
+  assert(code.includes("embed") || code.includes("vector"), "Server knowledge route should handle embedding/vector operations");
 }
 
 // ── T-RAG-011: 检索引擎代码验证 ─────────────────────

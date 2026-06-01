@@ -2,72 +2,18 @@
  * Unit tests for client/src/lib/knowledge/* modules.
  *
  * Covers:
- * - embedder: cosineSimilarity
- * - vectorStore: addVector, searchVectors, cosineSimilarity
  * - retriever: formatRetrievedChunks
  * - promptInjector: buildKnowledgeContext
  *
  * Test strategy: pure function tests, no IndexedDB or network calls.
  *
  * Note: chunkers tests removed — chunkers.ts deleted in B-021, chunking moved to server.
+ * Note: embedder/vectorStore/bm25Search/hybridSearch tests removed — files deleted in bg-72 (dead code cleanup).
  */
 import { describe, it, expect } from "vitest";
 
 // ──────────────────────────────────────────────────
-// 2. embedder tests
-// ──────────────────────────────────────────────────
-
-describe("embedder", () => {
-  describe("cosineSimilarity", () => {
-    it("returns 1 for identical vectors", async () => {
-      const { cosineSimilarity } = await import("@client/lib/knowledge/embedder");
-      expect(cosineSimilarity([1, 0, 0], [1, 0, 0])).toBeCloseTo(1);
-    });
-
-    it("returns 0 for orthogonal vectors", async () => {
-      const { cosineSimilarity } = await import("@client/lib/knowledge/embedder");
-      expect(cosineSimilarity([1, 0], [0, 1])).toBeCloseTo(0);
-    });
-
-    it("returns -1 for opposite vectors", async () => {
-      const { cosineSimilarity } = await import("@client/lib/knowledge/embedder");
-      expect(cosineSimilarity([1, 0], [-1, 0])).toBeCloseTo(-1);
-    });
-
-    it("returns 0 for vectors of different lengths", async () => {
-      const { cosineSimilarity } = await import("@client/lib/knowledge/embedder");
-      expect(cosineSimilarity([1, 0], [1, 0, 0])).toBe(0);
-    });
-
-    it("returns 0 for zero vectors", async () => {
-      const { cosineSimilarity } = await import("@client/lib/knowledge/embedder");
-      expect(cosineSimilarity([0, 0], [0, 0])).toBe(0);
-    });
-  });
-});
-
-// ──────────────────────────────────────────────────
-// 3. vectorStore tests
-// ──────────────────────────────────────────────────
-
-describe("vectorStore", () => {
-  describe("invalidateVectorIndex", () => {
-    it("is a function", async () => {
-      const { invalidateVectorIndex } = await import("@client/lib/knowledge/vectorStore");
-      expect(typeof invalidateVectorIndex).toBe("function");
-    });
-  });
-
-  describe("getVectorIndexStats", () => {
-    it("is a function", async () => {
-      const { getVectorIndexStats } = await import("@client/lib/knowledge/vectorStore");
-      expect(typeof getVectorIndexStats).toBe("function");
-    });
-  });
-});
-
-// ──────────────────────────────────────────────────
-// 4. retriever tests
+// retriever tests
 // ──────────────────────────────────────────────────
 
 describe("retriever", () => {
@@ -93,7 +39,7 @@ describe("retriever", () => {
 });
 
 // ──────────────────────────────────────────────────
-// 5. promptInjector tests
+// promptInjector tests
 // ──────────────────────────────────────────────────
 
 describe("promptInjector", () => {

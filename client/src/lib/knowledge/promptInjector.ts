@@ -2,7 +2,6 @@
  * 知识库 Prompt 注入器 — 在 Agent 调用前注入检索到的知识
  */
 import type { KnowledgeConfig } from "@shared/types/knowledge";
-import type { EmbedderConfig } from "./embedder";
 import { retrieve, formatRetrievedChunks } from "./retriever";
 import { createLogger } from "../logger";
 
@@ -54,8 +53,6 @@ export interface InjectOptions {
   systemPrompt: string;
   /** 知识库配置 */
   config: KnowledgeConfig;
-  /** embedding 配置 */
-  embedConfig: EmbedderConfig;
   /** Agent 类型（用于定制注入格式） */
   agentType?: string;
 }
@@ -87,14 +84,14 @@ function getAgentContext(agentType?: string): string {
 }
 
 export async function injectKnowledge(options: InjectOptions): Promise<string> {
-  const { query, systemPrompt, config, embedConfig, agentType } = options;
+  const { query, systemPrompt, config, agentType } = options;
 
   if (!config.enabled) {
     return systemPrompt;
   }
 
   try {
-    const results = await retrieve({ query }, config, embedConfig);
+    const results = await retrieve({ query }, config);
 
     if (results.length === 0) {
       log("No relevant knowledge found, returning original prompt");
