@@ -69,20 +69,3 @@ npm run dev
 
 **支持的输入格式**：PDF, TXT, MD, DOCX, JSON, Excel, CSV, PNG, 在线 URL
 
----
-
-## 技术栈
-
-| 层 | 技术 |
-|----|------|
-| 前端框架 | React 18.3 + TypeScript 5.5 |
-| 构建工具 | Vite 5.4 |
-| 状态管理 | Zustand 4.5 |
-| 后端 | Express 4 |
-| AI 适配 | OpenAI-compatible 协议 |
-| 知识库 RAG | Transformers.js (BGE-large-zh) + minisearch (BM25) |
-| 运行时校验 | Zod 3.23 |
-| 单元测试 | Vitest 2.1 |
-| E2E 测试 | Playwright 1.47 |
-| 代码规范 | ESLint 8 + Prettier 3 |
-
