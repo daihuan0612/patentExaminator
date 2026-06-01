@@ -275,22 +275,4 @@ async function searchEpoAdapter(
  * Extract patent publication numbers from text using regex.
  * Matches CN, US, EP, JP, KR, WO patent number patterns.
  */
-export function extractPublicationNumbers(text: string): string[] {
-  const patterns = [
-    /CN\d{9,12}[A-Z]?/g,
-    /US\d{7,11}[A-Z]?\d?/g,
-    /EP\d{6,8}[A-Z]?\d?/g,
-    /JP\d{4,8}[A-Z]?\d+/g,
-    /KR\d{7,10}[A-Z]?\d?/g,
-    /WO\d{4}\/\d{6}/g
-  ];
-
-  const numbers = new Set<string>();
-  for (const pattern of patterns) {
-    const matches = text.match(pattern);
-    if (matches) {
-      for (const m of matches) numbers.add(m);
-    }
-  }
-  return [...numbers];
-}
+// B-030: extractPublicationNumbers 已删除（从未被引用）

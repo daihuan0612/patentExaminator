@@ -20,15 +20,4 @@ export const aiRunRequestSchema = z.object({
   })
 });
 
-export const settingsUpdateSchema = z.object({
-  providers: z
-    .array(
-      z.object({
-        providerId: z.string(),
-        baseUrl: z.string().optional(),
-        apiKey: z.string().optional(),
-        enabled: z.boolean()
-      })
-    )
-    .optional()
-});
+// B-030: settingsUpdateSchema 已删除（从未被引用）

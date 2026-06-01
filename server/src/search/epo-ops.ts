@@ -50,11 +50,7 @@ interface EpoToken {
 let cachedToken: EpoToken | null = null;
 let cachedCredentials: string | null = null; // track which credentials the token belongs to
 
-/** Clear the cached EPO token (call when credentials change). */
-export function clearEpoTokenCache(): void {
-  cachedToken = null;
-  cachedCredentials = null;
-}
+// B-030: clearEpoTokenCache 已删除（从未被引用）
 
 async function getEpoAccessToken(consumerKey: string, consumerSecret: string): Promise<string> {
   const now = Date.now();
