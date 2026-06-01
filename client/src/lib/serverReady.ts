@@ -53,6 +53,4 @@ export function clearServerReadyCache(): void {
   isServerReadyCache = null;
 }
 
-export function markServerReady(): void {
-  isServerReadyCache = true;
-}
+// B-029: markServerReady 已删除（从未被引用）

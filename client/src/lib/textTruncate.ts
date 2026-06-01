@@ -4,14 +4,7 @@
  * the most important content (claims at the start, conclusions at the end).
  */
 
-/** Model tier determines max context allocation for prompt text */
-export type ModelTier = "small" | "medium" | "large";
-
-const TIER_LIMITS: Record<ModelTier, number> = {
-  small: 4000,   // flash-lite models
-  medium: 8000,  // standard models
-  large: 12000,  // pro/opus models
-};
+// B-029: ModelTier 和 truncateByTier 已删除（从未被引用）
 
 /**
  * Truncate text smartly: keep first 40% and last 40%, insert [...] separator.
@@ -28,13 +21,6 @@ export function truncateForModel(text: string, maxChars: number): string {
   const endChunk = breakAtParagraph(text, text.length - keepEnd, text.length, "backward");
 
   return `${startChunk}\n\n[...]\n\n${endChunk}`;
-}
-
-/**
- * Truncate text using model tier defaults.
- */
-export function truncateByTier(text: string, tier: ModelTier): string {
-  return truncateForModel(text, TIER_LIMITS[tier]);
 }
 
 /**
