@@ -104,7 +104,7 @@ function simpleChunk(text: string, fileName: string): Array<{ text: string; meta
 
 // ── API 端点 ─────────────────────────────────────────
 
-/** POST /api/knowledge/upload — 上传文件并处理 */
+/** POST /api/knowledge/upload — 上传文件并处理（SSE 进度推送） */
 knowledgeRouter.post("/knowledge/upload", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
@@ -112,26 +112,41 @@ knowledgeRouter.post("/knowledge/upload", upload.single("file"), async (req, res
       return;
     }
 
+    // 设置 SSE 响应头
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
+    const sendEvent = (data: Record<string, unknown>) => {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
     const file = req.file;
     const fileHash = crypto.createHash("sha256").update(file.buffer).digest("hex");
 
     // 文件级去重
     const existing = findDuplicateByHash(fileHash);
     if (existing) {
-      res.json({ ok: true, skipped: true, message: `已存在: ${existing.name}` });
+      sendEvent({ step: "done", skipped: true, message: `已存在: ${existing.name}` });
+      res.end();
       return;
     }
 
     const sourceId = `ks-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const fileName = file.originalname;
 
-    // 提取文本
+    // Step 1: 提取文本
+    sendEvent({ step: "extracting", message: `提取 ${fileName} 文本...` });
     const extraction = await extractText(file.buffer, fileName);
+    sendEvent({ step: "extracting", done: true, chars: extraction.text.length });
 
-    // 切片
+    // Step 2: 切片
+    sendEvent({ step: "chunking", message: "切片处理中..." });
     const rawChunks = simpleChunk(extraction.text, fileName);
+    sendEvent({ step: "chunking", done: true, total: rawChunks.length });
 
-    // 存储 source
+    // Step 3: 存储
+    sendEvent({ step: "storing", message: `存储 ${rawChunks.length} 条知识...` });
     addSource({
       id: sourceId,
       name: fileName,
@@ -144,7 +159,6 @@ knowledgeRouter.post("/knowledge/upload", upload.single("file"), async (req, res
       embedStatus: "processing",
     });
 
-    // 存储 chunks
     const chunks = rawChunks.map((rc, i) => ({
       id: `${sourceId}-c${i}`,
       sourceId,
@@ -155,33 +169,49 @@ knowledgeRouter.post("/knowledge/upload", upload.single("file"), async (req, res
     }));
     addChunks(chunks);
 
-    // 向量化
+    // Step 4: 向量化（分批报告进度）
     if (chunks.length > 0) {
+      sendEvent({ step: "embedding", message: `向量化 ${chunks.length} 条知识...`, total: chunks.length });
       const emb = await getEmbedder();
-      const texts = chunks.map((c) => c.text);
-      const vectors = await emb.embed(texts);
-      const vectorRecords = chunks.map((c, i) => ({
-        chunkId: c.id,
-        vector: vectors[i]!,
-        modelId: emb.modelId,
-      }));
-      addVectors(vectorRecords);
-      for (const chunk of chunks) {
-        markChunkEmbedded(chunk.id);
+      const batchSize = 5;
+
+      for (let i = 0; i < chunks.length; i += batchSize) {
+        const batch = chunks.slice(i, i + batchSize);
+        const texts = batch.map((c) => c.text);
+        const vectors = await emb.embed(texts);
+        const vectorRecords = batch.map((c, j) => ({
+          chunkId: c.id,
+          vector: vectors[j]!,
+          modelId: emb.modelId,
+        }));
+        addVectors(vectorRecords);
+        for (const chunk of batch) {
+          markChunkEmbedded(chunk.id);
+        }
+        sendEvent({ step: "embedding", progress: Math.min(i + batchSize, chunks.length), total: chunks.length });
       }
     }
 
+    // 完成
     logger.info(`Uploaded ${fileName}: ${chunks.length} chunks embedded`);
-    res.json({
+    sendEvent({
+      step: "done",
       ok: true,
       sourceId,
       fileName,
       chunkCount: chunks.length,
       message: `✅ ${fileName} — ${chunks.length} 条知识已入库`,
     });
+    res.end();
   } catch (err) {
     logger.error("Knowledge upload error: " + errMsg(err));
-    res.status(500).json({ ok: false, error: errMsg(err) });
+    // 如果 headers 已发送，用 SSE 发送错误
+    if (res.headersSent) {
+      res.write(`data: ${JSON.stringify({ step: "error", error: errMsg(err) })}\n\n`);
+      res.end();
+    } else {
+      res.status(500).json({ ok: false, error: errMsg(err) });
+    }
   }
 });
 

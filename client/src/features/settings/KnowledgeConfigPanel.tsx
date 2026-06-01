@@ -70,15 +70,8 @@ export function KnowledgeConfigPanel() {
     const results: string[] = [];
     try {
       for (const file of Array.from(files)) {
-        const formData = new FormData();
-        formData.append("file", file);
-        const res = await fetch(`${API}/upload`, { method: "POST", body: formData });
-        const data = await res.json() as { ok: boolean; message?: string; skipped?: boolean; error?: string };
-        if (data.ok) {
-          results.push(data.skipped ? `⏭ ${file.name} — ${data.message}` : (data.message ?? `✅ ${file.name}`));
-        } else {
-          results.push(`❌ ${file.name} — ${data.error}`);
-        }
+        const fileResult = await uploadFileWithProgress(file);
+        results.push(fileResult);
       }
       await refresh();
       setImportResult(results.join("\n"));
@@ -88,6 +81,63 @@ export function KnowledgeConfigPanel() {
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  };
+
+  /** 上传文件并实时显示进度（SSE） */
+  const uploadFileWithProgress = async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await fetch(`${API}/upload`, { method: "POST", body: formData });
+
+    if (!res.ok) {
+      return `❌ ${file.name} — HTTP ${res.status}`;
+    }
+
+    // 读取 SSE 流
+    const reader = res.body?.getReader();
+    if (!reader) {
+      return `❌ ${file.name} — 无法读取响应流`;
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let lastProgress = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        try {
+          const data = JSON.parse(line.slice(6)) as Record<string, unknown>;
+          const step = data.step as string;
+
+          if (step === "done") {
+            if (data.skipped) {
+              return `⏭ ${file.name} — ${data.message}`;
+            }
+            return (data.message as string) ?? `✅ ${file.name}`;
+          } else if (step === "error") {
+            return `❌ ${file.name} — ${data.error}`;
+          } else if (step === "embedding" && data.progress) {
+            lastProgress = `向量化 ${data.progress}/${data.total}`;
+            setImportResult(`⏳ ${file.name} — ${lastProgress}`);
+          } else if (data.message) {
+            setImportResult(`⏳ ${file.name} — ${data.message}`);
+          }
+        } catch {
+          // 忽略解析错误
+        }
+      }
+    }
+
+    return `✅ ${file.name}`;
   };
 
   // ── URL 导入（server 端处理） ─────────────────────

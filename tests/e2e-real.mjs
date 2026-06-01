@@ -2365,18 +2365,29 @@ async function testEpoVerifyKey() {
 
 const KNOWLEDGE_BASE = path.join(PROJECT_ROOT, "samples", "knowledge-base");
 
-function uploadKnowledgeFile(fileName) {
+/** 上传文件并解析 SSE 响应，返回最终结果 */
+async function uploadKnowledgeFile(fileName) {
   const filePath = path.join(KNOWLEDGE_BASE, fileName);
   const buffer = fs.readFileSync(filePath);
   const blob = new Blob([buffer]);
   const form = new FormData();
   form.append("file", blob, fileName);
-  return fetch(`${BASE}/knowledge/upload`, { method: "POST", body: form });
+  const res = await fetch(`${BASE}/knowledge/upload`, { method: "POST", body: form });
+
+  // 解析 SSE 流，提取最后一个 done 事件
+  const text = await res.text();
+  const lines = text.split("\n").filter(l => l.startsWith("data: "));
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const data = JSON.parse(lines[i].slice(6));
+      if (data.step === "done" || data.step === "error") return data;
+    } catch { /* skip */ }
+  }
+  return { ok: false, error: "No done event found" };
 }
 
 async function testKnowledgeUploadTxt() {
-  const res = await uploadKnowledgeFile("测试网页内容.txt");
-  const data = await res.json();
+  const data = await uploadKnowledgeFile("测试网页内容.txt");
   log("Knowledge upload TXT ok", data.ok === true, `ok=${data.ok}, chunks=${data.chunkCount}`);
   log("Knowledge upload TXT has chunks", (data.chunkCount ?? 0) > 0, `chunkCount=${data.chunkCount}`);
   log("Knowledge upload TXT message", typeof data.message === "string", `message=${data.message}`);
@@ -2389,35 +2400,30 @@ async function testKnowledgeUploadLargeFile() {
     log("Knowledge upload large file - file missing", false);
     return;
   }
-  const res = await uploadKnowledgeFile("专利法实施细则_2023.txt");
-  const data = await res.json();
+  const data = await uploadKnowledgeFile("专利法实施细则_2023.txt");
   log("Knowledge upload large file ok", data.ok === true, `ok=${data.ok}, chunks=${data.chunkCount}`);
   log("Knowledge upload large file multiple chunks", (data.chunkCount ?? 0) > 10, `chunkCount=${data.chunkCount}`);
 }
 
 async function testKnowledgeUploadMd() {
-  const res = await uploadKnowledgeFile("专利法条文速查.md");
-  const data = await res.json();
+  const data = await uploadKnowledgeFile("专利法条文速查.md");
   log("Knowledge upload MD ok", data.ok === true, `ok=${data.ok}, chunks=${data.chunkCount}`);
   log("Knowledge upload MD has chunks", (data.chunkCount ?? 0) > 0, `chunkCount=${data.chunkCount}`);
 }
 
 async function testKnowledgeUploadJson() {
-  const res = await uploadKnowledgeFile("测试案例.json");
-  const data = await res.json();
+  const data = await uploadKnowledgeFile("测试案例.json");
   log("Knowledge upload JSON ok", data.ok === true, `ok=${data.ok}, chunks=${data.chunkCount}`);
   log("Knowledge upload JSON has chunks", (data.chunkCount ?? 0) > 0, `chunkCount=${data.chunkCount}`);
 }
 
 async function testKnowledgeUploadCsv() {
-  const res = await uploadKnowledgeFile("审查标准速查表.csv");
-  const data = await res.json();
+  const data = await uploadKnowledgeFile("审查标准速查表.csv");
   log("Knowledge upload CSV ok", data.ok === true, `ok=${data.ok}, chunks=${data.chunkCount}`);
 }
 
 async function testKnowledgeDuplicateDetection() {
-  const res = await uploadKnowledgeFile("测试网页内容.txt");
-  const data = await res.json();
+  const data = await uploadKnowledgeFile("测试网页内容.txt");
   log("Knowledge duplicate detection", data.skipped === true, `skipped=${data.skipped}, message=${data.message}`);
 }
 
@@ -2644,8 +2650,9 @@ async function main() {
       testFigureSectionDetection();
       testLikelyFigurePage();
 
-      // Knowledge Base
+      // Knowledge Base (先清空确保干净环境)
       console.log("\n--- Knowledge Base ---");
+      await fetch(`${BASE}/knowledge/clear`, { method: "DELETE" }).catch(() => {});
       await maybe(testKnowledgeUploadTxt);
       await maybe(testKnowledgeUploadLargeFile);
       await maybe(testKnowledgeUploadMd);
