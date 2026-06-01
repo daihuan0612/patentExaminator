@@ -5,27 +5,35 @@
  * 测试覆盖：
  * - T-RAG-001: 测试数据文件完整性
  * - T-RAG-002~008: 各格式文件有效性验证
- * - T-RAG-009: 切片引擎代码结构验证
- * - T-RAG-010: 向量化引擎代码结构验证
- * - T-RAG-011: 检索引擎代码结构验证
- * - T-RAG-012: Prompt 注入代码结构验证
- * - T-RAG-013: 类型定义完整性验证
- * - T-RAG-014: IndexedDB schema 验证
+ * - T-RAG-009~012: 代码结构验证
+ * - T-RAG-013~022: 类型/schema/配置验证
+ * - T-RAG-023~025: 端到端集成测试
  *
  * Usage:
  *   node tests/knowledge-base-e2e.mjs
+ *
+ * 测试隔离：使用独立的 SQLite 数据库，不污染用户数据
  */
 
 import fs from "fs";
 import path from "path";
+import os from "os";
 import { fileURLToPath } from "url";
+import { spawn } from "child_process";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const SAMPLES_DIR = path.join(ROOT, "samples", "knowledge-base");
 const CLIENT_SRC = path.join(ROOT, "client", "src");
 const SHARED_SRC = path.join(ROOT, "shared", "src");
-const BASE = process.env.TEST_BASE || "http://localhost:3000/api";
+
+// 测试隔离：使用临时目录作为数据库路径
+const TEST_DB_DIR = path.join(os.tmpdir(), `patent-examiner-test-${Date.now()}`);
+const TEST_DB_PATH = path.join(TEST_DB_DIR, "knowledge.db");
+const TEST_PORT = 3099;
+const BASE = `http://localhost:${TEST_PORT}/api`;
+
+let serverProcess = null;
 
 let passed = 0;
 let failed = 0;
@@ -337,11 +345,78 @@ async function testMultiFileUploadAndSearch() {
   assert(searchData.results.length > 0, "No results for multi-file search");
 }
 
+// ── Server 生命周期管理 ────────────────────────────────
+
+async function startTestServer() {
+  // 创建测试数据库目录
+  fs.mkdirSync(TEST_DB_DIR, { recursive: true });
+  console.log(`📁 测试数据库目录: ${TEST_DB_DIR}`);
+
+  // 启动 server，使用独立数据库
+  serverProcess = spawn("node", ["--import", "tsx", "src/index.ts"], {
+    cwd: path.join(ROOT, "server"),
+    env: {
+      ...process.env,
+      PORT: String(TEST_PORT),
+      KNOWLEDGE_DB_DIR: TEST_DB_DIR,
+      KNOWLEDGE_DB_PATH: TEST_DB_PATH,
+    },
+    stdio: "pipe",
+  });
+
+  // 等待 server 就绪
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Server startup timeout")), 30000);
+    const checkHealth = async () => {
+      try {
+        const res = await fetch(`${BASE}/health`);
+        if (res.ok) {
+          clearTimeout(timeout);
+          resolve();
+        }
+      } catch {
+        setTimeout(checkHealth, 500);
+      }
+    };
+    serverProcess.stderr.on("data", (data) => {
+      const msg = data.toString();
+      if (msg.includes("listening")) checkHealth();
+    });
+    serverProcess.stdout.on("data", (data) => {
+      const msg = data.toString();
+      if (msg.includes("listening")) checkHealth();
+    });
+    // 也尝试直接检查
+    setTimeout(checkHealth, 2000);
+  });
+
+  console.log(`✅ 测试 server 已启动 (port: ${TEST_PORT})`);
+}
+
+function stopTestServer() {
+  if (serverProcess) {
+    serverProcess.kill();
+    serverProcess = null;
+  }
+}
+
+function cleanupTestDb() {
+  try {
+    if (fs.existsSync(TEST_DB_DIR)) {
+      fs.rmSync(TEST_DB_DIR, { recursive: true, force: true });
+      console.log(`🗑️  测试数据库已清理: ${TEST_DB_DIR}`);
+    }
+  } catch (err) {
+    console.warn(`⚠️  清理测试数据库失败: ${err}`);
+  }
+}
+
 // ── Main ─────────────────────────────────────────────
 
 async function main() {
   console.log("\n🧪 知识库 RAG 系统 E2E 测试\n");
 
+  // 代码结构验证（不需要 server）
   console.log("── 测试数据验证 ──");
   await runTest("T-RAG-001: 测试数据文件完整性", testSampleDataIntegrity);
 
@@ -355,7 +430,6 @@ async function main() {
   await runTest("T-RAG-008: PNG 有效性", testPngValidity);
 
   console.log("\n── 代码结构验证 ──");
-  // T-RAG-009: 切片引擎已移至服务端
   await runTest("T-RAG-010: 向量化引擎代码", testEmbedderCodeExists);
   await runTest("T-RAG-011: 检索引擎代码", testRetrieverCodeExists);
   await runTest("T-RAG-012: Prompt 注入代码", testPromptInjectorCodeExists);
@@ -366,14 +440,21 @@ async function main() {
   await runTest("T-RAG-017: 知识库 Repository", testKnowledgeRepo);
 
   console.log("\n── 预处理模块验证 ──");
-  await runTest("T-RAG-018: normalizers.ts 存在且包含噪声过滤函数", testNormalizerCodeExists);
+  await runTest("T-RAG-018: normalizers.ts 存在且包含查询扩展函数", testNormalizerCodeExists);
   await runTest("T-RAG-021: KnowledgeSource 包含 fileHash 字段", testFileHashField);
   await runTest("T-RAG-022: ChunkMetadata 包含 documentCategory 字段", testDocumentCategoryField);
 
+  // 端到端集成测试（需要独立 server + 数据库）
   console.log("\n── 端到端集成测试 ──");
-  await runTest("T-RAG-023: 上传→检索完整链路", testUploadAndSearchChain);
-  await runTest("T-RAG-024: 检索结果包含元数据", testSearchResultMetadata);
-  await runTest("T-RAG-025: 多文件上传后检索", testMultiFileUploadAndSearch);
+  try {
+    await startTestServer();
+    await runTest("T-RAG-023: 上传→检索完整链路", testUploadAndSearchChain);
+    await runTest("T-RAG-024: 检索结果包含元数据", testSearchResultMetadata);
+    await runTest("T-RAG-025: 多文件上传后检索", testMultiFileUploadAndSearch);
+  } finally {
+    stopTestServer();
+    cleanupTestDb();
+  }
 
   // Summary
   console.log("\n" + "═".repeat(50));
@@ -392,5 +473,7 @@ async function main() {
 
 main().catch((err) => {
   console.error("Test runner error:", err);
+  stopTestServer();
+  cleanupTestDb();
   process.exit(1);
 });

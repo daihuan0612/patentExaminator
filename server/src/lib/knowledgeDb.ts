@@ -7,8 +7,9 @@ import fs from "fs";
 import crypto from "crypto";
 import { logger } from "./logger.js";
 
-const DATA_DIR = path.resolve(process.cwd(), "data");
-const DB_PATH = path.join(DATA_DIR, "knowledge.db");
+// 支持通过环境变量指定数据库路径（测试隔离）
+const DATA_DIR = process.env.KNOWLEDGE_DB_DIR ?? path.resolve(process.cwd(), "data");
+const DB_PATH = process.env.KNOWLEDGE_DB_PATH ?? path.join(DATA_DIR, "knowledge.db");
 
 let db: Database.Database | null = null;
 
@@ -262,4 +263,12 @@ export function clearAll(): void {
 export function findDuplicateByHash(fileHash: string): { id: string; name: string } | null {
   const db = getKnowledgeDb();
   return db.prepare("SELECT id, name FROM kb_sources WHERE file_hash = ?").get(fileHash) as { id: string; name: string } | null;
+}
+
+/** 关闭并重置数据库连接（用于测试清理） */
+export function closeKnowledgeDb(): void {
+  if (db) {
+    db.close();
+    db = null;
+  }
 }
