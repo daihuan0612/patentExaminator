@@ -7,11 +7,7 @@ describe("History and Browser Detection modules", () => {
     expect(typeof mod.CaseHistoryPanel).toBe("function");
   });
 
-  it("BrowserNotice can be imported", async () => {
-    const mod = await import("@client/components/BrowserNotice");
-    expect(mod.BrowserNotice).toBeDefined();
-    expect(typeof mod.BrowserNotice).toBe("function");
-  });
+  // B-028: BrowserNotice 测试已删除（组件已删除）
 });
 
 describe("Case store", () => {
