@@ -241,12 +241,27 @@ export class AgentClient {
     if (this.mode === "mock") {
       return mockChat(request);
     }
-    const prompt = buildChatPrompt(request);
-    return this.callGateway<ChatResponse>("chat", prompt, {
+    const { prompt, knowledgeCitations } = await this.enhancePromptWithKnowledge(
+      buildChatPrompt(request),
+      request.messages?.[request.messages.length - 1]?.content ?? "",
+      request.moduleScope ?? "chat"
+    );
+    AgentClient.lastKnowledgeCitations = knowledgeCitations;
+    const result = await this.callGateway<ChatResponse>("chat", prompt, {
       caseId: request.caseId,
       moduleScope: request.moduleScope,
       ...options
     });
+
+    // 如果有知识库引用，附加到回复末尾
+    if (knowledgeCitations.length > 0) {
+      const citationBlock = knowledgeCitations
+        .map((c) => `> 【${c.source} · 相似度 ${c.score.toFixed(2)}】${c.excerpt}...`)
+        .join("\n");
+      result.reply = `${result.reply}\n\n---\n**📚 参考知识库：**\n${citationBlock}`;
+    }
+
+    return result;
   }
 
   async runSearchReferences(
