@@ -17,12 +17,6 @@ function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-// 文件上传配置（最大 100MB）
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 100 * 1024 * 1024 },
-});
-
 /** GET /api/sync/status — 获取同步状态 */
 syncRouter.get("/sync/status", (_req, res) => {
   try {
