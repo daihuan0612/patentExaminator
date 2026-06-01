@@ -9,6 +9,7 @@ import { knowledgeRouter } from "./routes/knowledge.js";
 import { dataRouter } from "./routes/data.js";
 import { ocrRouter } from "./routes/ocr.js";
 import { documentsRouter } from "./routes/documents.js";
+import { agentRouter } from "./routes/agent.js";
 import { setApiKey } from "./security/keyStore.js";
 import { logger } from "./lib/logger.js";
 import { closeSyncDb } from "./lib/syncDb.js";
@@ -79,6 +80,7 @@ app.use("/api", knowledgeRouter);
 app.use("/api", dataRouter);
 app.use("/api", ocrRouter);
 app.use("/api", documentsRouter);
+app.use("/api", rateLimiter, agentRouter);
 
 // Serve client static files if dist exists
 const clientDist = path.resolve(__dirname, "../../client/dist");
