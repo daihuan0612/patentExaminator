@@ -1,8 +1,8 @@
 /**
- * 客户端同步模块 — 与服务器 SQLite 数据库同步 IndexedDB 数据
- * 无认证，单用户场景
+ * 客户端同步模块 — 与服务器 SQLite 数据库同步数据
+ * B-034: 从 IndexedDB 迁移到 dataClient API
  */
-import { getDB } from "./indexedDb";
+import { getAll, create } from "./dataClient";
 import { createLogger } from "./logger";
 
 const log = createLogger("SyncClient");
@@ -45,20 +45,19 @@ export async function checkSyncStatus(): Promise<SyncStatus> {
   }
 }
 
-/** 上传本地 IndexedDB 数据到服务器 */
+/** 上传数据到服务器 */
 export async function uploadToServer(): Promise<SyncResult> {
   try {
-    const db = await getDB();
     const stores: Record<string, Array<{ id: string; data: unknown }>> = {};
 
     for (const storeName of SYNC_STORES) {
       try {
-        const records = await db.getAll(storeName);
+        const records = await getAll<Record<string, unknown>>(storeName);
         if (records.length > 0) {
-          stores[storeName] = records.map((r: unknown) => {
-            const record = r as Record<string, unknown>;
-            return { id: String(record.id ?? record.caseId ?? record.chunkId ?? Math.random()), data: record };
-          });
+          stores[storeName] = records.map((r) => ({
+            id: String(r.id ?? r.caseId ?? r.chunkId ?? Math.random()),
+            data: r
+          }));
         }
       } catch {
         // store 可能不存在，跳过
@@ -88,17 +87,14 @@ export async function downloadFromServer(): Promise<SyncResult> {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json() as { ok: boolean; stores: Record<string, Array<{ id: string; data: unknown }>> };
 
-    const db = await getDB();
     let downloaded = 0;
 
     for (const [storeName, records] of Object.entries(data.stores)) {
       try {
-        const tx = db.transaction(storeName, "readwrite");
         for (const record of records) {
-          await tx.store.put(record.data);
+          await create(storeName, record.data as { id: string });
           downloaded++;
         }
-        await tx.done;
       } catch {
         // store 可能不存在，跳过
       }

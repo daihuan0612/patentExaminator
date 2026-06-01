@@ -1,50 +1,42 @@
-import { getDB } from "../indexedDb.js";
+import { create, query, update, remove } from "../dataClient";
 import type { ClaimNode, ClaimFeature } from "@shared/types/domain";
 
 // ClaimNode operations
 export async function createClaimNode(item: ClaimNode): Promise<void> {
-  const db = await getDB();
-  await db.put("claimNodes", item);
+  await create("claimNodes", item as ClaimNode & { id: string });
 }
 
 export async function readClaimNodesByCaseId(caseId: string): Promise<ClaimNode[]> {
-  const db = await getDB();
-  return db.getAllFromIndex("claimNodes", "by-caseId", caseId);
+  return query<ClaimNode>("claimNodes", "caseId", caseId);
 }
 
 export async function deleteClaimNode(id: string): Promise<void> {
-  const db = await getDB();
-  await db.delete("claimNodes", id);
+  await remove("claimNodes", id);
 }
 
 // ClaimFeature (claimChart) operations
 export async function createClaimFeature(item: ClaimFeature): Promise<void> {
-  const db = await getDB();
-  await db.put("claimCharts", item);
+  await create("claimCharts", item as ClaimFeature & { id: string });
 }
 
 export async function readClaimFeaturesByCaseId(caseId: string): Promise<ClaimFeature[]> {
-  const db = await getDB();
-  return db.getAllFromIndex("claimCharts", "by-caseId", caseId);
+  return query<ClaimFeature>("claimCharts", "caseId", caseId);
 }
 
 export async function readClaimFeaturesByClaimNumber(
   caseId: string,
   claimNumber: number
 ): Promise<ClaimFeature[]> {
-  const db = await getDB();
-  const all = await db.getAllFromIndex("claimCharts", "by-claimNumber", claimNumber);
+  const all = await query<ClaimFeature>("claimCharts", "claimNumber", claimNumber);
   return all.filter((f) => f.claimNumber === claimNumber && f.id.startsWith(caseId));
 }
 
 export async function updateClaimFeature(item: ClaimFeature): Promise<void> {
-  const db = await getDB();
-  await db.put("claimCharts", item);
+  await update("claimCharts", item.id, item);
 }
 
 export async function deleteClaimFeature(id: string): Promise<void> {
-  const db = await getDB();
-  await db.delete("claimCharts", id);
+  await remove("claimCharts", id);
 }
 
 /**
@@ -52,9 +44,8 @@ export async function deleteClaimFeature(id: string): Promise<void> {
  * Used when clearing case data or re-generating claim chart.
  */
 export async function deleteClaimFeaturesByCaseId(caseId: string): Promise<void> {
-  const db = await getDB();
-  const features = await db.getAllFromIndex("claimCharts", "by-caseId", caseId);
+  const features = await query<ClaimFeature>("claimCharts", "caseId", caseId);
   for (const feature of features) {
-    await db.delete("claimCharts", feature.id);
+    await remove("claimCharts", feature.id);
   }
 }

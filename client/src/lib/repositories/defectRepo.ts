@@ -1,30 +1,25 @@
-import { getDB } from "../indexedDb";
+import { create, query, update, remove } from "../dataClient";
 import type { FormalDefect } from "@shared/types/domain";
 
 export async function createDefect(defect: FormalDefect): Promise<void> {
-  const db = await getDB();
-  await db.put("defects", defect);
+  await create("defects", defect as FormalDefect & { id: string });
 }
 
 export async function getDefectsByCaseId(caseId: string): Promise<FormalDefect[]> {
-  const db = await getDB();
-  return db.getAllFromIndex("defects", "by-caseId", caseId);
+  return query<FormalDefect>("defects", "caseId", caseId);
 }
 
 export async function updateDefect(defect: FormalDefect): Promise<void> {
-  const db = await getDB();
-  await db.put("defects", defect);
+  await update("defects", defect.id, defect);
 }
 
 export async function deleteDefect(id: string): Promise<void> {
-  const db = await getDB();
-  await db.delete("defects", id);
+  await remove("defects", id);
 }
 
 export async function deleteDefectsByCaseId(caseId: string): Promise<void> {
-  const db = await getDB();
-  const items = await db.getAllFromIndex("defects", "by-caseId", caseId);
+  const items = await query<FormalDefect>("defects", "caseId", caseId);
   for (const item of items) {
-    await db.delete("defects", item.id);
+    await remove("defects", item.id);
   }
 }

@@ -1,8 +1,14 @@
-import { getDB } from "../indexedDb";
+import { create, query, remove } from "../dataClient";
+
+interface RunMarker {
+  id: string;
+  caseId: string;
+  module: string;
+  timestamp: string;
+}
 
 export async function saveRunMarker(caseId: string, module: string): Promise<void> {
-  const db = await getDB();
-  await db.put("runMarkers", {
+  await create("runMarkers", {
     id: `${caseId}::${module}`,
     caseId,
     module,
@@ -11,12 +17,10 @@ export async function saveRunMarker(caseId: string, module: string): Promise<voi
 }
 
 export async function getRunMarkersByCaseId(caseId: string): Promise<string[]> {
-  const db = await getDB();
-  const markers = await db.getAllFromIndex("runMarkers", "by-caseId", caseId);
+  const markers = await query<RunMarker>("runMarkers", "caseId", caseId);
   return markers.map((m) => m.module);
 }
 
 export async function deleteRunMarker(caseId: string, module: string): Promise<void> {
-  const db = await getDB();
-  await db.delete("runMarkers", `${caseId}::${module}`);
+  await remove("runMarkers", `${caseId}::${module}`);
 }

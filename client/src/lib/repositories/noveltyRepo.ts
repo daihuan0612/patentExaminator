@@ -1,40 +1,34 @@
-import { getDB } from "../indexedDb.js";
+import { create, getAll, getById, query, update, remove } from "../dataClient";
 import type { NoveltyComparison } from "@shared/types/domain";
 
 export async function createNovelty(item: NoveltyComparison): Promise<void> {
-  const db = await getDB();
-  await db.put("novelty", item);
+  await create("novelty", item as NoveltyComparison & { id: string });
 }
 
 export async function readAllNovelty(): Promise<NoveltyComparison[]> {
-  const db = await getDB();
-  return db.getAll("novelty");
+  return getAll<NoveltyComparison>("novelty");
 }
 
 export async function readNoveltyByCaseId(caseId: string): Promise<NoveltyComparison[]> {
-  const db = await getDB();
-  return db.getAllFromIndex("novelty", "by-caseId", caseId);
+  return query<NoveltyComparison>("novelty", "caseId", caseId);
 }
 
 export async function readNoveltyById(id: string): Promise<NoveltyComparison | undefined> {
-  const db = await getDB();
-  return db.get("novelty", id);
+  const result = await getById<NoveltyComparison>("novelty", id);
+  return result ?? undefined;
 }
 
 export async function updateNovelty(item: NoveltyComparison): Promise<void> {
-  const db = await getDB();
-  await db.put("novelty", item);
+  await update("novelty", item.id, item);
 }
 
 export async function deleteNovelty(id: string): Promise<void> {
-  const db = await getDB();
-  await db.delete("novelty", id);
+  await remove("novelty", id);
 }
 
 export async function deleteNoveltyByCaseId(caseId: string): Promise<void> {
-  const db = await getDB();
-  const items = await db.getAllFromIndex("novelty", "by-caseId", caseId);
+  const items = await query<NoveltyComparison>("novelty", "caseId", caseId);
   for (const item of items) {
-    await db.delete("novelty", item.id);
+    await remove("novelty", item.id);
   }
 }

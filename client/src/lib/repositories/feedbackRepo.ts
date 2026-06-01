@@ -1,27 +1,22 @@
-import { getDB } from "../indexedDb.js";
+import { create, getAll, query, update, remove } from "../dataClient";
 import type { FeedbackItem } from "@shared/types/feedback";
 
 export async function createFeedback(item: FeedbackItem): Promise<void> {
-  const db = await getDB();
-  await db.put("feedback", item);
+  await create("feedback", item as FeedbackItem & { id: string });
 }
 
 export async function readAllFeedback(): Promise<FeedbackItem[]> {
-  const db = await getDB();
-  return db.getAll("feedback");
+  return getAll<FeedbackItem>("feedback");
 }
 
 export async function readFeedbackByCaseId(caseId: string): Promise<FeedbackItem[]> {
-  const db = await getDB();
-  return db.getAllFromIndex("feedback", "by-caseId", caseId);
+  return query<FeedbackItem>("feedback", "caseId", caseId);
 }
 
 export async function updateFeedback(item: FeedbackItem): Promise<void> {
-  const db = await getDB();
-  await db.put("feedback", item);
+  await update("feedback", item.id, item);
 }
 
 export async function deleteFeedback(id: string): Promise<void> {
-  const db = await getDB();
-  await db.delete("feedback", id);
+  await remove("feedback", id);
 }

@@ -1,14 +1,14 @@
-import { getDB } from "../indexedDb.js";
-
-interface LegacyInterpretSummaryRecord {
-  caseId: string;
-  summary: string;
-  updatedAt: string;
-}
+import { create, getById, remove } from "../dataClient";
 
 interface InterpretSummariesRecord {
   caseId: string;
   summaries: Record<string, string>;
+  updatedAt: string;
+}
+
+interface LegacyInterpretSummaryRecord {
+  caseId: string;
+  summary: string;
   updatedAt: string;
 }
 
@@ -18,18 +18,16 @@ export async function saveInterpretSummaries(
   caseId: string,
   summaries: Record<string, string>
 ): Promise<void> {
-  const db = await getDB();
   const record: InterpretSummariesRecord = {
     caseId,
     summaries,
     updatedAt: new Date().toISOString()
   };
-  await db.put("interpretSummaries", record);
+  await create("interpretSummaries", { id: caseId, ...record });
 }
 
 export async function readInterpretSummaries(caseId: string): Promise<Record<string, string>> {
-  const db = await getDB();
-  const record = await db.get("interpretSummaries", caseId) as InterpretSummaryRecord | undefined;
+  const record = await getById<InterpretSummaryRecord>("interpretSummaries", caseId);
   if (!record) return {};
   if ("summaries" in record) {
     return record.summaries;
@@ -38,6 +36,5 @@ export async function readInterpretSummaries(caseId: string): Promise<Record<str
 }
 
 export async function deleteInterpretSummaries(caseId: string): Promise<void> {
-  const db = await getDB();
-  await db.delete("interpretSummaries", caseId);
+  await remove("interpretSummaries", caseId);
 }

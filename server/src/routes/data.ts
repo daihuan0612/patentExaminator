@@ -37,6 +37,34 @@ dataRouter.get("/data/:store", (req, res) => {
   }
 });
 
+/** POST /api/data/:store/query — 按字段过滤记录（内存过滤，适合小数据集） */
+dataRouter.post("/data/:store/query", express.json(), (req, res) => {
+  try {
+    const { store } = req.params;
+    const { field, value } = req.body as { field: string; value: unknown };
+
+    if (!field) {
+      res.status(400).json({ ok: false, error: "Missing 'field'" });
+      return;
+    }
+
+    const db = getSyncDb();
+    const rows = db.prepare("SELECT record_id, data FROM sync_data WHERE store_name = ?").all(store) as Array<{
+      record_id: string;
+      data: string;
+    }>;
+
+    const records = rows
+      .map((row) => ({ id: row.record_id, ...JSON.parse(row.data) }))
+      .filter((record) => record[field] === value);
+
+    res.json({ ok: true, records });
+  } catch (err) {
+    logger.error("Data query error: " + errMsg(err));
+    res.status(500).json({ ok: false, error: errMsg(err) });
+  }
+});
+
 /** GET /api/data/:store/:id — 获取指定记录 */
 dataRouter.get("/data/:store/:id", (req, res) => {
   try {

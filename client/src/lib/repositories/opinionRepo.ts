@@ -1,33 +1,29 @@
-import { getDB } from "../indexedDb.js";
+import { create, query, remove } from "../dataClient";
 import type {
   OfficeActionAnalysis,
   ArgumentMapping
 } from "@shared/types/domain";
 
 /**
- * Save office action analysis to IndexedDB.
+ * Save office action analysis.
  * Uses caseId as the primary key (one analysis per case).
  */
 export async function saveOpinionAnalysis(
   analysis: OfficeActionAnalysis
 ): Promise<void> {
-  const db = await getDB();
-  await db.put("opinionAnalyses", analysis);
+  await create("opinionAnalyses", analysis as OfficeActionAnalysis & { id: string });
 }
 
 /**
- * Read office action analysis for a case from IndexedDB.
+ * Read office action analysis for a case.
  * Returns null if no analysis exists for the case.
  */
 export async function readOpinionAnalysis(
   caseId: string
 ): Promise<OfficeActionAnalysis | null> {
-  const db = await getDB();
-  const analyses = await db.getAllFromIndex("opinionAnalyses", "by-caseId", caseId);
-  // Return the most recent one if multiple exist
+  const analyses = await query<OfficeActionAnalysis>("opinionAnalyses", "caseId", caseId);
   if (analyses.length === 0) return null;
-  // Sort by createdAt descending and return the latest
-  analyses.sort((a, b) => 
+  analyses.sort((a, b) =>
     new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
   return analyses[0] ?? null;
@@ -37,44 +33,40 @@ export async function readOpinionAnalysis(
  * Delete office action analysis for a case.
  */
 export async function deleteOpinionAnalysis(caseId: string): Promise<void> {
-  const db = await getDB();
-  const analyses = await db.getAllFromIndex("opinionAnalyses", "by-caseId", caseId);
+  const analyses = await query<OfficeActionAnalysis>("opinionAnalyses", "caseId", caseId);
   for (const analysis of analyses) {
-    await db.delete("opinionAnalyses", analysis.id);
+    await remove("opinionAnalyses", analysis.id);
   }
 }
 
 /**
- * Save argument mappings to IndexedDB.
+ * Save argument mappings.
  * Clears existing mappings for the case before saving new ones.
  */
 export async function saveArgumentMappings(
   mappings: ArgumentMapping[]
 ): Promise<void> {
-  const db = await getDB();
   for (const mapping of mappings) {
-    await db.put("argumentMappings", mapping);
+    await create("argumentMappings", mapping as ArgumentMapping & { id: string });
   }
 }
 
 /**
- * Read argument mappings for a case from IndexedDB.
+ * Read argument mappings for a case.
  */
 export async function readArgumentMappings(
   caseId: string
 ): Promise<ArgumentMapping[]> {
-  const db = await getDB();
-  return db.getAllFromIndex("argumentMappings", "by-caseId", caseId);
+  return query<ArgumentMapping>("argumentMappings", "caseId", caseId);
 }
 
 /**
  * Delete all argument mappings for a case.
  */
 export async function deleteArgumentMappings(caseId: string): Promise<void> {
-  const db = await getDB();
-  const mappings = await db.getAllFromIndex("argumentMappings", "by-caseId", caseId);
+  const mappings = await query<ArgumentMapping>("argumentMappings", "caseId", caseId);
   for (const mapping of mappings) {
-    await db.delete("argumentMappings", mapping.id);
+    await remove("argumentMappings", mapping.id);
   }
 }
 

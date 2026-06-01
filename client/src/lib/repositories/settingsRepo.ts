@@ -1,4 +1,4 @@
-import { getById, create } from "../dataClient.js";
+import { getById, create, clearStore } from "../dataClient.js";
 import type { AppSettings } from "@shared/types/agents";
 import { waitForServerReady } from "../serverReady";
 import { createLogger } from "../logger";
@@ -183,10 +183,5 @@ const ALL_STORES = [
 ] as const;
 
 export async function clearAllLocalData(): Promise<void> {
-  const db = await getDB();
-  const tx = db.transaction([...ALL_STORES], "readwrite");
-  await Promise.all([
-    ...ALL_STORES.map((store) => tx.objectStore(store).clear()),
-    tx.done
-  ]);
+  await Promise.all(ALL_STORES.map((store) => clearStore(store)));
 }

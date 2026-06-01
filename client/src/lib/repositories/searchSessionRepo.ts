@@ -1,24 +1,20 @@
-import { getDB } from "../indexedDb";
+import { create, query, update, remove } from "../dataClient";
 import type { SearchSession } from "@shared/types/domain";
 
 export async function createSearchSession(session: SearchSession): Promise<void> {
-  const db = await getDB();
-  await db.put("searchSessions", session);
+  await create("searchSessions", session as SearchSession & { id: string });
 }
 
 export async function getSearchSessionsByCaseId(caseId: string): Promise<SearchSession[]> {
-  const db = await getDB();
-  return db.getAllFromIndex("searchSessions", "by-caseId", caseId);
+  return query<SearchSession>("searchSessions", "caseId", caseId);
 }
 
 export async function updateSearchSession(session: SearchSession): Promise<void> {
-  const db = await getDB();
-  await db.put("searchSessions", { ...session, updatedAt: new Date().toISOString() });
+  await update("searchSessions", session.id, { ...session, updatedAt: new Date().toISOString() });
 }
 
 export async function deleteSearchSession(id: string): Promise<void> {
-  const db = await getDB();
-  await db.delete("searchSessions", id);
+  await remove("searchSessions", id);
 }
 
 export async function getLatestSearchSession(caseId: string): Promise<SearchSession | undefined> {

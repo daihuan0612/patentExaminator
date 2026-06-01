@@ -1,7 +1,8 @@
 /**
- * 知识库 Repository — IndexedDB CRUD 操作
+ * 知识库 Repository — dataClient CRUD 操作
+ * B-034: 从 IndexedDB 迁移到 dataClient API
  */
-import { getDB } from "../indexedDb";
+import { getAll, getById, create, update, remove, clearStore, query } from "../dataClient";
 import type { KnowledgeSource, KnowledgeChunk, KnowledgeVector } from "@shared/types/knowledge";
 import { createLogger } from "../logger";
 
@@ -10,19 +11,17 @@ const log = createLogger("KnowledgeRepo");
 // ── KnowledgeSource ──────────────────────────────────
 
 export async function addSource(source: KnowledgeSource): Promise<void> {
-  const db = await getDB();
-  await db.put("knowledgeSources", source);
+  await create("knowledgeSources", source as KnowledgeSource & { id: string });
   log(`Added source: ${source.id} (${source.name})`);
 }
 
 export async function getSource(id: string): Promise<KnowledgeSource | undefined> {
-  const db = await getDB();
-  return db.get("knowledgeSources", id);
+  const result = await getById<KnowledgeSource>("knowledgeSources", id);
+  return result ?? undefined;
 }
 
 export async function getAllSources(): Promise<KnowledgeSource[]> {
-  const db = await getDB();
-  return db.getAll("knowledgeSources");
+  return getAll<KnowledgeSource>("knowledgeSources");
 }
 
 /** 分页获取 chunk */
@@ -30,8 +29,7 @@ export async function getChunksPaginated(
   offset: number = 0,
   limit: number = 50
 ): Promise<{ chunks: KnowledgeChunk[]; total: number }> {
-  const db = await getDB();
-  const all = await db.getAll("knowledgeChunks");
+  const all = await getAll<KnowledgeChunk>("knowledgeChunks");
   return {
     chunks: all.slice(offset, offset + limit),
     total: all.length,
@@ -40,104 +38,76 @@ export async function getChunksPaginated(
 
 /** 获取所有 chunk（用于 BM25 检索） */
 export async function getAllChunks(): Promise<KnowledgeChunk[]> {
-  const db = await getDB();
-  return db.getAll("knowledgeChunks");
+  return getAll<KnowledgeChunk>("knowledgeChunks");
 }
 
 export async function deleteSource(id: string): Promise<void> {
-  const db = await getDB();
   // 删除关联的 chunks 和 vectors
-  const chunks = await db.getAllFromIndex("knowledgeChunks", "by-sourceId", id);
+  const chunks = await query<KnowledgeChunk>("knowledgeChunks", "sourceId", id);
   for (const chunk of chunks) {
-    await db.delete("knowledgeVectors", chunk.id);
+    await remove("knowledgeVectors", chunk.id);
+    await remove("knowledgeChunks", chunk.id);
   }
-  await db.delete("knowledgeSources", id);
-  // 删除关联的 chunks
-  const tx = db.transaction("knowledgeChunks", "readwrite");
-  const index = tx.store.index("by-sourceId");
-  let cursor = await index.openCursor(id);
-  while (cursor) {
-    await cursor.delete();
-    cursor = await cursor.continue();
-  }
-  await tx.done;
+  await remove("knowledgeSources", id);
   log(`Deleted source: ${id}`);
 }
 
 // ── KnowledgeChunk ───────────────────────────────────
 
 export async function addChunks(chunks: KnowledgeChunk[]): Promise<void> {
-  const db = await getDB();
-  const tx = db.transaction("knowledgeChunks", "readwrite");
   for (const chunk of chunks) {
-    await tx.store.put(chunk);
+    await create("knowledgeChunks", chunk as KnowledgeChunk & { id: string });
   }
-  await tx.done;
   log(`Added ${chunks.length} chunks`);
 }
 
 export async function getChunksBySource(sourceId: string): Promise<KnowledgeChunk[]> {
-  const db = await getDB();
-  return db.getAllFromIndex("knowledgeChunks", "by-sourceId", sourceId);
+  return query<KnowledgeChunk>("knowledgeChunks", "sourceId", sourceId);
 }
 
 export async function getUnembeddedChunks(): Promise<KnowledgeChunk[]> {
-  const db = await getDB();
-  const all = await db.getAll("knowledgeChunks");
+  const all = await getAll<KnowledgeChunk>("knowledgeChunks");
   return all.filter((c) => !c.embedded);
 }
 
 export async function markChunkEmbedded(chunkId: string): Promise<void> {
-  const db = await getDB();
-  const chunk = await db.get("knowledgeChunks", chunkId);
+  const chunk = await getById<KnowledgeChunk>("knowledgeChunks", chunkId);
   if (chunk) {
     chunk.embedded = true;
-    await db.put("knowledgeChunks", chunk);
+    await update("knowledgeChunks", chunkId, chunk);
   }
 }
 
 export async function deleteChunksBySource(sourceId: string): Promise<void> {
-  const db = await getDB();
-  const tx = db.transaction("knowledgeChunks", "readwrite");
-  const index = tx.store.index("by-sourceId");
-  let cursor = await index.openCursor(sourceId);
-  while (cursor) {
-    await cursor.delete();
-    cursor = await cursor.continue();
+  const chunks = await query<KnowledgeChunk>("knowledgeChunks", "sourceId", sourceId);
+  for (const chunk of chunks) {
+    await remove("knowledgeChunks", chunk.id);
   }
-  await tx.done;
 }
 
 // ── KnowledgeVector ──────────────────────────────────
 
 export async function addVectors(vectors: KnowledgeVector[]): Promise<void> {
-  const db = await getDB();
-  const tx = db.transaction("knowledgeVectors", "readwrite");
   for (const vec of vectors) {
-    await tx.store.put(vec);
+    await create("knowledgeVectors", vec as KnowledgeVector & { id: string });
   }
-  await tx.done;
   log(`Added ${vectors.length} vectors`);
 }
 
 export async function getVector(chunkId: string): Promise<KnowledgeVector | undefined> {
-  const db = await getDB();
-  return db.get("knowledgeVectors", chunkId);
+  const result = await getById<KnowledgeVector>("knowledgeVectors", chunkId);
+  return result ?? undefined;
 }
 
 export async function getAllVectors(): Promise<KnowledgeVector[]> {
-  const db = await getDB();
-  return db.getAll("knowledgeVectors");
+  return getAll<KnowledgeVector>("knowledgeVectors");
 }
 
 export async function deleteVectorsBySource(sourceId: string): Promise<void> {
-  const db = await getDB();
-  const chunks = await db.getAllFromIndex("knowledgeChunks", "by-sourceId", sourceId);
-  const tx = db.transaction("knowledgeVectors", "readwrite");
+  const chunks = await query<KnowledgeChunk>("knowledgeChunks", "sourceId", sourceId);
   for (const chunk of chunks) {
-    await tx.store.delete(chunk.id);
+    await remove("knowledgeVectors", chunk.id);
   }
-  await tx.done;
 }
 
 // ── 统计 ─────────────────────────────────────────────
@@ -147,11 +117,10 @@ export async function getKnowledgeStats(): Promise<{
   chunkCount: number;
   embeddedCount: number;
 }> {
-  const db = await getDB();
-  const sources = await db.count("knowledgeSources");
-  const chunks = await db.count("knowledgeChunks");
-  const vectors = await db.count("knowledgeVectors");
-  return { sourceCount: sources, chunkCount: chunks, embeddedCount: vectors };
+  const sources = await getAll<KnowledgeSource>("knowledgeSources");
+  const chunks = await getAll<KnowledgeChunk>("knowledgeChunks");
+  const vectors = await getAll<KnowledgeVector>("knowledgeVectors");
+  return { sourceCount: sources.length, chunkCount: chunks.length, embeddedCount: vectors.length };
 }
 
 // ── 一致性校验 ─────────────────────────────────────────
@@ -164,9 +133,8 @@ export interface ConsistencyReport {
 
 /** 检查 chunk 和 vector 的一致性 */
 export async function checkConsistency(): Promise<ConsistencyReport> {
-  const db = await getDB();
-  const chunks = await db.getAll("knowledgeChunks");
-  const vectors = await db.getAll("knowledgeVectors");
+  const chunks = await getAll<KnowledgeChunk>("knowledgeChunks");
+  const vectors = await getAll<KnowledgeVector>("knowledgeVectors");
 
   const chunkIds = new Set(chunks.map((c) => c.id));
   const vectorIds = new Set(vectors.map((v) => v.chunkId));
@@ -186,12 +154,9 @@ export async function fixConsistency(): Promise<ConsistencyReport> {
   const report = await checkConsistency();
   if (report.isConsistent) return report;
 
-  const db = await getDB();
-  const tx = db.transaction("knowledgeVectors", "readwrite");
   for (const vectorId of report.orphanedVectors) {
-    await tx.store.delete(vectorId);
+    await remove("knowledgeVectors", vectorId);
   }
-  await tx.done;
 
   log(`Fixed consistency: removed ${report.orphanedVectors.length} orphaned vectors`);
   return { ...report, orphanedVectors: [], isConsistent: report.orphanedChunks.length === 0 };
@@ -204,7 +169,6 @@ export async function generateSourceSummary(sourceId: string): Promise<string> {
   const chunks = await getChunksBySource(sourceId);
   if (chunks.length === 0) return "";
 
-  // 取前 3 个 chunk 的前 200 字作为摘要
   const summaryParts = chunks
     .slice(0, 3)
     .map((c) => c.text.slice(0, 200))
@@ -237,20 +201,19 @@ export interface StorageEstimate {
 
 /** 估算知识库存储占用 */
 export async function estimateStorage(): Promise<StorageEstimate> {
-  const db = await getDB();
-  const sources = await db.getAll("knowledgeSources");
-  const chunks = await db.getAll("knowledgeChunks");
-  const vectors = await db.getAll("knowledgeVectors");
+  const sources = await getAll<KnowledgeSource>("knowledgeSources");
+  const chunks = await getAll<KnowledgeChunk>("knowledgeChunks");
+  const vectors = await getAll<KnowledgeVector>("knowledgeVectors");
 
   let totalBytes = 0;
   for (const chunk of chunks) {
-    totalBytes += chunk.text.length * 3; // UTF-8 中文约 3 字节/字符
+    totalBytes += chunk.text.length * 3;
   }
   for (const vec of vectors) {
-    totalBytes += vec.vector.length * 8; // float64 = 8 bytes
+    totalBytes += vec.vector.length * 8;
   }
   for (const _source of sources) {
-    totalBytes += 500; // 元数据约 500 字节
+    totalBytes += 500;
   }
 
   return {
@@ -281,7 +244,6 @@ export async function detectConflicts(
   const reports: ConflictReport[] = [];
 
   for (const ex of existing) {
-    // 同名文件
     if (ex.name === newSource.name && ex.fileHash !== newSource.fileHash) {
       reports.push({
         sourceId: ex.id,
@@ -292,7 +254,6 @@ export async function detectConflicts(
       });
     }
 
-    // 同类别文件（如两个审查指南）
     const existingChunks = await getChunksBySource(ex.id);
     const existingCategory = existingChunks[0]?.metadata.documentCategory;
     if (existingCategory && existingCategory !== "其他") {
@@ -353,7 +314,7 @@ export async function restoreFromBackup(file: File): Promise<{
 
 // ── 浏览器兼容 ────────────────────────────────────────
 
-/** 检查 IndexedDB 可用性和存储配额 */
+/** 检查存储配额 */
 export async function checkStorageQuota(): Promise<{
   available: boolean;
   usage: number;
@@ -362,11 +323,6 @@ export async function checkStorageQuota(): Promise<{
   warning: string | null;
 }> {
   try {
-    // 检查 IndexedDB 是否可用
-    const db = await getDB();
-    void db; // 验证能打开
-
-    // 检查存储配额
     if (navigator.storage && navigator.storage.estimate) {
       const estimate = await navigator.storage.estimate();
       const usage = estimate.usage ?? 0;
@@ -375,10 +331,9 @@ export async function checkStorageQuota(): Promise<{
       const warning = usage / quota > 0.8 ? "存储空间使用超过 80%，建议清理旧数据" : null;
       return { available: true, usage, quota, usagePercent: percent, warning };
     }
-
     return { available: true, usage: 0, quota: 0, usagePercent: "未知", warning: null };
   } catch {
-    return { available: false, usage: 0, quota: 0, usagePercent: "0", warning: "IndexedDB 不可用" };
+    return { available: false, usage: 0, quota: 0, usagePercent: "0", warning: "存储不可用" };
   }
 }
 
@@ -394,10 +349,9 @@ export interface KnowledgeExportData {
 
 /** 导出全部知识库数据为 JSON */
 export async function exportKnowledge(): Promise<KnowledgeExportData> {
-  const db = await getDB();
-  const sources = await db.getAll("knowledgeSources");
-  const chunks = await db.getAll("knowledgeChunks");
-  const vectors = await db.getAll("knowledgeVectors");
+  const sources = await getAll<KnowledgeSource>("knowledgeSources");
+  const chunks = await getAll<KnowledgeChunk>("knowledgeChunks");
+  const vectors = await getAll<KnowledgeVector>("knowledgeVectors");
   return { version: 1, exportedAt: new Date().toISOString(), sources, chunks, vectors };
 }
 
@@ -407,42 +361,33 @@ export async function importKnowledge(data: KnowledgeExportData): Promise<{
   importedChunks: number;
   importedVectors: number;
 }> {
-  const db = await getDB();
-
-  // 获取已有 ID
-  const existingSources = new Set((await db.getAll("knowledgeSources")).map((s) => s.id));
-  const existingChunks = new Set((await db.getAll("knowledgeChunks")).map((c) => c.id));
-  const existingVectors = new Set((await db.getAll("knowledgeVectors")).map((v) => v.chunkId));
+  const existingSources = new Set((await getAll<KnowledgeSource>("knowledgeSources")).map((s) => s.id));
+  const existingChunks = new Set((await getAll<KnowledgeChunk>("knowledgeChunks")).map((c) => c.id));
+  const existingVectors = new Set((await getAll<KnowledgeVector>("knowledgeVectors")).map((v) => v.chunkId));
 
   let importedSources = 0;
   let importedChunks = 0;
   let importedVectors = 0;
 
-  const tx = db.transaction(
-    ["knowledgeSources", "knowledgeChunks", "knowledgeVectors"],
-    "readwrite"
-  );
-
   for (const source of data.sources) {
     if (!existingSources.has(source.id)) {
-      await tx.objectStore("knowledgeSources").put(source);
+      await create("knowledgeSources", source as KnowledgeSource & { id: string });
       importedSources++;
     }
   }
   for (const chunk of data.chunks) {
     if (!existingChunks.has(chunk.id)) {
-      await tx.objectStore("knowledgeChunks").put(chunk);
+      await create("knowledgeChunks", chunk as KnowledgeChunk & { id: string });
       importedChunks++;
     }
   }
   for (const vec of data.vectors) {
     if (!existingVectors.has(vec.chunkId)) {
-      await tx.objectStore("knowledgeVectors").put(vec);
+      await create("knowledgeVectors", vec as KnowledgeVector & { id: string });
       importedVectors++;
     }
   }
 
-  await tx.done;
   log(`Imported: ${importedSources} sources, ${importedChunks} chunks, ${importedVectors} vectors`);
   return { importedSources, importedChunks, importedVectors };
 }
@@ -450,14 +395,8 @@ export async function importKnowledge(data: KnowledgeExportData): Promise<{
 // ── 清空 ─────────────────────────────────────────────
 
 export async function clearAllKnowledge(): Promise<void> {
-  const db = await getDB();
-  const tx = db.transaction(
-    ["knowledgeSources", "knowledgeChunks", "knowledgeVectors"],
-    "readwrite"
-  );
-  await tx.objectStore("knowledgeSources").clear();
-  await tx.objectStore("knowledgeChunks").clear();
-  await tx.objectStore("knowledgeVectors").clear();
-  await tx.done;
+  await clearStore("knowledgeSources");
+  await clearStore("knowledgeChunks");
+  await clearStore("knowledgeVectors");
   log("Cleared all knowledge data");
 }

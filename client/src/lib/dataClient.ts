@@ -13,6 +13,18 @@ export async function getAll<T>(store: string): Promise<T[]> {
   return data.records;
 }
 
+/** 按字段过滤记录 */
+export async function query<T>(store: string, field: string, value: unknown): Promise<T[]> {
+  const res = await fetch(`${API_BASE}/${store}/query`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ field, value }),
+  });
+  if (!res.ok) throw new Error(`Failed to query ${store}: ${res.status}`);
+  const data = await res.json() as { ok: boolean; records: T[] };
+  return data.records;
+}
+
 /** 获取指定记录 */
 export async function getById<T>(store: string, id: string): Promise<T | null> {
   const res = await fetch(`${API_BASE}/${store}/${id}`);
