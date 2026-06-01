@@ -37,7 +37,7 @@ function errMsg(err: unknown): string {
 
 let embedder: { embed: (texts: string[]) => Promise<number[][]>; modelId: string } | null = null;
 
-async function getEmbedder() {
+export async function getEmbedder() {
   if (embedder) return embedder;
 
   logger.info("Loading embedding model...");
@@ -259,6 +259,10 @@ knowledgeRouter.post("/knowledge/upload", upload.single("file"), async (req, res
 
     // Step 5: 向量化（分批报告进度）
     if (chunks.length > 0) {
+      // 首次使用时模型需要加载，通过 SSE 通知客户端
+      if (!embedder) {
+        sendEvent({ step: "loading-model", message: "首次使用，正在加载 AI 模型（约 400MB）..." });
+      }
       sendEvent({ step: "embedding", message: `向量化 ${chunks.length} 条知识...`, total: chunks.length });
       const emb = await getEmbedder();
       const batchSize = 5;

@@ -92,7 +92,7 @@ function shutdown() {
   server.closeAllConnections?.();
   server.close(() => process.exit(0));
   // Force exit if graceful close stalls (e.g. keep-alive connections)
-  setTimeout(() => process.exit(1), 1000).unref();
+  setTimeout(() => process.exit(1), 500).unref();
 }
 
 process.on("SIGINT", shutdown);
