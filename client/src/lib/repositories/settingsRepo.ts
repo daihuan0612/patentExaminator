@@ -1,4 +1,4 @@
-import { getDB } from "../indexedDb.js";
+import { getById, create } from "../dataClient.js";
 import type { AppSettings } from "@shared/types/agents";
 import { waitForServerReady } from "../serverReady";
 import { createLogger } from "../logger";
@@ -83,10 +83,9 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 export async function readSettings(): Promise<AppSettings> {
-  // Try IndexedDB first
+  // Try server first
   try {
-    const db = await getDB();
-    const stored = await db.get("settings", SETTINGS_ID);
+    const stored = await getById<AppSettings & { id: string }>("settings", SETTINGS_ID);
     if (stored) {
       // 保留所有存储的字段，只对缺失字段设默认值
       const result: AppSettings = {
@@ -99,7 +98,7 @@ export async function readSettings(): Promise<AppSettings> {
       return result;
     }
   } catch (e) {
-    log("IndexedDB read failed, trying localStorage:", e);
+    log("Server read failed, trying localStorage:", e);
   }
 
   // Fallback: try localStorage
@@ -117,12 +116,11 @@ export async function writeSettings(settings: AppSettings): Promise<void> {
   // Always write to localStorage as backup
   try { localStorage.setItem(LS_KEY, JSON.stringify(settings)); } catch { /* ignore */ }
 
-  // Write to IndexedDB
+  // Write to server
   try {
-    const db = await getDB();
-    await db.put("settings", { ...settings, id: SETTINGS_ID });
+    await create("settings", { ...settings, id: SETTINGS_ID });
   } catch (e) {
-    log("IndexedDB write failed, settings saved to localStorage only:", e);
+    log("Server write failed, settings saved to localStorage only:", e);
   }
 }
 

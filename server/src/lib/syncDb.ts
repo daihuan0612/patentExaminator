@@ -1,6 +1,7 @@
 /**
  * 服务器端同步数据库 — SQLite 单文件存储
  * 用于跨设备数据同步，无认证，单用户场景
+ * MIGRATE-001: 主存储从 IndexedDB 迁移到 SQLite
  */
 import Database from "better-sqlite3";
 import path from "path";
@@ -38,15 +39,6 @@ export function getSyncDb(): Database.Database {
     CREATE TABLE IF NOT EXISTS sync_meta (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS sync_files (
-      file_id TEXT PRIMARY KEY,
-      file_name TEXT NOT NULL,
-      file_type TEXT NOT NULL,
-      file_size INTEGER NOT NULL,
-      file_path TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
 

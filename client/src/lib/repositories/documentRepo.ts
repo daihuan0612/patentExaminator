@@ -1,32 +1,28 @@
-import { getDB } from "../indexedDb.js";
+import { create, getAll, getById, update, remove } from "../dataClient.js";
 import type { SourceDocument } from "@shared/types/domain";
 
 export async function createDocument(item: SourceDocument): Promise<void> {
-  const db = await getDB();
-  await db.put("documents", item);
+  await create("documents", item);
 }
 
 export async function readAllDocuments(): Promise<SourceDocument[]> {
-  const db = await getDB();
-  return db.getAll("documents");
+  return getAll<SourceDocument>("documents");
 }
 
 export async function readDocumentsByCaseId(caseId: string): Promise<SourceDocument[]> {
-  const db = await getDB();
-  return db.getAllFromIndex("documents", "by-caseId", caseId);
+  const docs = await getAll<SourceDocument>("documents");
+  return docs.filter((d) => d.caseId === caseId);
 }
 
 export async function readDocumentById(id: string): Promise<SourceDocument | undefined> {
-  const db = await getDB();
-  return db.get("documents", id);
+  const result = await getById<SourceDocument>("documents", id);
+  return result ?? undefined;
 }
 
 export async function updateDocument(item: SourceDocument): Promise<void> {
-  const db = await getDB();
-  await db.put("documents", item);
+  await update("documents", item.id, item);
 }
 
 export async function deleteDocument(id: string): Promise<void> {
-  const db = await getDB();
-  await db.delete("documents", id);
+  await remove("documents", id);
 }
