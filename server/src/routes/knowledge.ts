@@ -18,6 +18,8 @@ import {
   getStats,
   clearAll,
   findDuplicateByHash,
+  computeTextHash,
+  findChunksByHashes,
 } from "../lib/knowledgeDb.js";
 import { extractText, extractFromUrl } from "../lib/knowledgeExtract.js";
 import { logger } from "../lib/logger.js";
@@ -377,17 +379,62 @@ knowledgeRouter.post("/knowledge/upload", upload.single("file"), async (req, res
     }));
     addChunks(chunks);
 
-    // Step 5/5: 向量化（分批报告进度）
+    // Step 5/5: 向量化（全局队列 + 断点续传 + 批处理优化）
     if (chunks.length > 0) {
       if (!embedder) {
         sendEvent({ step: "loading-model", stepNum: 5, totalSteps: TOTAL_STEPS, message: "首次使用，正在加载 AI 模型（约 400MB）..." });
       }
       sendEvent({ step: "embedding", stepNum: 5, totalSteps: TOTAL_STEPS, message: `向量化 ${chunks.length} 条知识...`, total: chunks.length });
       const emb = await getEmbedder();
-      const batchSize = 20; // 批量处理，显著提升速度
 
-      for (let i = 0; i < chunks.length; i += batchSize) {
-        const batch = chunks.slice(i, i + batchSize);
+      // B-033 优化：断点续传 — 跳过已有 embedding 的 chunk
+      const chunkHashes = chunks.map((c) => computeTextHash(c.text));
+      const existingEmbeddings = findChunksByHashes(chunkHashes);
+
+      const chunksToEmbed: typeof chunks = [];
+      let skippedCount = 0;
+
+      for (let i = 0; i < chunks.length; i++) {
+        const hash = chunkHashes[i]!;
+        const existing = existingEmbeddings.get(hash);
+        if (existing) {
+          // 断点续传：复用已有 embedding
+          addVectors([{ chunkId: chunks[i]!.id, vector: existing.vector, modelId: emb.modelId }]);
+          markChunkEmbedded(chunks[i]!.id);
+          skippedCount++;
+        } else {
+          chunksToEmbed.push(chunks[i]!);
+        }
+      }
+
+      if (skippedCount > 0) {
+        logger.info(`[Embedding] 断点续传：跳过 ${skippedCount} 个已有 embedding 的 chunk`);
+        sendEvent({ step: "embedding", stepNum: 5, totalSteps: TOTAL_STEPS, message: `断点续传跳过 ${skippedCount} 条，剩余 ${chunksToEmbed.length} 条需向量化`, total: chunks.length, skipped: skippedCount });
+      }
+
+      // B-033 优化：过滤过短 chunk（<50 字）减少无效计算
+      const MIN_CHUNK_LENGTH = 50;
+      const validChunks = chunksToEmbed.filter((c) => c.text.length >= MIN_CHUNK_LENGTH);
+      const shortChunkCount = chunksToEmbed.length - validChunks.length;
+
+      if (shortChunkCount > 0) {
+        logger.info(`[Embedding] 过滤 ${shortChunkCount} 个过短 chunk（<${MIN_CHUNK_LENGTH} 字）`);
+        // 过短 chunk 标记为已嵌入（避免下次重复处理）
+        for (const chunk of chunksToEmbed) {
+          if (chunk.text.length < MIN_CHUNK_LENGTH) {
+            markChunkEmbedded(chunk.id);
+          }
+        }
+      }
+
+      // B-033 优化：全局队列 + 大 batch + 长度排序
+      const BATCH_SIZE = 100; // 从 20 增大到 100，减少推理批次 5x
+
+      // 按文本长度排序（短文本优先填满 batch，减少 padding 浪费 10-20%）
+      const sortedChunks = [...validChunks].sort((a, b) => a.text.length - b.text.length);
+
+      for (let i = 0; i < sortedChunks.length; i += BATCH_SIZE) {
+        const batch = sortedChunks.slice(i, i + BATCH_SIZE);
         const texts = batch.map((c) => c.text);
         const vectors = await emb.embed(texts);
         const vectorRecords = batch.map((c, j) => ({
@@ -399,7 +446,15 @@ knowledgeRouter.post("/knowledge/upload", upload.single("file"), async (req, res
         for (const chunk of batch) {
           markChunkEmbedded(chunk.id);
         }
-        sendEvent({ step: "embedding", stepNum: 5, totalSteps: TOTAL_STEPS, progress: Math.min(i + batchSize, chunks.length), total: chunks.length });
+        sendEvent({
+          step: "embedding",
+          stepNum: 5,
+          totalSteps: TOTAL_STEPS,
+          progress: Math.min(i + BATCH_SIZE, sortedChunks.length),
+          total: sortedChunks.length,
+          skipped: skippedCount,
+          filtered: shortChunkCount,
+        });
       }
     }
 
@@ -452,6 +507,7 @@ knowledgeRouter.post("/knowledge/import-url", express.json(), async (req, res) =
       type: "url",
       format: "html",
       mediaType: "text",
+      size: extraction.text.length,
       sourceUrl: url,
       chunkCount: filteredChunks.length,
       embedStatus: "processing",
@@ -467,11 +523,65 @@ knowledgeRouter.post("/knowledge/import-url", express.json(), async (req, res) =
     }));
     addChunks(chunks);
 
+    // B-033 优化：断点续传 + 批处理优化
     if (chunks.length > 0) {
       const emb = await getEmbedder();
-      const vectors = await emb.embed(chunks.map((c) => c.text));
-      addVectors(chunks.map((c, i) => ({ chunkId: c.id, vector: vectors[i]!, modelId: emb.modelId })));
-      for (const c of chunks) markChunkEmbedded(c.id);
+
+      // 断点续传：跳过已有 embedding 的 chunk
+      const chunkHashes = chunks.map((c) => computeTextHash(c.text));
+      const existingEmbeddings = findChunksByHashes(chunkHashes);
+
+      const chunksToEmbed: typeof chunks = [];
+      let skippedCount = 0;
+
+      for (let i = 0; i < chunks.length; i++) {
+        const hash = chunkHashes[i]!;
+        const existing = existingEmbeddings.get(hash);
+        if (existing) {
+          addVectors([{ chunkId: chunks[i]!.id, vector: existing.vector, modelId: emb.modelId }]);
+          markChunkEmbedded(chunks[i]!.id);
+          skippedCount++;
+        } else {
+          chunksToEmbed.push(chunks[i]!);
+        }
+      }
+
+      if (skippedCount > 0) {
+        logger.info(`[Embedding] URL 断点续传：跳过 ${skippedCount} 个已有 embedding 的 chunk`);
+      }
+
+      // 过滤过短 chunk（<50 字）
+      const MIN_CHUNK_LENGTH = 50;
+      const validChunks = chunksToEmbed.filter((c) => c.text.length >= MIN_CHUNK_LENGTH);
+      const shortChunkCount = chunksToEmbed.length - validChunks.length;
+
+      if (shortChunkCount > 0) {
+        logger.info(`[Embedding] URL 过滤 ${shortChunkCount} 个过短 chunk（<${MIN_CHUNK_LENGTH} 字）`);
+        for (const chunk of chunksToEmbed) {
+          if (chunk.text.length < MIN_CHUNK_LENGTH) {
+            markChunkEmbedded(chunk.id);
+          }
+        }
+      }
+
+      // 大 batch + 长度排序
+      const BATCH_SIZE = 100;
+      const sortedChunks = [...validChunks].sort((a, b) => a.text.length - b.text.length);
+
+      for (let i = 0; i < sortedChunks.length; i += BATCH_SIZE) {
+        const batch = sortedChunks.slice(i, i + BATCH_SIZE);
+        const texts = batch.map((c) => c.text);
+        const vectors = await emb.embed(texts);
+        const vectorRecords = batch.map((c, j) => ({
+          chunkId: c.id,
+          vector: vectors[j]!,
+          modelId: emb.modelId,
+        }));
+        addVectors(vectorRecords);
+        for (const chunk of batch) {
+          markChunkEmbedded(chunk.id);
+        }
+      }
     }
 
     res.json({ ok: true, sourceId, chunkCount: chunks.length, message: `✅ ${url} — ${chunks.length} 条知识已入库` });

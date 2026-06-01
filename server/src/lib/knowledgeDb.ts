@@ -4,6 +4,7 @@
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import { logger } from "./logger.js";
 
 const DATA_DIR = path.resolve(process.cwd(), "data");
@@ -46,6 +47,7 @@ export function getKnowledgeDb(): Database.Database {
       strategy TEXT DEFAULT 'auto',
       metadata TEXT DEFAULT '{}',
       embedded INTEGER DEFAULT 0,
+      text_hash TEXT,
       created_at TEXT NOT NULL,
       FOREIGN KEY (source_id) REFERENCES kb_sources(id) ON DELETE CASCADE
     );
@@ -58,6 +60,28 @@ export function getKnowledgeDb(): Database.Database {
       FOREIGN KEY (chunk_id) REFERENCES kb_chunks(id) ON DELETE CASCADE
     );
   `);
+
+  // 增量升级：为旧数据库添加 text_hash 列
+  const columns = db.prepare("PRAGMA table_info(kb_chunks)").all() as Array<{ name: string }>;
+  const hasTextHash = columns.some((col) => col.name === "text_hash");
+  if (!hasTextHash) {
+    logger.info("[KnowledgeDB] Adding text_hash column to kb_chunks");
+    db.exec("ALTER TABLE kb_chunks ADD COLUMN text_hash TEXT");
+    // 为现有 chunk 计算 hash（使用 Node.js crypto，因为 SQLite 可能没有 md5 函数）
+    const rows = db.prepare("SELECT id, text FROM kb_chunks WHERE text_hash IS NULL").all() as Array<{ id: string; text: string }>;
+    const updateStmt = db.prepare("UPDATE kb_chunks SET text_hash = ? WHERE id = ?");
+    const tx = db.transaction(() => {
+      for (const row of rows) {
+        const hash = computeTextHash(row.text);
+        updateStmt.run(hash, row.id);
+      }
+    });
+    tx();
+    logger.info(`[KnowledgeDB] text_hash column added and populated for ${rows.length} chunks`);
+  }
+
+  // 创建 text_hash 索引以加速断点续传查询
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_text_hash ON kb_chunks(text_hash)`);
 
   logger.info(`Knowledge DB initialized at ${DB_PATH}`);
   return db;
@@ -117,16 +141,52 @@ export function addChunks(chunks: Array<{
 }>): void {
   const db = getKnowledgeDb();
   const stmt = db.prepare(`INSERT OR REPLACE INTO kb_chunks
-    (id, source_id, idx, text, strategy, metadata, embedded, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, 0, ?)`);
+    (id, source_id, idx, text, strategy, metadata, embedded, text_hash, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`);
   const now = new Date().toISOString();
   const tx = db.transaction(() => {
     for (const chunk of chunks) {
+      const textHash = computeTextHash(chunk.text);
       stmt.run(chunk.id, chunk.sourceId, chunk.index, chunk.text,
-        chunk.strategy, JSON.stringify(chunk.metadata), now);
+        chunk.strategy, JSON.stringify(chunk.metadata), textHash, now);
     }
   });
   tx();
+}
+
+/** 计算文本的 MD5 hash（用于断点续传） */
+export function computeTextHash(text: string): string {
+  return crypto.createHash("md5").update(text).digest("hex");
+}
+
+/** 根据 text_hash 批量查找已存在的 chunk（断点续传） */
+export function findChunksByHashes(hashes: string[]): Map<string, { chunkId: string; vector: number[] }> {
+  const db = getKnowledgeDb();
+  const result = new Map<string, { chunkId: string; vector: number[] }>();
+
+  if (hashes.length === 0) return result;
+
+  // 批量查询，每批 100 个
+  const batchSize = 100;
+  for (let i = 0; i < hashes.length; i += batchSize) {
+    const batch = hashes.slice(i, i + batchSize);
+    const placeholders = batch.map(() => "?").join(",");
+    const rows = db.prepare(`
+      SELECT c.text_hash, c.id as chunk_id, v.vector
+      FROM kb_chunks c
+      INNER JOIN kb_vectors v ON c.id = v.chunk_id
+      WHERE c.text_hash IN (${placeholders}) AND c.embedded = 1
+    `).all(...batch) as Array<{ text_hash: string; chunk_id: string; vector: string }>;
+
+    for (const row of rows) {
+      result.set(row.text_hash, {
+        chunkId: row.chunk_id,
+        vector: JSON.parse(row.vector) as number[],
+      });
+    }
+  }
+
+  return result;
 }
 
 export function getUnembeddedChunks(): Array<{
