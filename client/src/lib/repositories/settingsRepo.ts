@@ -88,19 +88,12 @@ export async function readSettings(): Promise<AppSettings> {
     const db = await getDB();
     const stored = await db.get("settings", SETTINGS_ID);
     if (stored) {
+      // 保留所有存储的字段，只对缺失字段设默认值
       const result: AppSettings = {
-        mode: stored.mode,
-        guidelineVersion: stored.guidelineVersion,
-        providers: stored.providers,
-        agents: stored.agents,
+        ...stored,
         searchProviders: stored.searchProviders ?? DEFAULT_SETTINGS.searchProviders,
-        persistKeysEncrypted: stored.persistKeysEncrypted,
-        enableProviderFallback: stored.enableProviderFallback ?? true
+        enableProviderFallback: stored.enableProviderFallback ?? true,
       };
-      if (stored.sanitizeRules) result.sanitizeRules = stored.sanitizeRules;
-      if (stored.ocrQualityThresholds) result.ocrQualityThresholds = stored.ocrQualityThresholds;
-      if (stored.providerErrorMessages) result.providerErrorMessages = stored.providerErrorMessages;
-      if (stored.knowledge) result.knowledge = stored.knowledge;
       // Also sync to localStorage as backup
       try { localStorage.setItem(LS_KEY, JSON.stringify(result)); } catch { /* ignore */ }
       return result;
