@@ -102,3 +102,40 @@ documentsRouter.post("/documents/extract-docx", upload.single("file"), async (re
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
+
+/** POST /api/documents/extract-html — 提取 HTML 文本 */
+documentsRouter.post("/documents/extract-html", express.json(), async (req, res) => {
+  try {
+    const { html } = req.body as { html: string };
+    if (!html) {
+      res.status(400).json({ ok: false, error: "Missing html field" });
+      return;
+    }
+
+    logger.info(`HTML extraction request: ${html.length} chars`);
+
+    // 使用 cheerio 解析 HTML
+    const cheerio = await import("cheerio");
+    const $ = cheerio.load(html);
+
+    // 移除 script 和 style 元素
+    $("script, style").remove();
+
+    // 提取文本
+    const text = ($.text())
+      .replace(/\r\n/g, "\n")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n\s*\n/g, "\n\n")
+      .trim();
+
+    logger.info(`HTML extraction completed: ${text.length} chars`);
+
+    res.json({
+      ok: true,
+      text,
+    });
+  } catch (err) {
+    logger.error("HTML extraction error: " + (err instanceof Error ? err.message : String(err)));
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});

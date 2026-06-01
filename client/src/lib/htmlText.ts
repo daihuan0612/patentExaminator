@@ -7,23 +7,21 @@ export interface HtmlExtractionResult {
 }
 
 /**
- * Extract plain text from an HTML string using DOMParser.
- * Strips all tags, preserves text content, normalizes whitespace.
+ * Extract plain text from an HTML string using server-side cheerio.
+ * MIGRATE-006: HTML 文本提取从前端迁移到后端
  */
-export function extractHtmlText(html: string): HtmlExtractionResult {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, "text/html");
+export async function extractHtmlText(html: string): Promise<HtmlExtractionResult> {
+  const res = await fetch("/api/documents/extract-html", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ html }),
+  });
 
-  // Remove script and style elements
-  for (const el of doc.querySelectorAll("script, style")) {
-    el.remove();
+  if (!res.ok) {
+    throw new Error(`HTML extraction failed: ${res.status} ${res.statusText}`);
   }
 
-  const text = (doc.body?.textContent ?? "")
-    .replace(/\r\n/g, "\n")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n\s*\n/g, "\n\n")
-    .trim();
+  const data = await res.json() as { ok: boolean; text: string };
 
-  return { text, textIndex: buildTextIndex(text) };
+  return { text: data.text, textIndex: buildTextIndex(data.text) };
 }
