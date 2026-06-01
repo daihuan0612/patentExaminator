@@ -102,7 +102,22 @@ export async function injectKnowledge(options: InjectOptions): Promise<string> {
     }
 
     const contextPrefix = getAgentContext(agentType);
-    const injection = `## 参考法规（由知识库检索，仅供参考）\n${contextPrefix}\n\n${formatRetrievedChunks(results).replace(/^[^\n]+\n[^\n]+\n/, "")}`;
+    const citationBlock = results.map((r) => {
+      const source = r.chunk.metadata.sectionId ?? r.chunk.metadata.articleId ?? r.chunk.metadata.fileName;
+      return `[来源: ${source}] ${r.chunk.text.slice(0, 300)}`;
+    }).join("\n\n");
+
+    const injection = `## 参考法规（由知识库自动检索，作为回答的依据）
+
+${contextPrefix}
+
+${citationBlock}
+
+## 引用要求
+- 回答时**必须引用上述参考法规的具体条文**作为依据
+- 引用格式：在相关论述后标注【来源：文件名 章节/条文号】
+- 如果参考法规中没有直接相关的内容，明确说明"参考法规中未找到直接依据"
+- 不要编造参考法规中没有的内容`;
     const enhanced = `${systemPrompt}\n\n${injection}`;
 
     // 记录引用详情
