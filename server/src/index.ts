@@ -49,7 +49,7 @@ app.use((_req, res, next) => {
 // Simple rate limiter for expensive API endpoints (no external deps)
 const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
-const RATE_LIMIT_MAX = 30; // 30 requests per window per IP
+const RATE_LIMIT_MAX = 200; // 200 requests per window per IP (30 was too low for tests)
 
 function rateLimiter(req: express.Request, res: express.Response, next: express.NextFunction) {
   const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";

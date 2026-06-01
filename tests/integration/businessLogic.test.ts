@@ -227,41 +227,41 @@ describe("Figure Extraction (figureExtract)", () => {
 // Text Index — 文本索引构建
 // ═══════════════════════════════════════════════════════════════
 describe("Text Index (buildTextIndex)", () => {
-  it("简单文本 → 正确分段", () => {
+  it("简单文本 → 正确分段", async () => {
     const text = "段落一内容\n\n段落二内容\n\n段落三内容";
-    const index = buildTextIndex(text);
+    const index = await buildTextIndex(text);
     expect(index.paragraphs).toHaveLength(3);
     expect(index.paragraphs[0]!.text).toBe("段落一内容");
     expect(index.paragraphs[1]!.text).toBe("段落二内容");
     expect(index.paragraphs[2]!.text).toBe("段落三内容");
   });
 
-  it("带段落编号的文本 → 提取段落号", () => {
+  it("带段落编号的文本 → 提取段落号", async () => {
     const text = "[0001] 这是第一个段落\n\n[0002] 这是第二个段落";
-    const index = buildTextIndex(text);
+    const index = await buildTextIndex(text);
     expect(index.paragraphs).toHaveLength(2);
     expect(index.paragraphs[0]!.paragraphNumber).toBe("0001");
     expect(index.paragraphs[1]!.paragraphNumber).toBe("0002");
   });
 
-  it("空文本 → 空索引", () => {
-    const index = buildTextIndex("");
+  it("空文本 → 空索引", async () => {
+    const index = await buildTextIndex("");
     expect(index.paragraphs).toHaveLength(0);
     expect(index.pages).toHaveLength(0);
   });
 
-  it("行映射 → 行号从 1 开始", () => {
+  it("行映射 → 行号从 1 开始", async () => {
     const text = "第一行\n第二行\n第三行";
-    const index = buildTextIndex(text);
+    const index = await buildTextIndex(text);
     expect(index.lineMap).toHaveLength(3);
     expect(index.lineMap[0]!.line).toBe(1);
     expect(index.lineMap[1]!.line).toBe(2);
     expect(index.lineMap[2]!.line).toBe(3);
   });
 
-  it("段落 offset 正确", () => {
+  it("段落 offset 正确", async () => {
     const text = "AA\n\nBBBB";
-    const index = buildTextIndex(text);
+    const index = await buildTextIndex(text);
     expect(index.paragraphs).toHaveLength(2);
     expect(index.paragraphs[0]!.startOffset).toBe(0);
     expect(index.paragraphs[0]!.endOffset).toBe(2);
@@ -302,71 +302,71 @@ describe("Language Detection", () => {
 describe("Claim Parsing (parseClaims)", () => {
   const CASE_ID = "test-case";
 
-  it("解析独立权利要求 → type=independent", () => {
+  it("解析独立权利要求 → type=independent", async () => {
     const text = `权利要求书
 1. 一种LED散热装置，包括散热基板和导热界面层。
 2. 根据权利要求1所述的散热装置，还包括散热风扇。`;
-    const result = parseClaims(text, CASE_ID);
+    const result = await parseClaims(text, CASE_ID);
     expect(result.claims).toHaveLength(2);
     expect(result.claims[0]!.type).toBe("independent");
     expect(result.claims[0]!.claimNumber).toBe(1);
     expect(result.claims[0]!.dependsOn).toHaveLength(0);
   });
 
-  it("解析从属权利要求 → type=dependent，解析依赖关系", () => {
+  it("解析从属权利要求 → type=dependent，解析依赖关系", async () => {
     const text = `权利要求书
 1. 一种装置，包括A和B。
 2. 根据权利要求1所述的装置，还包括C。
 3. 根据权利要求1或2所述的装置，还包括D。`;
-    const result = parseClaims(text, CASE_ID);
+    const result = await parseClaims(text, CASE_ID);
     expect(result.claims).toHaveLength(3);
     expect(result.claims[1]!.type).toBe("dependent");
     expect(result.claims[1]!.dependsOn).toEqual([1]);
     expect(result.claims[2]!.dependsOn).toEqual([1, 2]);
   });
 
-  it("无权利要求书标题 → fallback 到首条权利要求", () => {
+  it("无权利要求书标题 → fallback 到首条权利要求", async () => {
     const text = "1. 一种LED散热装置。";
-    const result = parseClaims(text, CASE_ID);
+    const result = await parseClaims(text, CASE_ID);
     expect(result.claims).toHaveLength(1);
     expect(result.claims[0]!.claimNumber).toBe(1);
   });
 
-  it("无权利要求 → warnings 包含 no-claim-region", () => {
+  it("无权利要求 → warnings 包含 no-claim-region", async () => {
     const text = "说明书内容，没有任何权利要求。";
-    const result = parseClaims(text, CASE_ID);
+    const result = await parseClaims(text, CASE_ID);
     expect(result.claims).toHaveLength(0);
     expect(result.warnings).toContain("no-claim-region");
   });
 
-  it("无独立权利要求 → warnings 包含 no-independent-claim", () => {
+  it("无独立权利要求 → warnings 包含 no-independent-claim", async () => {
     const text = `权利要求书
 1. 根据权利要求1所述的装置，其中...`;
-    const result = parseClaims(text, CASE_ID);
+    const result = await parseClaims(text, CASE_ID);
     expect(result.warnings).toContain("no-independent-claim");
   });
 
-  it("编号不连续 → warnings 包含 gap-in-claim-numbers", () => {
+  it("编号不连续 → warnings 包含 gap-in-claim-numbers", async () => {
     const text = `权利要求书
 1. 一种装置。
 5. 根据权利要求1所述的装置。`;
-    const result = parseClaims(text, CASE_ID);
+    const result = await parseClaims(text, CASE_ID);
     expect(result.warnings.some((w) => w.startsWith("gap-in-claim-numbers"))).toBe(true);
   });
 
-  it("self-dependency — 引用自身 → 标记 invalid dependency", () => {
+  it("self-dependency — 引用自身 → 标记 invalid dependency", async () => {
     const text = `权利要求书
 1. 一种装置。
 2. 根据权利要求2所述的装置。`;
-    const result = parseClaims(text, CASE_ID);
+    const result = await parseClaims(text, CASE_ID);
     expect(result.warnings.some((w) => w.includes("invalid-dependency"))).toBe(true);
   });
 
-  it("范围依赖 '权利要求 N 至 M'", () => {
+  it("范围依赖 '权利要求 N 至 M'", async () => {
     const text = `权利要求书
 1. 一种装置。
 2. 根据权利要求1至3所述的装置。`;
-    const result = parseClaims(text, CASE_ID);
+    const result = await parseClaims(text, CASE_ID);
     expect(result.claims[1]!.dependsOn).toContain(1);
   });
 });
@@ -543,68 +543,68 @@ describe("OCR Quality (computeOcrQuality)", () => {
 // Case Field Extraction Fallback — 案卷字段提取（回退模式）
 // ═══════════════════════════════════════════════════════════════
 describe("Case Field Extraction Fallback", () => {
-  it("提取发明名称 → 发明名称：XXX", () => {
+  it("提取发明名称 → 发明名称：XXX", async () => {
     const docs = [{
       fileName: "申请文件.pdf",
       text: "发明名称：一种LED散热装置\n申请号：CN202410567890A\n申请人：张三\n申请日：2024年3月15日"
     }];
-    const result = extractCaseFieldsFallback(docs, "case-1");
+    const result = await extractCaseFieldsFallback(docs, "case-1");
     expect(result.title).toBe("一种LED散热装置");
     expect(result.confidence.title).toBe("high");
   });
 
-  it("提取申请号", () => {
+  it("提取申请号", async () => {
     const docs = [{
       fileName: "申请文件.pdf",
       text: "申请号：CN202410567890A\n发明名称：一种装置"
     }];
-    const result = extractCaseFieldsFallback(docs, "case-1");
+    const result = await extractCaseFieldsFallback(docs, "case-1");
     expect(result.applicationNumber).toBe("CN202410567890A");
     expect(result.confidence.applicationNumber).toBe("high");
   });
 
-  it("提取申请日", () => {
+  it("提取申请日", async () => {
     const docs = [{
       fileName: "申请文件.pdf",
       text: "申请日：2024年3月15日\n发明名称：一种装置"
     }];
-    const result = extractCaseFieldsFallback(docs, "case-1");
+    const result = await extractCaseFieldsFallback(docs, "case-1");
     expect(result.applicationDate).toBe("2024-03-15");
   });
 
-  it("提取优先权日", () => {
+  it("提取优先权日", async () => {
     const docs = [{
       fileName: "申请文件.pdf",
       text: "优先权日：2023年6月1日\n发明名称：一种装置"
     }];
-    const result = extractCaseFieldsFallback(docs, "case-1");
+    const result = await extractCaseFieldsFallback(docs, "case-1");
     expect(result.priorityDate).toBe("2023-06-01");
   });
 
-  it("提取申请人", () => {
+  it("提取申请人", async () => {
     const docs = [{
       fileName: "申请文件.pdf",
       text: "申请人：某科技有限公司\n发明名称：一种装置"
     }];
-    const result = extractCaseFieldsFallback(docs, "case-1");
+    const result = await extractCaseFieldsFallback(docs, "case-1");
     expect(result.applicant).toBe("某科技有限公司");
   });
 
-  it("从 fallback 提取权利要求", () => {
+  it("从 fallback 提取权利要求", async () => {
     const docs = [{
       fileName: "申请文件.pdf",
       text: `权利要求书
 1. 一种装置，包括A和B。
 2. 根据权利要求1所述的装置，还包括C。`
     }];
-    const result = extractCaseFieldsFallback(docs, "case-1");
+    const result = await extractCaseFieldsFallback(docs, "case-1");
     expect(result.claims.length).toBeGreaterThanOrEqual(1);
     expect(result.targetClaimNumber).toBe(1);
   });
 
-  it("无标签文档 → 返回 null 字段", () => {
+  it("无标签文档 → 返回 null 字段", async () => {
     const docs = [{ fileName: "empty.pdf", text: "没有任何标签的纯文本" }];
-    const result = extractCaseFieldsFallback(docs, "case-1");
+    const result = await extractCaseFieldsFallback(docs, "case-1");
     expect(result.title).toBeNull();
     expect(result.applicationNumber).toBeNull();
   });

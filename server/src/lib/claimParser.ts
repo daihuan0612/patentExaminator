@@ -157,16 +157,31 @@ function validateClaims(claims: ClaimNode[], warnings: string[]): void {
   }
 
   // Check for missing claim numbers (gaps)
+  // Check for missing claim numbers (gaps)
   const maxNum = Math.max(...numbers);
+  const gaps: number[] = [];
   for (let i = 1; i <= maxNum; i++) {
     if (!numbers.includes(i)) {
-      warnings.push(`missing-claim-${i}`);
+      gaps.push(i);
     }
+  }
+  if (gaps.length > 0) {
+    warnings.push(`gap-in-claim-numbers: ${gaps.join(", ")}`);
+  }
+
+  // Check for no independent claims
+  const hasIndependent = claims.some((c) => c.type === "independent");
+  if (!hasIndependent) {
+    warnings.push("no-independent-claim");
   }
 
   // Check dependent claims reference valid claims
   for (const claim of claims) {
     if (claim.type === "dependent") {
+      // Self-dependency check
+      if (claim.dependsOn.includes(claim.claimNumber)) {
+        warnings.push(`invalid-dependency: claim-${claim.claimNumber} references itself`);
+      }
       for (const dep of claim.dependsOn) {
         if (!numbers.includes(dep)) {
           warnings.push(`claim-${claim.claimNumber}-references-missing-${dep}`);
