@@ -374,6 +374,63 @@ async function testKnowledgeProviderTestEndpoint() {
   assert(!invalidKeyData.error?.includes("404"), `Should not get 404, got: ${invalidKeyData.error}`);
 }
 
+// ── T-RAG-027: Re-ranker 集成验证 ───────────────────────
+
+async function testRerankerIntegration() {
+  // 先上传一个文件
+  await fetch(`${BASE}/knowledge/clear`, { method: "DELETE" });
+  await uploadKnowledgeFile("专利法条文速查.md");
+
+  // 测试无 reranker 的检索（应回退到向量搜索）
+  const searchWithoutReranker = await fetch(`${BASE}/knowledge/search`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query: "新颖性", topK: 3 }),
+  });
+  const dataWithout = await searchWithoutReranker.json();
+  assert(dataWithout.ok === true, "Search without reranker should succeed");
+  assert(dataWithout.results.length > 0, "Should have results without reranker");
+
+  // 测试无效 reranker 的检索（应 fallback 到向量搜索）
+  const searchWithBadReranker = await fetch(`${BASE}/knowledge/search`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: "新颖性",
+      topK: 3,
+      reranker: {
+        baseUrl: "https://invalid-url.example.com/v1",
+        apiKey: "invalid",
+        modelId: "invalid",
+      },
+    }),
+  });
+  const dataWithBad = await searchWithBadReranker.json();
+  assert(dataWithBad.ok === true, "Search with bad reranker should fallback gracefully");
+  assert(dataWithBad.results.length > 0, "Should have results even with bad reranker");
+
+  // 测试有效 reranker 的检索（使用 SiliconFlow）
+  const apiKey = process.env.SILICONFLOW_KEY ?? "";
+  if (apiKey) {
+    const searchWithReranker = await fetch(`${BASE}/knowledge/search`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: "新颖性判断标准",
+        topK: 3,
+        reranker: {
+          baseUrl: "https://api.siliconflow.cn/v1",
+          apiKey,
+          modelId: "BAAI/bge-reranker-v2-m3",
+        },
+      }),
+    });
+    const dataWith = await searchWithReranker.json();
+    assert(dataWith.ok === true, "Search with valid reranker should succeed");
+    assert(dataWith.results.length > 0, "Should have results with valid reranker");
+  }
+}
+
 // ── Server 生命周期管理 ────────────────────────────────
 
 async function startTestServer() {
@@ -481,6 +538,7 @@ async function main() {
     await runTest("T-RAG-024: 检索结果包含元数据", testSearchResultMetadata);
     await runTest("T-RAG-025: 多文件上传后检索", testMultiFileUploadAndSearch);
     await runTest("T-RAG-026: 知识库 Provider 测试连接端点", testKnowledgeProviderTestEndpoint);
+    await runTest("T-RAG-027: Re-ranker 集成验证", testRerankerIntegration);
   } finally {
     stopTestServer();
     cleanupTestDb();

@@ -619,10 +619,14 @@ knowledgeRouter.get("/knowledge/stats", (_req, res) => {
   }
 });
 
-/** POST /api/knowledge/search — 检索 */
+/** POST /api/knowledge/search — 检索（支持 Re-ranker） */
 knowledgeRouter.post("/knowledge/search", express.json(), async (req, res) => {
   try {
-    const { query, topK = 5 } = req.body as { query: string; topK?: number };
+    const { query, topK = 5, reranker } = req.body as {
+      query: string;
+      topK?: number;
+      reranker?: { baseUrl: string; apiKey: string; modelId: string };
+    };
     if (!query) {
       res.status(400).json({ ok: false, error: "Missing query" });
       return;
@@ -656,7 +660,58 @@ knowledgeRouter.post("/knowledge/search", express.json(), async (req, res) => {
     }
 
     scores.sort((a, b) => b.score - a.score);
-    const topResults = scores.slice(0, topK).map((s) => {
+
+    // nf-9: Re-ranker 集成
+    let rerankedScores = scores;
+    if (reranker?.baseUrl && reranker?.apiKey && reranker?.modelId) {
+      try {
+        const rerankUrl = reranker.baseUrl.endsWith("/v1")
+          ? `${reranker.baseUrl}/rerank`
+          : `${reranker.baseUrl}/v1/rerank`;
+
+        // 取 top-K * 3 的候选给 reranker
+        const candidates = scores.slice(0, topK * 3);
+        const documents = candidates.map((s) => {
+          const chunk = chunkMap.get(s.chunkId);
+          return chunk?.text ?? "";
+        });
+
+        const rerankRes = await fetch(rerankUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${reranker.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: reranker.modelId,
+            query,
+            documents,
+            top_n: topK,
+          }),
+        });
+
+        if (rerankRes.ok) {
+          const rerankData = await rerankRes.json() as {
+            results: Array<{ index: number; relevance_score: number }>;
+          };
+
+          // 将 reranker 结果映射回原始 chunkId
+          rerankedScores = rerankData.results.map((r) => ({
+            chunkId: candidates[r.index]!.chunkId,
+            score: r.relevance_score,
+          }));
+
+          logger.info(`Re-ranker applied: ${rerankedScores.length} results from ${candidates.length} candidates`);
+        } else {
+          const errorText = await rerankRes.text();
+          logger.warn(`Re-ranker failed (${rerankRes.status}), falling back to vector search: ${errorText}`);
+        }
+      } catch (rerankErr) {
+        logger.warn(`Re-ranker error, falling back to vector search: ${rerankErr}`);
+      }
+    }
+
+    const topResults = rerankedScores.slice(0, topK).map((s) => {
       const chunk = chunkMap.get(s.chunkId)!;
       return {
         chunkId: s.chunkId,

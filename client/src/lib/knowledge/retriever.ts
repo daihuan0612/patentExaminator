@@ -98,10 +98,25 @@ export async function retrieve(
 
   // 调用 server 端检索 API
   try {
+    // nf-9: 传递 Re-ranker 配置
+    const { readSettings } = await import("../repositories/settingsRepo");
+    const settings = await readSettings();
+    const rerankerProvider = settings.knowledgeProviders?.find(
+      (p) => p.providerType === "reranker" && p.enabled && p.apiKeyRef
+    );
+
     const res = await fetch("/api/knowledge/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: expandedQuery, topK }),
+      body: JSON.stringify({
+        query: expandedQuery,
+        topK,
+        reranker: rerankerProvider ? {
+          baseUrl: rerankerProvider.baseUrl,
+          apiKey: rerankerProvider.apiKeyRef,
+          modelId: rerankerProvider.modelId,
+        } : undefined,
+      }),
     });
     const data = await res.json() as {
       ok: boolean;
