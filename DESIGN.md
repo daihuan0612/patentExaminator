@@ -131,7 +131,7 @@
 **关键原则：**
 - PRD §5.4 的 Orchestrator Agent 在 v0.1.0 落地为前端 `AgentClient`（逻辑角色）+ 后端 `AI Gateway`，不做独立进程。
 - 各 Agent 为 route handler 级别的 LLM 调用分工，非独立进程。
-- 浏览器端 IndexedDB 保存所有案件 / 文档 / 文本 / 分析结果；不需要独立数据库。
+- 案件数据保存在应用内（前端 IndexedDB + 后端 SQLite），数据在前后端之间通过 API 流动，不流出应用边界。外部 AI 调用前必须经用户确认。
 - 客户端与服务端仅通过 `/api/*` HTTP 接口通信，无直接代码依赖。
 
 ### 1.2 数据流
@@ -1385,6 +1385,7 @@ Supabase（后端服务）
 
 | 日期 | 变更摘要 | 影响范围 | 关联 commit |
 |------|---------|---------|------------|
+| 2026-06-01 | B-037: 安全边界文档修正 — "浏览器端 IndexedDB 保存所有数据" 改为 "数据保存在应用内（前端 IndexedDB + 后端 SQLite）" | §1.1 关键原则、PRD §7.1 | 待提交 |
 | 2026-06-01 | fix(B-021): 客户端知识库死代码清理 — 删除 5 个死代码文件（chunkers.ts/extractors.ts/cozeCompat.ts/evalSet.ts/faithfulness.ts），清理 normalizers.ts 中 8 个未使用函数，保留活跃函数（isNoise/isGarbled/classifyDocument/expandCrossLanguage/expandQuery 等） | `client/src/lib/knowledge/` 8 个文件 | 待提交 |
 | 2026-06-01 | feat(B-033): 知识库 embedding 批处理优化 — batch_size 20→100、断点续传（text_hash + findChunksByHashes）、短 chunk 过滤（<50字）、长度排序减少 padding；11 文件上传耗时从 15-20 分钟降到 ~12 分钟 | `server/src/lib/knowledgeDb.ts`、`server/src/routes/knowledge.ts` | 待提交 |
 | 2026-05-31 | feat(B-019): 反馈按钮 UI 接入 — ClaimChartTable/NoveltyComparisonTable/InventiveStepPanel 新增 FeedbackButtons 列，数据通过 feedbackRepo 持久化到 localStorage | `ClaimChartTable.tsx`、`NoveltyComparisonTable.tsx`、`InventiveStepPanel.tsx` | 待提交 |
