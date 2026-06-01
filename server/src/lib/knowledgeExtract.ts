@@ -34,10 +34,13 @@ export async function extractText(fileBuffer: Buffer, fileName: string): Promise
 async function extractPdf(buffer: Buffer): Promise<ExtractionResult> {
   try {
     const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    // 静默 pdfjs 警告（字体数据等），只做文本提取不需要渲染
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "";
     const pdf = await pdfjsLib.getDocument({
       data: new Uint8Array(buffer),
       disableFontFace: true,
       useSystemFonts: false,
+      isEvalSupported: false,
     }).promise;
     const texts: string[] = [];
     for (let i = 1; i <= pdf.numPages; i++) {

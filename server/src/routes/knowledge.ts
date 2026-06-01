@@ -36,15 +36,19 @@ function errMsg(err: unknown): string {
 // ── Embedding（内联实现，避免大型依赖） ──────────────
 
 let embedder: { embed: (texts: string[]) => Promise<number[][]>; modelId: string } | null = null;
+let embedderLoading: Promise<ReturnType<typeof getEmbedder>> | null = null;
 
 export async function getEmbedder() {
   if (embedder) return embedder;
+  // 防止并发加载：只有一个请求实际加载模型，其他请求等待
+  if (embedderLoading) return embedderLoading;
 
-  logger.info("Loading embedding model...");
-  try {
-    const { pipeline } = await import("@xenova/transformers");
-    const pipe = await pipeline("feature-extraction", "Xenova/bge-large-zh-v1.5", {
-      quantized: true,
+  embedderLoading = (async () => {
+    logger.info("Loading embedding model...");
+    try {
+      const { pipeline } = await import("@xenova/transformers");
+      const pipe = await pipeline("feature-extraction", "Xenova/bge-large-zh-v1.5", {
+        quantized: true,
     });
     embedder = {
       embed: async (texts: string[]) => {
@@ -65,8 +69,11 @@ export async function getEmbedder() {
     return embedder;
   } catch (err) {
     logger.error(`Failed to load embedding model: ${err}`);
+    embedderLoading = null; // 允许重试
     throw err;
   }
+  })();
+  return embedderLoading;
 }
 
 // ── 文本预处理 ────────────────────────────────────────
