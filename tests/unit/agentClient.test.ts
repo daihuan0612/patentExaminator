@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { agentRun } from "@client/lib/agentApi";
+import { agentRun } from "@client/lib/repos";
 import type { ClaimChartResponse } from "@shared/types/api";
 import type { AppSettings } from "@shared/types/agents";
 
@@ -28,11 +28,11 @@ describe("agentRun (mock mode)", () => {
 
   it("returns mock claim chart features", async () => {
     const result = await agentRun<ClaimChartResponse>("claim-chart", {
-      caseId: "case-1",
+      caseId: "g1-led",
       claimText: "一种LED散热装置，包括基板和设置在基板上的散热翅片",
       claimNumber: 1,
       specificationText: "本发明涉及LED散热技术领域"
-    }, MOCK_SETTINGS, "case-1");
+    }, MOCK_SETTINGS, "g1-led");
 
     expect(result.features.length).toBeGreaterThan(0);
     expect(result.features[0]!.source).toBe("mock");

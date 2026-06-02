@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { agentRun } from "@client/lib/agentApi";
+import { agentRun } from "@client/lib/repos";
 import type { ClaimChartResponse } from "@shared/types/api";
 import type { AppSettings } from "@shared/types/agents";
 
