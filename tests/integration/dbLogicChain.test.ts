@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   createMemoryDb,
-  dbCreate, dbGetAll, dbGetById, dbQuery, dbUpdate, dbDelete, dbClearStore,
+  dbCreate, dbGetAll, dbGetById, dbQuery, dbUpdate, dbDelete,
   type TestDb,
 } from "../helpers/testDb";
 import type Database from "better-sqlite3";
