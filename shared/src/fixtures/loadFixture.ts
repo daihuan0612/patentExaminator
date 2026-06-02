@@ -54,8 +54,7 @@ export function loadFixture(agentType: string, key: string): unknown {
     throw new Error(`No fixtures for agent type: ${agentType}`);
   }
 
-  // Try exact match first, then fall back to g1-led
-  const fileName = agentFixtures[key] ?? Object.values(agentFixtures)[0];
+  const fileName = agentFixtures[key];
   if (!fileName) {
     throw new Error(`No fixture for agent=${agentType} key=${key}`);
   }

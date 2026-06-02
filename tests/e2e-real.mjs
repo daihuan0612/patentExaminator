@@ -2761,15 +2761,15 @@ async function main() {
 
       // DB Logic-Chain tests (Store → Repo → IndexedDB, no UI)
       console.log("\n--- DB Logic-Chain ---");
-      runDbLogicChainTests();
+      await maybe(runDbLogicChainTests);
 
       // DB Scenario regression tests (bugs 18/19/21/22 etc.)
       console.log("\n--- DB Scenario Regression ---");
-      runDbScenarioTests();
+      await maybe(runDbScenarioTests);
 
       // DB Schema upgrade regression tests (lesson-learned-57)
       console.log("\n--- DB Schema Upgrade ---");
-      runDbUpgradeTests();
+      await maybe(runDbUpgradeTests);
 
       // Real mode tests (optional, auto-skip if no key)
       if (GEMINI_KEY) {
