@@ -208,7 +208,7 @@ searchRouter.post("/search-references", async (req, res) => {
         searchQueries = [];
       }
     } catch (e) {
-      logger.warn("Failed to parse search queries JSON:", e);
+      logger.warn("Failed to parse search queries JSON: " + String(e));
       searchQueries = [];
     }
 
@@ -644,7 +644,7 @@ searchRouter.post("/extract-search-terms", async (req, res) => {
         searchQueries = [];
       }
     } catch (e) {
-      logger.warn("Failed to parse search queries JSON:", e);
+      logger.warn("Failed to parse search queries JSON: " + String(e));
       searchQueries = [];
     }
 
@@ -927,7 +927,7 @@ searchRouter.post("/search-with-terms", async (req, res) => {
         if (fallbackCandidates.length > 0) candidates = fallbackCandidates.slice(0, request.maxResults);
       }
     } catch (e) {
-      logger.warn("Failed to parse LLM filter output:", e);
+      logger.warn("Failed to parse LLM filter output: " + String(e));
       const fallbackCandidates = extractFallbackCandidates(filterRes.text);
       if (fallbackCandidates.length > 0) candidates = fallbackCandidates.slice(0, request.maxResults);
     }
