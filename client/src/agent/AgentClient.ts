@@ -996,12 +996,6 @@ function classifyGatewayError(
   return "other";
 }
 
-function _estimateTokens(text: string): number {
-  const zhChars = (text.match(/[一-鿿＀-￯]/g) ?? []).length;
-  const latinChars = text.length - zhChars;
-  return Math.ceil(zhChars * 0.6 + latinChars * 0.3);
-}
-
 function _buildDefectPrompt(request: DefectRequest): string {
   return [
     `你是一位资深专利审查员，擅长识别专利申请文件中的形式缺陷。`,

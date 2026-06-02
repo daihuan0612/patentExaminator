@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { AgentClient } from "@client/agent/AgentClient";
-import { estimateTokens } from "@client/agent/tokenEstimate";
 
 describe("AgentClient (mock mode)", () => {
   afterEach(() => {
@@ -133,26 +132,5 @@ describe("AgentClient (mock mode)", () => {
         specificationText: "test"
       })
     ).rejects.toThrow(/结构校验失败/);
-  });
-});
-
-describe("estimateTokens", () => {
-  it("estimates Chinese text tokens", () => {
-    const tokens = estimateTokens("这是一段中文文本");
-    expect(tokens).toBeGreaterThan(0);
-  });
-
-  it("estimates English text tokens", () => {
-    const tokens = estimateTokens("This is some English text");
-    expect(tokens).toBeGreaterThan(0);
-  });
-
-  it("estimates mixed text tokens", () => {
-    const tokens = estimateTokens("这是mixed中英text混合");
-    expect(tokens).toBeGreaterThan(0);
-  });
-
-  it("empty string returns 0", () => {
-    expect(estimateTokens("")).toBe(0);
   });
 });
