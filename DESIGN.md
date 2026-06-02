@@ -1,6 +1,6 @@
 # 专利复审 AI 助手 v0.1.0 详细设计文档
 
-<p align="right">版本 v0.1.0-r39 · 2026-06-02</p>
+<p align="right">版本 v0.1.0-r40 · 2026-06-02</p>
 
 > 本文档面向后续维护者与开发者，描述 v0.1.0 的架构设计、关键决策、领域模型与实现约束。与 `PRD.md`（做什么）和 `DEVELOPMENT_PLAN.md`（怎么做）互为补充；如有冲突，以 PRD 为准。
 
@@ -8,6 +8,7 @@
 
 | 版本 | 日期 | 变更摘要 |
 |------|------|---------|
+| v0.1.0-r40 | 2026-06-02 | B-038 Phase 3: 删除 dataClient.ts + agentApi.ts — dataClient 7 个 fetch 工具函数内联到 repos.ts，agentApi 全部导出函数合并到 repos.ts；7 个消费方 import 路径更新 | dataClient.ts(删除), agentApi.ts(删除), repos.ts, 7 个消费方文件 |
 | v0.1.0-r39 | 2026-06-02 | B-038 Phase 2: 前端只保留 UI 组件 — 删除 AgentClient.ts（342行）、contracts.ts（393行）、dataClient.ts 依赖的 repositories/ 目录（16个文件720行）、migrateIndexedDb.ts（107行）、indexedDb.ts（278行）；contracts.ts 类型合并到 shared/types/api.ts；AgentClient 替换为 lib/agentApi.ts（agentRun/searchReferences/extractSearchTerms/searchWithTerms 函数）；16个 repository 合并为 lib/repos.ts；settingsRepo 内联到 settingsSlice；前端组件直接调用 fetch | AgentClient.ts, contracts.ts, repositories/, migrateIndexedDb.ts, indexedDb.ts, agentApi.ts, repos.ts, 40+ import 路径更新 |
 | v0.1.0-r38 | 2026-06-02 | B-038 Phase 1: AgentClient 切换到 /api/agent/run — 13 个 AI agent 方法从调用 /api/ai/run 改为调用 /api/agent/run，移除客户端 prompt 构造和知识库增强逻辑（已迁移到后端 orchestrator），AgentClient 从 1727 行简化为 ~1575 行 | AgentClient.ts, agentClient.test.ts, security.test.ts |
 | v0.1.0-r37 | 2026-06-01 | B-023: 文件导入流程死代码清理 — 删除 ImportPage.tsx/ImportedFileRow.tsx/DeleteFileDialog.tsx/case-gate.ts（已被 CaseSetupPage 替代），移除 Import Gate 测试 | ImportPage.tsx, ImportedFileRow.tsx, DeleteFileDialog.tsx, case-gate.ts, businessLogic.test.ts |
@@ -64,7 +65,7 @@
 8. [Mock 演示模式设计](#8-mock-演示模式设计)
 9. [测试架构](#9-测试架构)
 10. [部署设计](#10-部署设计)
-11. [IndexedDB Schema 版本表](#11-indexeddb-schema-版本表)
+11. [SQLite 数据库 Schema](#11-sqlite-数据库-schema)
 12. [可追溯矩阵实现状态](#12-可追溯矩阵实现状态)
 13. [Milestone 收尾记录](#13-milestone-收尾记录)
 14. [验收记录](#14-验收记录)
@@ -93,18 +94,13 @@
 │  └──────────┘  └───────────────┘                                     │
 │                                                                     │
 │  ┌──────────────────────────────────────────────────────────────┐   │
-│  │ AgentClient (Orchestrator 角色)                              │   │
-│  │  · 任务分发 · 人工确认节点 · 状态提示 · 上下文隔离            │   │
-│  └──────────────┬───────────────────────────────┬───────────────┘   │
-│                 │                               │                   │
-│  ┌──────────────▼──────────┐   ┌────────────────▼───────────────┐  │
-│  │ MockProvider (离线)     │   │ ExternalSendConfirm (安全门)    │  │
-│  │  · 预置 fixture 响应    │   │  · 内容预览 · 用户确认 · 脱敏   │  │
-│  │                        │   │  · 知识库检索(BM25+语义+重排序) │  │
-│  └─────────────────────────┘   └────────────────┬───────────────┘  │
-│                                                  │                  │
-└──────────────────────────────────────────────────┼──────────────────┘
-                                                   │ HTTP POST /api/ai/run
+│  │ UI 展示层 (features/*)                                     │   │
+│  │  · 案件基线 · 文献清单 · OCR · 文档解读 · Claim Chart      │   │
+│  │  · 新颖性 · 创造性 · 形式缺陷 · 导出 · 设置 · 案件历史     │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+                                                   │ HTTP POST /api/agent/run
                                                    ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                   Node Express Server (端口 3000)                    │
@@ -133,9 +129,9 @@
 ```
 
 **关键原则：**
-- PRD §5.4 的 Orchestrator Agent 在 v0.1.0 落地为前端 `AgentClient`（逻辑角色）+ 后端 `AI Gateway`，不做独立进程。
+- PRD §5.4 的 Orchestrator Agent 已完全迁移到后端 `server/src/lib/orchestrator.ts`，前端只负责 UI 展示。
 - 各 Agent 为 route handler 级别的 LLM 调用分工，非独立进程。
-- 案件数据保存在应用内（前端 IndexedDB + 后端 SQLite），数据在前后端之间通过 API 流动，不流出应用边界。外部 AI 调用前必须经用户确认。
+- 案件数据保存在后端 SQLite，数据在前后端之间通过 API 流动，不流出应用边界。外部 AI 调用前必须经用户确认。
 - 客户端与服务端仅通过 `/api/*` HTTP 接口通信，无直接代码依赖。
 
 ### 1.2 数据流
@@ -143,8 +139,8 @@
 ```mermaid
 flowchart LR
     U["审查员"] --> UI["React UI"]
-    UI -->|"读写（防抖400ms）"| IDB["IndexedDB\n(案件/文档/分析结果/知识库)"]
-    UI --> AC["AgentClient"]
+    API -->|"读写"| DB["SQLite\n(案件/文档/分析结果/知识库)"]
+    UI --> API["后端 API"]
     AC -->|"检索知识库\n(/api/knowledge/search)"| KB["Server Knowledge Module\n(BM25+语义+RRF融合+三级重排序+图谱扩展)"]
     AC -->|"读取案件数据"| IDB
     AC -->|"Mock 模式"| MP["MockProvider\n(本地 fixture)"]
@@ -192,13 +188,13 @@ Vite `server.proxy` 配置（`client/vite.config.ts`）：
 
 ## 2. 关键决策记录（ADR）
 
-### ADR-001: Orchestrator 落地为 AgentClient + Gateway
+### ADR-001: Orchestrator 完全迁移到后端
 
-- **背景 / 问题：** PRD §5.4 定义了 Orchestrator Agent 负责交互协调与任务分发，但 v0.1.0 不宜引入独立进程增加部署复杂度。
-- **备选方案：** (a) 独立 Orchestrator 进程；(b) 前端 AgentClient + 后端 Gateway 分担职责。
-- **决策：** 采用方案 (b)。前端 `AgentClient` 负责任务分发、人工确认节点、状态提示、上下文隔离；后端 `AI Gateway` 负责 Provider 选择、fallback、计量、API Key 使用、脱敏拦截。
-- **影响：** 降低部署复杂度（单 Node 进程）；前端承担更多协调逻辑；后续可平滑迁移到独立 Orchestrator。
-- **关联章节：** DEVELOPMENT_PLAN §4.1
+- **背景 / 问题：** PRD §5.4 定义了 Orchestrator Agent 负责交互协调与任务分发。v0.1.0 初期采用前端 AgentClient + 后端 Gateway 分担职责，但前端承担过多业务逻辑，已完全迁移到后端。
+- **备选方案：** (a) 独立 Orchestrator 进程；(b) 前端 AgentClient + 后端 Gateway 分担职责（已废弃）；(c) 完全迁移到后端。
+- **决策：** 采用方案 (c)。Orchestrator 完全迁移到后端 `server/src/lib/orchestrator.ts`，前端只负责 UI 展示和调用后端 API。
+- **影响：** 前端代码大幅简化；所有业务逻辑在后端处理；旧版浏览器兼容性提升。
+- **关联章节：** B-038
 
 ### ADR-002: 包管理选 npm workspaces
 
@@ -232,13 +228,13 @@ Vite `server.proxy` 配置（`client/vite.config.ts`）：
 - **影响：** 提高系统可用性；增加 Gateway 复杂度（需管理重试逻辑和 attempt 记录）。
 - **关联章节：** DEVELOPMENT_PLAN §8.9.3
 
-### ADR-006: OCR 本地执行（不上云）
+### ADR-006: OCR 后端执行（不上云）
 
 - **背景 / 问题：** 扫描版 PDF 申请文件为未公开内容，不应发送至外部 OCR 服务。
-- **备选方案：** (a) 云端 OCR（百度/腾讯）；(b) 浏览器端 Tesseract.js 本地执行。
-- **决策：** 采用方案 (b)。使用 Tesseract.js 在浏览器端执行 OCR，语言包 (`chi_sim` + `eng`) 本地托管于 `client/public/tessdata/`。扫描内容完全不外发。OCR 结果缓存到 IndexedDB（cacheKey = sha256(file) + lang + pageCount），同一文件不重复 OCR。
-- **影响：** 识别速度受用户设备性能影响（15–30 秒/文件）；准确率低于云端方案；但满足"数据不外发"的安全硬约束。
-- **关联章节：** DEVELOPMENT_PLAN §8.1.3 / PRD §7.1
+- **备选方案：** (a) 云端 OCR（百度/腾讯）；(b) 浏览器端 Tesseract.js 本地执行；(c) 后端 Node.js Tesseract 本地执行。
+- **决策：** 采用方案 (c)。使用 Node.js Tesseract 在后端执行 OCR（`server/src/routes/ocr.ts`），语言包 (`chi_sim` + `eng`) 本地托管。扫描内容完全不外发。OCR 结果缓存到后端 SQLite，同一文件不重复 OCR。
+- **影响：** 识别速度受服务器性能影响；准确率低于云端方案；但满足"数据不外发"的安全硬约束；前端兼容性提升。
+- **关联章节：** B-038、MIGRATE-002
 
 ### ADR-007: Token Plan 作为默认真实模式测试 usage method
 
@@ -292,17 +288,17 @@ Vite `server.proxy` 配置（`client/vite.config.ts`）：
 - **影响：** 用户可快速判断 OCR 结果可信度；阈值可通过 `AppSettings.ocrQualityThresholds` 调节。
 - **关联章节：** DEVELOPMENT_PLAN §8.1.4
 
-### ADR-012: IndexedDB 封装选择 `idb` 库
+### ADR-012: 数据持久化迁移到后端 SQLite
 
-- **背景 / 问题：** 原生 IndexedDB API 为回调风格，使用不便且容易出错。
-- **备选方案：** (a) 原生 IndexedDB；(b) `idb` 库（Jake Archibald 维护）；(c) Dexie.js。
-- **决策：** 采用方案 (b) `idb ^8.0`。提供 Promise-based 封装，体积小（~3KB gzip），与 TypeScript 类型推导兼容好。Dexie 功能更多但体积更大，v0.1.0 不需要其高级查询能力。
-- **影响：** 简化 IndexedDB 操作代码；保持轻量依赖。
-- **关联章节：** DEVELOPMENT_PLAN §2.1
+- **背景 / 问题：** 浏览器端 IndexedDB 在老旧浏览器上兼容性差，且数据存储在前端不利于多设备同步。已迁移到后端 SQLite。
+- **备选方案：** (a) 浏览器端 IndexedDB（已废弃）；(b) 后端 SQLite；(c) 后端 PostgreSQL。
+- **决策：** 采用方案 (b)。数据持久化迁移到后端 SQLite（`data/patent-examiner.db`），前端通过 API 调用后端。使用 `better-sqlite3` 库。
+- **影响：** 旧版浏览器兼容性提升；数据集中存储；支持多设备同步。
+- **关联章节：** B-034、MIGRATE-001
 
 ### ADR-013: 错误处理分级策略
 
-- **背景 / 问题：** 系统涉及多种外部依赖（AI Provider、浏览器 API、IndexedDB），需要统一的错误分类与处理策略。
+- **背景 / 问题：** 系统涉及多种外部依赖（AI Provider、浏览器 API、后端 SQLite），需要统一的错误分类与处理策略。
 - **决策：** 按错误类别分级处理：
 
 | 错误类别 | 处理策略 | UI 反馈 |
@@ -314,7 +310,7 @@ Vite `server.proxy` 配置（`client/vite.config.ts`）：
 | 超时 (>60s) | AbortController 取消；按网络错误处理 | "请求超时，请重试" |
 | `QuotaExceededError` | catch，提示用户导出清理 | "存储空间不足" |
 | OCR 失败 (WASM 崩溃) | 降级到手动输入路径 | "无法识别，请手动粘贴" |
-| IndexedDB 写入失败 | catch，记录日志，提示用户 | "保存失败，请导出数据" |
+| SQLite 写入失败 | catch，记录日志，提示用户 | "保存失败，请导出数据" |
 
 - **影响：** 统一错误处理框架；用户始终得到可操作的反馈；系统在部分失败时优雅降级。
 - **关联章节：** DEVELOPMENT_PLAN §8.9.3 / §14
@@ -543,10 +539,10 @@ empty → case-ready → documents-uploaded
 不引入任何 UI 组件库、动画库、CSS-in-JS、状态机库。
 
 **Zustand Slice 架构：**
-- **切分策略：** 按功能模块切分（每个 feature 目录一个 slice），而非按数据实体。一个 slice 可管理多个 IndexedDB store 的读写。
+- **切分策略：** 按功能模块切分（每个 feature 目录一个 slice），而非按数据实体。
 - **Slice 文件命名：** `<feature>Slice.ts`，导出 `create<Feature>Slice(set, get)` 工厂函数与 `use<Feature>Store` hook。
 - **跨 Slice 通信：** 通过 `store/index.ts` 聚合后的 `useStore` 读取其他 slice 状态（`get()` 方式），不使用事件总线。写操作只允许修改本 slice。
-- **持久化：** 不使用 Zustand persist middleware——所有持久化走 IndexedDB repositories（防抖 400ms）。仅 `settingsSlice` 中的 `mode` 字段在 localStorage 中缓存（低敏偏好，允许丢失）。localStorage 仅存储 UI 偏好（mode、侧栏折叠状态等），不含任何业务数据、凭据或案件信息。
+- **持久化：** 不使用 Zustand persist middleware——所有持久化走后端 SQLite API。仅 `settingsSlice` 中的 `mode` 字段在 localStorage 中缓存（低敏偏好，允许丢失）。localStorage 仅存储 UI 偏好（mode、侧栏折叠状态等），不含任何业务数据、凭据或案件信息。
 
 **浏览器兼容矩阵（v0.1.0）：**
 
@@ -554,7 +550,7 @@ empty → case-ready → documents-uploaded
 |--------|--------|------|
 | Chrome / Edge ≥ 116 | 一等公民 | File System Access API、OPFS、Tesseract.js 5 全部可用 |
 | Firefox ≥ 100 | 次等 | 无 File System Access API → 文件夹导入降级为"多文件选择"；版本可能非最新，需覆盖旧版测试 |
-| Safari ≥ 17 | 次等 | 同 Firefox；IndexedDB 配额较小，需提示用户 |
+| Safari ≥ 17 | 次等 | 同 Firefox |
 | 其他 | 不保证 | UI 给出"建议使用 Chrome/Edge"提示 |
 
 **浏览器检测通知：** 首次访问时通过 `navigator.userAgent` 检测浏览器类型。Firefox 用户显示非阻断性提示条："检测到 Firefox 浏览器，部分功能（文件夹导入、文件保存对话框）不可用，您可通过多文件选择和下载方式替代。"不强制升级、不弹窗阻断。
@@ -564,7 +560,7 @@ empty → case-ready → documents-uploaded
 | 特性 | 首选 | 降级 |
 |------|------|------|
 | 文件夹导入 | `showDirectoryPicker` | `<input type="file" multiple>` + 提示"当前浏览器不支持文件夹导入" |
-| 大量文本缓存 | IndexedDB（主） | localStorage 仅存偏好 |
+| 大量文本缓存 | 后端 SQLite（主） | localStorage 仅存偏好 |
 | OCR Worker | `tesseract.js` Web Worker | 同步 fallback（仅小文件，加警告） |
 | 复制到剪贴板 | `navigator.clipboard` | 文本区 + 手动 Ctrl/Cmd+C |
 | 导出保存 | `showSaveFilePicker` | `<a download>` 下载 |
@@ -619,7 +615,7 @@ empty → case-ready → documents-uploaded
 
 - **校验策略：** 实时校验（react-hook-form `mode: "onChange"`）+ 保存前二次校验。`applicationDate` / `priorityDate` 格式由 `dateParse.ts` 解析，解析失败标红提示。
 - **自动提取：** 上传申请文件 + OCR 完成后，扫描前 3 页提取申请号/名称/申请人/申请日，按置信度自动填入或标"待确认"。同时 `claimParser.ts` 解析权利要求结构，`targetClaimNumber` 下拉动态列出所有独权编号供用户选择。
-- **保存策略：** 防抖 400ms 保存到 IndexedDB；申请日/优先权日变更触发所有文献时间轴重算。
+- **保存策略：** 通过 API 保存到后端 SQLite；申请日/优先权日变更触发所有文献时间轴重算。
 - **textVersion 切换行为：** 切换 `textVersion` 时，已生成的 `ClaimFeature[]` 的 `citationStatus` 自动重置为 `"needs-review"`（对应 `claimCharts` store）；`NoveltyComparison` 和 `InventiveStepAnalysis` 的 `status` 自动标记为 `"stale"`；UI 弹提示"审查文本版本已变更，建议重新生成拆解/对照/分析结果"。
 
 #### 4.3.2 文档导入模块
@@ -646,7 +642,7 @@ empty → case-ready → documents-uploaded
 - **组件：** `ClaimChartTable.tsx`、`ClaimChartActions.tsx`
 - **Slice：** `claimsSlice.ts`
 - **权利要求解析：** `claimParser.ts` 识别权利要求区域、拆分独立/从属权利要求、构建引用链。
-- **特征拆解：** AgentClient 调用 claim-chart agent，输入目标权利要求文本 + 说明书片段，输出 ClaimFeature 数组。
+- **特征拆解：** 后端 orchestrator 调用 claim-chart agent，输入目标权利要求文本 + 说明书片段，输出 ClaimFeature 数组。
 - **Citation 映射：** `citationMatch.ts` 四级容错：段落号精确匹配 → ±1 近邻容错 → 引文片段搜索 → not-found。
 - **可编辑：** 用户可直接编辑特征描述、Citation、备注；编辑后 source 标记为 "user"。
 
@@ -655,11 +651,11 @@ empty → case-ready → documents-uploaded
 - **组件：** `InterpretPanel.tsx`（案件文件总览 + 综合解读汇总 + 分组逐文件解读 + 追问输入框）
 - **Slice：** 复用 `chatSlice.ts`（`moduleScope: "case"`）和 `interpretSlice.ts`（逐文件解读结果持久化）
 - **触发时机：** 文字提取/OCR 确认后，权利要求拆解之前。用户可跳过。
-- **Agent 调用：** AgentClient 对案件内每份可解读文件分别调用 `interpret` agent，输入包含当前文件全文、文件名和同案相关文件清单。申请文件、审查意见书、意见陈述书使用对应模板；对比文件沿用申请文件模板但保留文件名上下文。首次进入页面时按文件自动触发，已有持久化结果则直接恢复。
+- **Agent 调用：** 后端 orchestrator 对案件内每份可解读文件分别调用 `interpret` agent，输入包含当前文件全文、文件名和同案相关文件清单。申请文件、审查意见书、意见陈述书使用对应模板；对比文件沿用申请文件模板但保留文件名上下文。首次进入页面时按文件自动触发，已有持久化结果则直接恢复。
 - **交互模式：** 页面先展示案件文件总览和综合解读汇总，再按文件类别展示逐文件解读；每条解读必须显式包含被解读文件名。首次解读输出后，用户可在同一对话框中自由追问（不限轮数），上下文持续累积。复用 `AgentChatPanel.tsx` 的通用对话组件。
 - **解读输出结构（AI 自由文本，非 JSON）：** 单文件内容仍以技术方案概述 → 发明要解决的问题 → 关键技术手段 → 独立权利要求保护范围解读 → 初步创新点观察（标注"仅供参考"）为主；综合视图只负责汇总各文件结果，不再额外触发独立 Agent。
 - **持久化：** `interpretSummaries` 以 `caseId` 为主键保存 `{ documentId -> summary }` 映射；历史遗留的单字符串 summary 以兼容模式映射到申请文件。`loadCaseById` 恢复案件时同时恢复全部文档和逐文件解读。
-- **与后续模块的关系：** 此模块是"理解阶段"，Claim Chart 是"拆解阶段"。两者独立——解读不影响拆解结果，拆解也不依赖解读。解读对话记录与逐文件解读结果均持久化到 IndexedDB。
+- **与后续模块的关系：** 此模块是"理解阶段"，Claim Chart 是"拆解阶段"。两者独立——解读不影响拆解结果，拆解也不依赖解读。解读对话记录与逐文件解读结果均持久化到后端 SQLite。
 - **Mock 模式：** G1/G2/G3 各有预置解读响应。
 
 #### 4.3.5 新颖性对照模块
@@ -686,13 +682,13 @@ empty → case-ready → documents-uploaded
 - **Slice：** `chatSlice.ts`
 - **上下文隔离：** 每个 `moduleScope` 的消息列表互不共享，禁止在提示词里拼接其它 scope 的消息。
 - **两种操作：** 追问（基于当前上下文提问）和请求重新分析（用编辑后的数据重新触发 Agent）。
-- **持久化：** 写入 IndexedDB `chatMessages` store，按 `caseId + moduleScope + createdAt` 查询。
+- **持久化：** 写入后端 SQLite `chatMessages` 表，按 `caseId + moduleScope + createdAt` 查询。
 
 #### 4.3.7.5 案件历史与交互记录模块
 
 - **组件：** `CaseHistoryPanel.tsx`（壳子）、`CaseListView.tsx`（壳子）
 - **Slice：** `historySlice.ts`（壳子，v0.1.0 仅占位）
-- **数据已就绪：** v0.1.0 所有 ChatMessage 已写入 IndexedDB `chatMessages` store（按 `caseId + moduleScope + createdAt` 索引），PatentCase 已写入 `cases` store——数据层完整，缺的是浏览 UI。
+- **数据已就绪：** v0.1.0 所有 ChatMessage 已写入后端 SQLite `chatMessages` 表（按 `caseId + moduleScope + createdAt` 索引），PatentCase 已写入 `cases` 表——数据层完整，缺的是浏览 UI。
 - **v0.1.0（壳子）：** 左侧导航显示"案件历史"入口，点击后展示已有案件列表（从 `cases` store 读取），可点击载入任一案件继续工作。
 - **v0.2.0（完整实现）：**
   - 按案件查看完整 AI 交互历史（从 `chatMessages` store 按 `caseId` 聚合）
@@ -707,7 +703,7 @@ empty → case-ready → documents-uploaded
 - **库函数：** `exportHtml.ts`、`exportMarkdown.ts`（壳子）、`fileNameSanitize.ts`
 
 **导出内容组装流程：**
-1. 从 IndexedDB 读取当前案件的所有已确认数据（案件基线 + Claim Chart + 新颖性对照 + 区别特征候选 + 待检索问题清单）。
+1. 从后端 SQLite 读取当前案件的所有已确认数据（案件基线 + Claim Chart + 新颖性对照 + 区别特征候选 + 待检索问题清单）。
 2. 按 HTML 模板组装各节（案件基线 → 文件清单 → Claim Chart 表 → 新颖性对照表 → 区别特征候选 → 待检索问题）。
 3. 顶部固定法律免责声明："本文件为审查辅助素材，不构成法律结论。"
 4. 可选附"审查员反馈摘要"分节（从 feedback store 读取）。
@@ -866,7 +862,7 @@ v0.1.0 实现五家的非流式 chat completions：
 
 ### 6.1 Agent 架构
 
-v0.1.0 的 Agent 为逻辑角色，通过 `AgentClient` 统一调度（架构参见 §1.1）：
+v0.1.0 的 Agent 为逻辑角色，通过后端 `server/src/lib/orchestrator.ts` 统一调度（架构参见 §1.1）：
 
 | Agent | 对应模块 (§4.3) | 输入 | 输出 Schema | maxTokens |
 |-------|---------|------|------------|-----------|
@@ -881,7 +877,7 @@ v0.1.0 的 Agent 为逻辑角色，通过 `AgentClient` 统一调度（架构参
 | draft | — | 四分区当前内容 | `draftSchema` | 1500 |
 | chat | §4.3.7 | 模块上下文 + 用户消息 | 自由文本 | 1200 |
 
-> **PRD Agent 名 ↔ Design Agent ID 映射：** B-008 后新增复审 Agent：审查意见解析 → `opinion-analysis`；答辩理由映射 → `argument-analysis`；复审意见草稿 → `reexam-draft`。文档解读 Agent → `interpret`（`moduleScope: "case"`）；创新点研读 Agent 对应 `claim-chart` + `novelty`；创造性复核 Agent → `inventive`；HTML 格式转换不作为 Agent，由导出模块直接处理。B-038 后 Orchestrator 完全迁移到服务端：前端 AgentClient 仅负责调用 `/api/agent/run`，prompt 构造、知识库增强、AI Gateway 调用全部在后端 `server/src/lib/orchestrator.ts` 完成（见 ADR-001）。
+> **PRD Agent 名 ↔ Design Agent ID 映射：** B-008 后新增复审 Agent：审查意见解析 → `opinion-analysis`；答辩理由映射 → `argument-analysis`；复审意见草稿 → `reexam-draft`。文档解读 Agent → `interpret`（`moduleScope: "case"`）；创新点研读 Agent 对应 `claim-chart` + `novelty`；创造性复核 Agent → `inventive`；HTML 格式转换不作为 Agent，由导出模块直接处理。Orchestrator 完全在后端 `server/src/lib/orchestrator.ts`，prompt 构造、知识库增强、AI Gateway 调用全部在后端完成（见 ADR-001）。
 
 > **B-018 知识库增强：** `claim-chart`、`novelty`、`inventive`、`opinion-analysis`、`argument-analysis`、`reexam-draft` 六个 Agent 在调用前自动检索知识库相关内容并注入 system prompt。增强为可选降级——知识库未配置或检索失败时退化为原始行为。检索全部在服务端完成：混合检索（语义 + BM25 RRF 融合）+ 三级重排序（远程 API → 本地 cross-encoder → 启发式）+ query 扩展（跨语言 + 法律同义词 + 法条图谱）。Embedding 为可选远程 API，无配置时降级纯 BM25。详见 `server/src/routes/knowledge.ts`、`server/src/lib/`。
 
@@ -905,15 +901,15 @@ v0.1.0 的 Agent 为逻辑角色，通过 `AgentClient` 统一调度（架构参
 | `shared/src/prompts/reexam-draft.prompt.md` | 复审意见草稿 |
 | `shared/src/prompts/summary.prompt.md` | 专利申请简述 |
 
-变量使用 `{{name}}` 格式，在 AgentClient 构造请求时展开。
+变量使用 `{{name}}` 格式，在后端 orchestrator 构造请求时展开。
 
-> **注意：** `draft` 和 `chat` Agent 不使用独立 prompt 模板文件。`draft` 的输入由 AgentClient 直接拼接四分区内容作为 user prompt；`chat` 的 system prompt 由 AgentClient 根据 `moduleScope` 动态构造（包含当前模块上下文摘要和对话规则）。
+> **注意：** `draft` 和 `chat` Agent 不使用独立 prompt 模板文件。`draft` 的输入由后端 orchestrator 直接拼接四分区内容作为 user prompt；`chat` 的 system prompt 由后端 orchestrator 根据 `moduleScope` 动态构造（包含当前模块上下文摘要和对话规则）。
 
 ### 6.4 Prompt 注入策略
 
 **System prompt 与 User prompt 分离：**
 - System prompt：包含角色定义、法律边界约束、JSON schema 要求、输出格式规范。由 `*.prompt.md` 模板提供，在每次调用中固定不变。
-- User prompt：包含当前案件的具体数据（权利要求文本、说明书片段、对比文件内容等）。由 AgentClient 根据 scope 动态构造。
+- User prompt：包含当前案件的具体数据（权利要求文本、说明书片段、对比文件内容等）。由后端 orchestrator 根据 scope 动态构造。
 
 **各 Agent 上下文注入范围：**
 
@@ -956,7 +952,7 @@ approxTokens = ceil(zhChars * 0.6 + latinChars * 0.3)
 **校准机制：**
 - 首次真实调用后，记录实际 `tokenUsage.input` 与估算值的比率作为 `calibrationFactor`。
 - 后续调用：`displayEstimate = approxTokens * calibrationFactor`。
-- 校准系数持久化到 IndexedDB `settings` store 中，随每次实际 usage 更新（滑动窗口平均，窗口大小 = 最近 5 次调用）。
+- 校准系数持久化到后端 SQLite `settings` 表中，随每次实际 usage 更新（滑动窗口平均，窗口大小 = 最近 5 次调用）。
 - Mock 模式不进行校准（无真实 token 数据）。
 
 发送确认框显示：`估算 Token ≈ {displayEstimate} + maxTokens {output}`；发送后用实际 usage 覆盖并累计到 `localMetrics`。
@@ -980,7 +976,7 @@ flowchart LR
     GW --> PR["外部 Provider"]
     PR --> Res["候选结果 + Citation + 待确认标记"]
     Res --> Rst["restore 还原脱敏内容"]
-    Rst --> Store["IndexedDB + 审计日志"]
+    Rst --> Store["SQLite + 审计日志"]
 ```
 
 ### 7.2 硬性安全规则
@@ -1010,7 +1006,7 @@ flowchart LR
 | APP 用户默认 | server 进程内存 | 进程重启后需重新输入；通过 `PUT /api/settings/keys` 写入 |
 | APP 用户可选持久化 | `data/keystore.enc` | PBKDF2(200k) 派生密钥 + AES-256-GCM 加密 |
 | 浏览器 | 不存储 | `apiKeyRef` 只保存别名用于后端查找 |
-| **开发者测试** | **环境变量 / `.env`** | **`TOKEN_PLAN_API_KEY` 仅用于 `test:ai-smoke`；不得读取 APP 设置、IndexedDB、`data/keystore.enc`** |
+| **开发者测试** | **环境变量 / `.env`** | **`TOKEN_PLAN_API_KEY` 仅用于 `test:ai-smoke`；不得读取 APP 设置、`data/keystore.enc`** |
 
 **APP 用户 Key 与开发者 Key 严格隔离：**
 - APP 用户 Key 来源：用户在 APP `设置 → 模型连接` 中配置 → server 内存/可选加密 keystore。
@@ -1026,8 +1022,8 @@ flowchart LR
 | OCR 质量极差 (<0.40) | 通过质量评分检测 | 红色提示"建议提供含文字层 PDF" | 用户二次确认后继续或重新上传 |
 | PDF 无文字层 | `hasTextLayer()` 返回 false | 自动启动 OCR | — |
 | 文件大小超限 (>100MB / >200页) | 上传时拦截 | 提示"文件过大，请拆分后上传" | 不进入 pipeline |
-| IndexedDB QuotaExceededError | catch 写入操作 | 提示"存储空间不足，请导出并清理旧案件" | 引导用户清理或导出 |
-| IndexedDB 一般写入失败 | catch，记录 pino 日志 | 提示"保存失败" + 重试按钮 | 可重试 |
+| SQLite 写入失败 | catch 写入操作 | 提示"存储空间不足，请导出并清理旧案件" | 引导用户清理或导出 |
+| SQLite 一般写入失败 | catch，记录 pino 日志 | 提示"保存失败" + 重试按钮 | 可重试 |
 | 网络断开（真实模式） | `navigator.onLine` 检测 + fetch 失败 | 提示"网络不可用，请检查连接" | 不自动降级到 Mock（需用户主动切换） |
 | Provider 401 鉴权失败 | 不重试不切换 | 提示"API Key 无效，请检查设置" | 引导用户到设置页 |
 | Provider 429 配额 / 5xx | fallback 或退避重试（见 ADR-013） | "正在切换 Provider…" / "正在重试…" | 按 providerPreference 顺序 fallback |
@@ -1218,7 +1214,7 @@ Vercel（前端 + Serverless Functions）
        └── /api/settings/*
 
 Supabase（后端服务）
-  ├── PostgreSQL 数据库（替代浏览器端 IndexedDB，实现多用户数据持久化）
+  ├── PostgreSQL 数据库（替代后端 SQLite，实现多用户数据持久化）
   │    └── 案件/文档/分析结果/对话记录等业务数据
   ├── Auth（可选，替代 HTTP Basic Auth）
   └── Edge Functions（可选，替代部分 Express 路由）
@@ -1226,7 +1222,7 @@ Supabase（后端服务）
 
 **适配要点：**
 - Express 中间件需适配为 Vercel Serverless Function 格式（`api/` 目录结构）
-- IndexedDB 读写需迁移为 Supabase JS SDK 调用（数据模型不变，仅存储层替换）
+- SQLite 读写需迁移为 Supabase JS SDK 调用（数据模型不变，仅存储层替换）
 - API Key 加密存储从文件系统 (`data/keystore.enc`) 改为 Supabase 数据库加密字段或 Vercel 环境变量
 - 免费套餐限制：Vercel 100GB 带宽/月、Supabase 500MB 数据库、适合 5–10 人试用
 
@@ -1248,7 +1244,7 @@ Supabase（后端服务）
 
 ---
 
-## 11. IndexedDB Schema 版本表
+## 11. SQLite 数据库 Schema
 
 数据库名：`patent-examiner-v1`
 
@@ -1269,13 +1265,13 @@ Supabase（后端服务）
 | `runMarkers` | `id` (composite `caseId::module`) | `caseId`, `module` | 标记某 case 的某个模块（`defects`/`claimChart`/`argumentMapping`）已完成 AI 分析，用于区分"未运行"和"运行后无结果"。v8 新增。 |
 | `knowledgeSources` | `id` | `mediaType` | 知识库来源元数据（文件/URL）。v10 新增。 |
 | `knowledgeChunks` | `id` | `sourceId`, `embedded` | 知识库切片（文本 chunk）。v10 新增。 |
-| `knowledgeVectors` | `chunkId` | `modelId` | 知识库向量（embedding）。v10 新增。向量主存储已迁移到服务端 SQLite（`kb_vectors` 表），IndexedDB 仅用于客户端备份/恢复/导出。 |
+| `knowledgeVectors` | `chunkId` | `modelId` | 知识库向量（embedding）。v10 新增。向量主存储在服务端 SQLite（`kb_vectors` 表）。 |
 
 **迁移策略：** `open(db, version, { upgrade(db, oldV, newV, tx) })`，按版本分支处理。禁止破坏性清库（除非 major 版本变更并在 UI 提示）。
 
 **QuotaExceededError 处理：** 所有写入操作必须 catch，提示用户"存储空间不足，请导出并清理旧案件"。
 
-**一键清除所有本地数据：** 设置页提供"清除所有本地数据"按钮，行为 = 删除 IndexedDB `patent-examiner-v1` 数据库 + 清除 localStorage 中 `mode` 缓存。操作前需二次确认。
+**一键清除所有本地数据：** 设置页提供"清除所有本地数据"按钮，行为 = 清除后端 SQLite 数据 + 清除 localStorage 中 `mode` 缓存。操作前需二次确认。
 
 ---
 
@@ -1389,6 +1385,7 @@ Supabase（后端服务）
 
 | 日期 | 变更摘要 | 影响范围 | 关联 commit |
 |------|---------|---------|------------|
+| 2026-06-02 | B-038 Phase 3: 删除 dataClient.ts + agentApi.ts — dataClient 7 个 fetch 工具函数内联到 repos.ts，agentApi 全部导出函数（agentRun/searchReferences/extractSearchTerms/searchWithTerms/lastKnowledgeCitations + 内部 helpers）合并到 repos.ts；7 个消费方 import 路径更新 | `client/src/lib/repos.ts`、`client/src/lib/dataClient.ts`(删除)、`client/src/lib/agentApi.ts`(删除)、7 个消费方文件 | 待提交 |
 | 2026-06-02 | cr-1/bg-70~74: 知识库架构重构 — 移除本地 embedding 模型，embedding 改为可选远程 API（无配置降级纯 BM25）；Embedding API 失败时 catch 降级 BM25；Query 扩展迁移到服务端（queryExpand.ts）；移除客户端死代码（hybridSearch.ts/vectorStore.ts/bm25Search.ts/embedder.ts）；URL 导入 null guard + BM25 索引 invalidate | `server/src/routes/knowledge.ts`、`server/src/lib/queryExpand.ts`、`client/src/lib/knowledge/`、`shared/src/types/knowledge.ts` | 待提交 |
 | 2026-06-02 | cr-2: 本地 re-ranker 升级为 cross-encoder — 新增 `crossEncoderRerank()` 使用 `Xenova/bge-reranker-v2-m3`，三级降级链：远程 API → 本地 cross-encoder → 本地启发式（5 信号加权） | `server/src/lib/reranker.ts`、`server/src/routes/knowledge.ts` | 待提交 |
 | 2026-06-01 | B-037: 安全边界文档修正 — "浏览器端 IndexedDB 保存所有数据" 改为 "数据保存在应用内（前端 IndexedDB + 后端 SQLite）" | §1.1 关键原则、PRD §7.1 | 待提交 |

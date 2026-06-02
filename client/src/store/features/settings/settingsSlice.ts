@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { AppMode } from "@shared/types/domain";
 import type { AppSettings, ProviderErrorMessage } from "@shared/types/agents";
 import type { KnowledgeConfig } from "@shared/types/knowledge";
-import { getById, create as dbCreate } from "../../../lib/dataClient";
+import { getById, create as dbCreate } from "../../../lib/repos";
 import { waitForServerReady } from "../../../lib/serverReady";
 import { createLogger } from "../../../lib/logger";
 import { idbWriteGuard } from "../../../lib/idbWriteGuard";

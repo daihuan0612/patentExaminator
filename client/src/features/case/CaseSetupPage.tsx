@@ -13,7 +13,7 @@ import { createDocument, readDocumentsByCaseId, updateDocument, deleteDocument }
 import { createClaimNode } from "../../lib/repos";
 import { readCaseById, createCase, updateCase } from "../../lib/repos";
 import { useCaseStore, useDocumentsStore, useClaimsStore, useSettingsStore, useReferencesStore } from "../../store";
-import { agentRun } from "../../lib/agentApi";
+import { agentRun } from "../../lib/repos";
 import { createLogger } from "../../lib/logger";
 import { runOcr, type OcrProgress } from "../../lib/ocrWorker";
 

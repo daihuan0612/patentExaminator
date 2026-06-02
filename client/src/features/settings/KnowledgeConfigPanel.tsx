@@ -8,7 +8,7 @@ import { DEFAULT_KNOWLEDGE_CONFIG } from "@shared/types/knowledge";
 import type { KnowledgeProviderConnection } from "@shared/types/agents";
 import { PRESET_KNOWLEDGE_PROVIDERS } from "@shared/types/agents";
 import { useSettingsStore } from "../../store";
-import { lastKnowledgeCitations } from "../../lib/agentApi";
+import { lastKnowledgeCitations } from "../../lib/repos";
 import { createLogger } from "../../lib/logger";
 
 const log = createLogger("KnowledgeConfigPanel");

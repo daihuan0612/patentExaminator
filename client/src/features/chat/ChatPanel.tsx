@@ -4,7 +4,7 @@ import { useChatStore, useCaseStore } from "../../store";
 import { ChatBubble } from "./ChatBubble";
 import { buildContextSummary } from "../../lib/chatContext";
 import type { ChatResponse } from "@shared/types/api";
-import { agentRun } from "../../lib/agentApi";
+import { agentRun } from "../../lib/repos";
 import { createSession, createMessage, deleteSession, deleteMessagesBySessionId, updateSession, getSessionsByCaseId, getMessagesBySessionId } from "../../lib/repos";
 import { formatAiErrorMessage } from "../../lib/errorDisplay";
 import type { ChatMessage, ChatSession, ModuleScope } from "@shared/types/domain";

@@ -36,7 +36,7 @@ import { useDefectsStore } from "./store";
 import { useDraftStore } from "./store";
 import { useSettingsStore } from "./store";
 import { useOpinionStore } from "./store";
-import { agentRun } from "./lib/agentApi";
+import { agentRun } from "./lib/repos";
 import type { ArgumentMapping, OfficeActionAnalysis } from "@shared/types/domain";
 import {
   readOpinionAnalysis,

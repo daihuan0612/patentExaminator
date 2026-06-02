@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
-import { agentRun } from "../../lib/agentApi";
+import { agentRun } from "../../lib/repos";
 import type { ClaimChartResponse } from "@shared/types/api";
 import { useClaimsStore, useCaseStore, useSettingsStore } from "../../store";
 import { ErrorBanner } from "../../lib/errorDisplay";
