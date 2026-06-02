@@ -1,7 +1,7 @@
 import type { ExtractCaseFieldsResponse } from "@shared/types/api";
 import type { AppSettings } from "@shared/types/agents";
 import type { ClaimNode } from "@shared/types/domain";
-import { agentRun } from "./agentApi";
+import { agentRun } from "./repos";
 import { parseClaims } from "./claimParser";
 
 export interface ExtractedFields {
