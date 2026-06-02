@@ -3,6 +3,9 @@ import type { AppSettings } from "@shared/types/agents";
 import type { ClaimNode } from "@shared/types/domain";
 import { agentRun } from "./repos";
 import { parseClaims } from "./claimParser";
+import { createLogger } from "./logger";
+
+const log = createLogger("CaseFieldExtractor");
 
 export interface ExtractedFields {
   title: string | null;
@@ -112,7 +115,7 @@ export async function extractCaseFieldsFallback(
       confidence.targetClaimNumber = "high";
     }
   } catch (e) {
-    console.warn("Failed to parse claims:", e);
+    log("Failed to parse claims:", e);
   }
 
   return {

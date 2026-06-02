@@ -8,6 +8,9 @@ import { buildTextIndex } from "../../lib/textIndex";
 import { computeFileHash } from "../../lib/fileHash";
 import { createDocument, readDocumentsByCaseId } from "../../lib/repos";
 import { useDocumentsStore } from "../../store";
+import { createLogger } from "../../lib/logger";
+
+const log = createLogger("DocumentUpload");
 
 const SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".txt", ".html"];
 
@@ -30,7 +33,7 @@ export function DocumentUploadPanel() {
         const docs = await readDocumentsByCaseId(caseId);
         if (isMountedRef.current) setDocuments(docs);
       } catch (e) {
-        console.warn("Failed to load documents:", e);
+        log("Failed to load documents:", e);
       }
     })();
   }, [caseId, setDocuments]);

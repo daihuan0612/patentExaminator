@@ -9,6 +9,9 @@ import { createDocument } from "../../lib/repos";
 import { getLatestSearchSession, createSearchSession, updateSearchSession } from "../../lib/repos";
 import { searchReferences as _searchReferences, extractSearchTerms, searchWithTerms } from "../../lib/repos";
 import { ErrorBanner } from "../../lib/errorDisplay";
+import { createLogger } from "../../lib/logger";
+
+const log = createLogger("ReferenceSearch");
 
 interface ReferenceSearchPanelProps {
   claimText: string;
@@ -70,7 +73,7 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
           setSearchStep("done");
         }
       } catch (e) {
-        console.warn("Failed to restore search session:", e);
+        log("Failed to restore search session:", e);
       }
     })();
   }, [caseId, setSearchTerms, setProviderResults, setSearchSessionId, setSearchStep]);

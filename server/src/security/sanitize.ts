@@ -7,6 +7,8 @@
 // eslint-disable-next-line no-misleading-character-class -- intentional: these are the exact codepoints to strip
 const ZERO_WIDTH_RE = /[\u200b\u200c\u200d\ufeff]/g;
 
+import { logger } from "../lib/logger.js";
+
 const DEFAULT_PATTERNS = [
   { pattern: /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, replace: "[EMAIL]" },
   { pattern: /\b1[3-9]\d{9}\b/g, replace: "[PHONE]" },
@@ -38,7 +40,7 @@ export function sanitizeText(
         const regex = new RegExp(rule.pattern, "g");
         result = result.replace(regex, rule.replace);
       } catch (e) {
-        console.warn("Failed to apply sanitize rule:", e);
+        logger.warn("Failed to apply sanitize rule:", { error: e });
       }
     }
   }

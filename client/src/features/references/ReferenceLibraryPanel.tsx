@@ -11,6 +11,9 @@ import { ReferenceEditForm } from "./ReferenceEditForm";
 import { ReferenceSearchPanel } from "./ReferenceSearchPanel";
 import { useReferencesStore, useCaseStore, useClaimsStore } from "../../store";
 import { createDocument, deleteDocument } from "../../lib/repos";
+import { createLogger } from "../../lib/logger";
+
+const log = createLogger("ReferenceLibrary");
 
 const MAX_REFERENCES = 10;
 
@@ -77,7 +80,7 @@ export function ReferenceLibraryPanel() {
           textStatus = text ? "extracted" : "empty";
         }
       } catch (e) {
-        console.warn("Failed to extract text from reference file:", e);
+        log("Failed to extract text from reference file:", e);
         textStatus = "empty";
       }
 

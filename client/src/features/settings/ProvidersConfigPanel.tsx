@@ -5,6 +5,9 @@ import { useSettingsStore } from "../../store";
 import { fetchModels } from "../../lib/api";
 import { DEFAULT_MODELS, getModelMeta } from "../../lib/modelCatalog";
 import { ProviderErrorBox } from "./ProviderErrorBox";
+import { createLogger } from "../../lib/logger";
+
+const log = createLogger("ProvidersConfig");
 
 const PROVIDER_EXPANDED_KEY = "pex-provider-expanded";
 const PROVIDER_ORDER_KEY = "pex-provider-order";
@@ -16,7 +19,7 @@ function loadExpandedState(): Record<string, boolean> {
       return JSON.parse(saved);
     }
   } catch (e) {
-    console.warn("Failed to load provider expanded state:", e);
+    log("Failed to load provider expanded state:", e);
   }
   return {};
 }
@@ -25,7 +28,7 @@ function saveExpandedState(state: Record<string, boolean>) {
   try {
     localStorage.setItem(PROVIDER_EXPANDED_KEY, JSON.stringify(state));
   } catch (e) {
-    console.warn("Failed to save provider expanded state:", e);
+    log("Failed to save provider expanded state:", e);
   }
 }
 
@@ -37,7 +40,7 @@ function loadProviderOrder(): ProviderId[] {
       if (Array.isArray(parsed)) return parsed;
     }
   } catch (e) {
-    console.warn("Failed to load provider order:", e);
+    log("Failed to load provider order:", e);
   }
   return [];
 }
@@ -46,7 +49,7 @@ function saveProviderOrder(order: ProviderId[]) {
   try {
     localStorage.setItem(PROVIDER_ORDER_KEY, JSON.stringify(order));
   } catch (e) {
-    console.warn("Failed to save provider order:", e);
+    log("Failed to save provider order:", e);
   }
 }
 

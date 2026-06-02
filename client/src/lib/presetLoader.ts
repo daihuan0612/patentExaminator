@@ -18,6 +18,9 @@ import { createInventive } from "./repos";
 import { createDefect } from "./repos";
 import { createSession, createMessage, getSessionsByCaseId, getMessagesBySessionId } from "./repos";
 import { useCaseStore, useDocumentsStore, useReferencesStore, useClaimsStore, useNoveltyStore, useInventiveStore, useDefectsStore, useChatStore } from "../store";
+import { createLogger } from "./logger";
+
+const log = createLogger("PresetLoader");
 
 import presetData from "@shared/fixtures/preset-demo.json";
 
@@ -45,7 +48,7 @@ export async function loadPresetCase(): Promise<string> {
     const existing = await readCaseById(theCase.id);
     isFirstLoad = !existing;
   } catch (e) {
-    console.warn("Failed to read existing case:", e);
+    log("Failed to read existing case:", e);
     isFirstLoad = true;
   }
 
@@ -91,7 +94,7 @@ export async function loadPresetCase(): Promise<string> {
     try {
       existingSessions = await getSessionsByCaseId(theCase.id);
     } catch (e) {
-      console.warn("Failed to read chat sessions:", e);
+      log("Failed to read chat sessions:", e);
       existingSessions = [];
     }
     const allMessages: ChatMessage[] = [];
@@ -130,7 +133,7 @@ export async function loadPresetCase(): Promise<string> {
         d.role === "reference"
       ) as ReferenceDocument[];
     } catch (e) {
-      console.warn("Failed to read documents:", e);
+      log("Failed to read documents:", e);
       existingRefs = data.referenceDocs as unknown as ReferenceDocument[];
     }
     useReferencesStore.getState().setReferences(existingRefs);
