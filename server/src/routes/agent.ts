@@ -23,6 +23,7 @@ agentRouter.post("/agent/run", express.json({ limit: "10mb" }), async (req, res)
       providerBaseUrls,
       maxTokens,
       knowledgeEnabled,
+      apiKey,
     } = req.body as {
       agent: string;
       caseId: string;
@@ -34,6 +35,7 @@ agentRouter.post("/agent/run", express.json({ limit: "10mb" }), async (req, res)
       providerBaseUrls?: Record<string, string>;
       maxTokens?: number;
       knowledgeEnabled?: boolean;
+      apiKey?: string;
     };
 
     if (!agent || !caseId) {
@@ -55,6 +57,7 @@ agentRouter.post("/agent/run", express.json({ limit: "10mb" }), async (req, res)
       maxTokens,
       signal: req.signal,
       knowledgeEnabled,
+      apiKey,
     });
 
     if (!result.ok) {

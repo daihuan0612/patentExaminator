@@ -10,6 +10,7 @@ export const aiRunRequestSchema = z.object({
   providerBaseUrls: z.record(z.string(), z.string()).optional(),
   reasoningLevel: z.enum(["low", "medium", "high"]).optional(),
   prompt: z.string().min(1),
+  apiKey: z.string().optional(),
   expectedSchemaName: z.string().optional(),
   sanitized: z.boolean(),
   mock: z.boolean().optional(),

@@ -144,10 +144,10 @@ ${citationBlock}
   // Build chat messages
   const messages = [{ role: "user" as const, content: prompt }];
 
-  // Get API keys for requested providers
+  // Get API keys for requested providers (request.apiKey overrides keyStore)
   const providerKeys = new Map<string, string>();
   for (const providerId of request.providerPreference) {
-    const key = getApiKey(providerId);
+    const key = request.apiKey ?? getApiKey(providerId);
     if (key) {
       providerKeys.set(providerId, key);
     }

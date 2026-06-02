@@ -29,6 +29,8 @@ export interface AgentRunRequest {
   signal?: AbortSignal;
   /** bg-75: 用户是否启用了知识库 */
   knowledgeEnabled?: boolean;
+  /** B-041: 请求体传入的 API key（测试/外部调用用），优先于 keyStore */
+  apiKey?: string;
 }
 
 export interface AgentRunResponse {
@@ -608,6 +610,7 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
       providerBaseUrls: req.providerBaseUrls,
       maxTokens: req.maxTokens,
       signal: req.signal,
+      apiKey: req.apiKey,
     });
 
     return {
@@ -666,6 +669,7 @@ interface InternalGatewayRequest {
   providerBaseUrls?: Record<string, string>;
   maxTokens?: number;
   signal?: AbortSignal;
+  apiKey?: string;
 }
 
 interface InternalGatewayResponse {
@@ -678,10 +682,10 @@ async function callInternalGateway(req: InternalGatewayRequest): Promise<Interna
   const { registry } = await import("../providers/registry.js");
   const { getApiKey } = await import("../security/keyStore.js");
 
-  // 构建 provider → apiKey 映射
+  // 构建 provider → apiKey 映射（请求体 apiKey 优先于 keyStore）
   const providerApiKeys: Record<string, string> = {};
   for (const pid of req.providerPreference ?? []) {
-    const key = getApiKey(pid);
+    const key = req.apiKey ?? getApiKey(pid);
     if (key) providerApiKeys[pid] = key;
   }
 

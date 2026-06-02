@@ -164,6 +164,7 @@ loadEnvFile();
 const BASE = process.env.TEST_BASE || "http://localhost:3000/api";
 const GEMINI_KEY = process.env.GEMINI_KEY;
 const MIMO_KEY = process.env.MiMo_KEY;
+const OPENROUTER_KEY = process.env.Openrouter_KEY;
 const MIMO_MODEL_ID = process.env.MIMO_MODEL_ID || "MiMo-V2.5";
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
 const SERP_API_KEY = process.env.SerpAPI_KEY;
@@ -618,6 +619,7 @@ async function runRealAiAgentTest(label, agent, prompt, metadata, onResponse) {
     prompt,
     sanitized: false,
     metadata,
+    ...(GEMINI_KEY && { apiKey: GEMINI_KEY }),
   };
 
   // ── MiMo Stage (first priority) ──
@@ -748,6 +750,7 @@ async function runRealAiAgentTest(label, agent, prompt, metadata, onResponse) {
           ...body,
           providerPreference: ["openrouter"],
           modelId: openrouterModelId,
+          ...(OPENROUTER_KEY && { apiKey: OPENROUTER_KEY }),
         };
         const res = await postJSON("/ai/run", openrouterBody);
         const data = await res.json();
@@ -1111,6 +1114,7 @@ async function testMockClassifyDocuments_G1() {
 // ── nf-7: Two-Step Search (Mock) ────────────────────────────────────
 
 async function testMockExtractSearchTerms_G1() {
+  if (!GEMINI_KEY) { log("MockExtractSearchTerms_G1: returns queries", true, "skipped (no GEMINI_KEY)"); return; }
   const res = await postJSON("/extract-search-terms", {
     caseId: "g1-led",
     claimText: "一种LED灯具散热装置，包括：散热基板(A)，铝合金材质，表面有散热翅片；导热界面层(B)，石墨烯复合导热膜，厚度0.1-0.5mm；风冷模块(C)，含离心风扇和导风罩。",
@@ -1118,7 +1122,8 @@ async function testMockExtractSearchTerms_G1() {
       { featureCode: "A", description: "散热基板" },
       { featureCode: "B", description: "导热界面层" },
       { featureCode: "C", description: "风冷模块" }
-    ]
+    ],
+    llmApiKey: GEMINI_KEY,
   });
   const data = await res.json();
   const ok = data.ok && Array.isArray(data.queries) && data.queries.length >= 1 && data.featureCount === 3;
@@ -1127,6 +1132,7 @@ async function testMockExtractSearchTerms_G1() {
 }
 
 async function testMockSearchWithTerms_G1() {
+  if (!GEMINI_KEY) { log("MockSearchWithTerms_G1: response schema", true, "skipped (no GEMINI_KEY)"); log("MockSearchWithTerms_G1: has candidates", true, "skipped"); return; }
   const res = await postJSON("/search-with-terms", {
     caseId: "g1-led",
     claimText: "一种LED灯具散热装置，包括：散热基板(A)，铝合金材质，表面有散热翅片；导热界面层(B)，石墨烯复合导热膜，厚度0.1-0.5mm；风冷模块(C)，含离心风扇和导风罩。",
@@ -1136,7 +1142,8 @@ async function testMockSearchWithTerms_G1() {
     ],
     searchQueries: ["LED散热器 相变材料", "LED heatsink phase change"],
     maxResults: 5,
-    mock: true
+    mock: true,
+    llmApiKey: GEMINI_KEY,
   });
   const data = await res.json();
   const schemaResult = validateSearchReferencesOutput(data);

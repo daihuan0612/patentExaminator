@@ -10,7 +10,6 @@ import { dataRouter } from "./routes/data.js";
 import { ocrRouter } from "./routes/ocr.js";
 import { documentsRouter } from "./routes/documents.js";
 import { agentRouter } from "./routes/agent.js";
-import { setApiKey } from "./security/keyStore.js";
 import { logger } from "./lib/logger.js";
 import { closeSyncDb } from "./lib/syncDb.js";
 import path from "path";
@@ -19,25 +18,10 @@ import fs from "fs";
 
 // Load .env file from project root
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
-
-// Load default API keys from environment variables
-if (process.env.GEMINI_KEY) {
-  setApiKey("gemini", process.env.GEMINI_KEY);
-  logger.info("Loaded GEMINI_KEY from environment");
-}
-if (process.env.MiMo_KEY) {
-  setApiKey("mimo", process.env.MiMo_KEY);
-  logger.info("Loaded MiMo_KEY from environment");
-}
-if (process.env.Openrouter_KEY) {
-  setApiKey("openrouter", process.env.Openrouter_KEY);
-  logger.info("Loaded Openrouter_KEY from environment");
-}
-
 
 app.use(express.json({ limit: "10mb", charset: "utf-8" }));
 
@@ -50,7 +34,7 @@ app.use((_req, res, next) => {
 // Simple rate limiter for expensive API endpoints (no external deps)
 const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
-const RATE_LIMIT_MAX = 200; // 200 requests per window per IP (30 was too low for tests)
+const RATE_LIMIT_MAX = 1000; // 1000 requests per window per IP (increased for development)
 
 function rateLimiter(req: express.Request, res: express.Response, next: express.NextFunction) {
   const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
@@ -64,6 +48,7 @@ function rateLimiter(req: express.Request, res: express.Response, next: express.
 
   entry.count++;
   if (entry.count > RATE_LIMIT_MAX) {
+    logger.warn(`Rate limit exceeded for IP ${ip}: ${entry.count} requests in window`);
     res.status(429).json({ ok: false, error: "请求过于频繁，请稍后重试" });
     return;
   }
@@ -81,6 +66,11 @@ app.use("/api", dataRouter);
 app.use("/api", ocrRouter);
 app.use("/api", documentsRouter);
 app.use("/api", rateLimiter, agentRouter);
+
+// Migration page
+app.get("/migrate", (_req, res) => {
+  res.type("html").sendFile(path.resolve(__dirname, "../public/migrate.html"));
+});
 
 // Serve client static files if dist exists
 const clientDist = path.resolve(__dirname, "../../client/dist");
