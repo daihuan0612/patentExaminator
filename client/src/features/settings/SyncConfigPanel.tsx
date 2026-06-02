@@ -1,17 +1,23 @@
 /**
  * 同步配置面板 — 跨设备数据同步设置
  */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSettingsStore } from "../../store";
 import { checkSyncStatus, uploadToServer, downloadFromServer, syncWithServer } from "../../lib/syncClient";
 
 export function SyncConfigPanel() {
   const { syncStatus, setSyncStatus } = useSettingsStore();
   const [lastResult, setLastResult] = useState<string>("");
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   const refreshStatus = useCallback(async () => {
     const status = await checkSyncStatus();
-    setSyncStatus(status);
+    if (isMountedRef.current) setSyncStatus(status);
   }, [setSyncStatus]);
 
   useEffect(() => {
@@ -23,6 +29,7 @@ export function SyncConfigPanel() {
     setLastResult("同步中...");
     try {
       const result = await syncWithServer();
+      if (!isMountedRef.current) return;
       if (result.ok) {
         setLastResult(`同步完成：上传 ${result.uploaded ?? 0} 条，下载 ${result.downloaded ?? 0} 条`);
         await refreshStatus();
@@ -31,10 +38,12 @@ export function SyncConfigPanel() {
         setSyncStatus({ error: result.error ?? "Unknown error" });
       }
     } catch (err) {
-      setLastResult(`同步失败：${err}`);
-      setSyncStatus({ error: String(err) });
+      if (isMountedRef.current) {
+        setLastResult(`同步失败：${err}`);
+        setSyncStatus({ error: String(err) });
+      }
     } finally {
-      setSyncStatus({ syncing: false });
+      if (isMountedRef.current) setSyncStatus({ syncing: false });
     }
   };
 
@@ -43,6 +52,7 @@ export function SyncConfigPanel() {
     setLastResult("上传中...");
     try {
       const result = await uploadToServer();
+      if (!isMountedRef.current) return;
       if (result.ok) {
         setLastResult(`上传完成：${result.uploaded ?? 0} 条记录`);
         await refreshStatus();
@@ -50,9 +60,9 @@ export function SyncConfigPanel() {
         setLastResult(`上传失败：${result.error}`);
       }
     } catch (err) {
-      setLastResult(`上传失败：${err}`);
+      if (isMountedRef.current) setLastResult(`上传失败：${err}`);
     } finally {
-      setSyncStatus({ syncing: false });
+      if (isMountedRef.current) setSyncStatus({ syncing: false });
     }
   };
 
@@ -61,6 +71,7 @@ export function SyncConfigPanel() {
     setLastResult("下载中...");
     try {
       const result = await downloadFromServer();
+      if (!isMountedRef.current) return;
       if (result.ok) {
         setLastResult(`下载完成：${result.downloaded ?? 0} 条记录`);
         await refreshStatus();
@@ -68,9 +79,9 @@ export function SyncConfigPanel() {
         setLastResult(`下载失败：${result.error}`);
       }
     } catch (err) {
-      setLastResult(`下载失败：${err}`);
+      if (isMountedRef.current) setLastResult(`下载失败：${err}`);
     } finally {
-      setSyncStatus({ syncing: false });
+      if (isMountedRef.current) setSyncStatus({ syncing: false });
     }
   };
 

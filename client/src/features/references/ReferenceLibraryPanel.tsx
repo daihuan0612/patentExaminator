@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import type { ReferenceDocument, SourceDocument } from "@shared/types/domain";
 import { classifyReferenceDate } from "../../lib/dateRules";
@@ -21,6 +21,12 @@ export function ReferenceLibraryPanel() {
   const { currentCase } = useCaseStore();
   const { claimNodes, claimFeatures } = useClaimsStore();
   const [limitWarning, setLimitWarning] = useState("");
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   const baselineDate = currentCase?.priorityDate ?? currentCase?.applicationDate;
 
@@ -43,6 +49,7 @@ export function ReferenceLibraryPanel() {
 
     const toAdd = fileArray.slice(0, remaining);
     for (const file of toAdd) {
+      if (!isMountedRef.current) return;
       const ext = getFileExtension(file.name);
       const fileType = ext.replace(".", "") as SourceDocument["fileType"];
 

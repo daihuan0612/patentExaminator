@@ -52,6 +52,12 @@ export function KnowledgeConfigPanel() {
   const [importProgress, setImportProgress] = useState<{ step: string; stepNum: number; totalSteps: number; detail?: string; percent: number } | null>(null);
   const [searching, setSearching] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   // nf-9: 知识库独立 Provider 配置
   const knowledgeProviders = settings.knowledgeProviders ?? [];
@@ -68,6 +74,7 @@ export function KnowledgeConfigPanel() {
         fetch(`${API}/sources`).then((r) => r.json()),
         fetch(`${API}/stats`).then((r) => r.json()),
       ]);
+      if (!isMountedRef.current) return;
       if (sourcesRes.ok) setSources(sourcesRes.sources);
       if (statsRes.ok) setStats({ sourceCount: statsRes.sourceCount, chunkCount: statsRes.chunkCount, embeddedCount: statsRes.embeddedCount });
     } catch (err) {
@@ -95,12 +102,13 @@ export function KnowledgeConfigPanel() {
       // 并行上传所有文件
       const fileArray = Array.from(files);
       const results = await Promise.all(fileArray.map((file) => uploadFileWithProgress(file)));
+      if (!isMountedRef.current) return;
       await refresh();
       setImportResult(results.join("\n"));
     } catch (err) {
-      setImportResult(`导入失败: ${err}`);
+      if (isMountedRef.current) setImportResult(`导入失败: ${err}`);
     } finally {
-      setImporting(false);
+      if (isMountedRef.current) setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
@@ -112,7 +120,7 @@ export function KnowledgeConfigPanel() {
         const result = await doUploadWithSSE(file);
         if (!result.startsWith("❌") || attempt === 2) return result;
         // 首次失败，等待 2 秒后重试
-        setImportResult(`⏳ ${file.name} — 上传失败，${attempt < 2 ? "正在重试..." : ""}`);
+        if (isMountedRef.current) setImportResult(`⏳ ${file.name} — 上传失败，${attempt < 2 ? "正在重试..." : ""}`);
         await new Promise((r) => setTimeout(r, 2000));
       } catch (err) {
         if (attempt === 2) return `❌ ${file.name} — ${err}`;
@@ -168,13 +176,13 @@ export function KnowledgeConfigPanel() {
           const step = data.step as string;
 
           if (step === "done") {
-            setImportProgress(null);
+            if (isMountedRef.current) setImportProgress(null);
             if (data.skipped) {
               return `⏭ ${file.name} — ${data.message}`;
             }
             return (data.message as string) ?? `✅ ${file.name}`;
           } else if (step === "error") {
-            setImportProgress(null);
+            if (isMountedRef.current) setImportProgress(null);
             return `❌ ${file.name} — ${data.error}`;
           } else if (step === "embedding" && data.progress) {
             const stepNum = (data.stepNum as number) ?? 5;
@@ -182,7 +190,7 @@ export function KnowledgeConfigPanel() {
             const embedPercent = Math.round(((data.progress as number) / (data.total as number)) * 100);
             // embedding 是最后一步，占总进度的剩余部分
             const overallPercent = Math.round(((stepNum - 1) / totalSteps * 100) + (embedPercent / totalSteps));
-            setImportProgress({ step: "向量化", stepNum, totalSteps, detail: `${data.progress}/${data.total}`, percent: overallPercent });
+            if (isMountedRef.current) setImportProgress({ step: "向量化", stepNum, totalSteps, detail: `${data.progress}/${data.total}`, percent: overallPercent });
           } else if (data.step && data.stepNum) {
             const stepNum = data.stepNum as number;
             const totalSteps = data.totalSteps as number;
@@ -196,9 +204,9 @@ export function KnowledgeConfigPanel() {
             };
             const label = stepLabels[step] ?? step;
             const percent = Math.round(((stepNum - 1) / totalSteps) * 100);
-            setImportProgress({ step: label, stepNum, totalSteps, detail: data.message as string, percent });
+            if (isMountedRef.current) setImportProgress({ step: label, stepNum, totalSteps, detail: data.message as string, percent });
           } else if (data.message) {
-            setImportResult(`⏳ ${file.name} — ${data.message}`);
+            if (isMountedRef.current) setImportResult(`⏳ ${file.name} — ${data.message}`);
           }
         } catch {
           // 忽略解析错误
@@ -222,13 +230,14 @@ export function KnowledgeConfigPanel() {
         body: JSON.stringify({ url: urlInput }),
       });
       const data = await res.json() as { ok: boolean; message?: string; error?: string };
+      if (!isMountedRef.current) return;
       setImportResult(data.ok ? (data.message ?? `✅ ${urlInput}`) : `❌ ${data.error}`);
       if (data.ok) setUrlInput("");
       await refresh();
     } catch (err) {
-      setImportResult(`导入失败: ${err}`);
+      if (isMountedRef.current) setImportResult(`导入失败: ${err}`);
     } finally {
-      setImporting(false);
+      if (isMountedRef.current) setImporting(false);
     }
   };
 
@@ -244,6 +253,7 @@ export function KnowledgeConfigPanel() {
         body: JSON.stringify({ query: testQuery, topK: config.topK }),
       });
       const data = await res.json() as { ok: boolean; results?: Array<{ text: string; score: number; metadata: Record<string, unknown> }>; error?: string };
+      if (!isMountedRef.current) return;
       if (data.ok && data.results && data.results.length > 0) {
         const lines = data.results.map((r) => {
           const source = (r.metadata?.sectionId as string) ?? (r.metadata?.articleId as string) ?? (r.metadata?.fileName as string) ?? "未知";
@@ -254,9 +264,9 @@ export function KnowledgeConfigPanel() {
         setTestResults(data.ok ? "未找到相关内容" : `检索失败: ${data.error}`);
       }
     } catch (err) {
-      setTestResults(`检索失败: ${err}`);
+      if (isMountedRef.current) setTestResults(`检索失败: ${err}`);
     } finally {
-      setSearching(false);
+      if (isMountedRef.current) setSearching(false);
     }
   };
 
@@ -264,13 +274,13 @@ export function KnowledgeConfigPanel() {
 
   const handleDelete = async (id: string) => {
     await fetch(`${API}/sources/${id}`, { method: "DELETE" });
-    await refresh();
+    if (isMountedRef.current) await refresh();
   };
 
   const handleClearAll = async () => {
     if (!window.confirm("确定要清空全部知识库数据吗？此操作不可恢复。")) return;
     await fetch(`${API}/clear`, { method: "DELETE" });
-    await refresh();
+    if (isMountedRef.current) await refresh();
   };
 
   return (
@@ -497,6 +507,12 @@ function KnowledgeProviderCard({ preset, existing, onUpdate }: KnowledgeProvider
   const [modelId, setModelId] = useState(existing?.modelId ?? preset.defaultModelId);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   const isEnabled = existing?.enabled ?? false;
   const hasKey = !!existing?.apiKeyRef;
@@ -542,11 +558,12 @@ function KnowledgeProviderCard({ preset, existing, onUpdate }: KnowledgeProvider
         }),
       });
       const data = await res.json() as { ok: boolean; error?: string };
+      if (!isMountedRef.current) return;
       setTestResult(data.ok ? "连接成功" : `连接失败: ${data.error}`);
     } catch (err) {
-      setTestResult(`测试失败: ${err}`);
+      if (isMountedRef.current) setTestResult(`测试失败: ${err}`);
     } finally {
-      setTesting(false);
+      if (isMountedRef.current) setTesting(false);
     }
   };
 

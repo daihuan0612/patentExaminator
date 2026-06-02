@@ -62,6 +62,7 @@ export function ProvidersConfigPanel() {
   const dragProviderItem = useRef<{ index: number } | null>(null);
   const dragProviderOver = useRef<{ index: number } | null>(null);
   const [providerOrder, setProviderOrder] = useState<ProviderId[]>(loadProviderOrder);
+  const isMountedRef = useRef(true);
 
   const sortedProviders = [...PRESET_MODEL_PROVIDERS].sort((a, b) => {
     const aIdx = providerOrder.indexOf(a.id);
@@ -75,6 +76,11 @@ export function ProvidersConfigPanel() {
   // Load expanded state from localStorage on mount
   useEffect(() => {
     setExpandedProviders(loadExpandedState());
+  }, []);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
   }, []);
 
   const toggleExpanded = (providerId: string) => {
@@ -235,6 +241,7 @@ export function ProvidersConfigPanel() {
     const preset = PRESET_MODEL_PROVIDERS.find((p) => p.id === id);
     try {
       const models = await fetchModels(id, provider.apiKeyRef, provider.baseUrl ?? preset?.baseUrl);
+      if (!isMountedRef.current) return;
       if (models.length > 0) {
         const defaultId = models.includes(provider.defaultModelId)
           ? provider.defaultModelId
@@ -243,9 +250,9 @@ export function ProvidersConfigPanel() {
         updateProvider(id, { modelIds: models, defaultModelId: defaultId, modelFallbacks: fallbacks });
       }
     } catch (error) {
-      setModelError((prev) => ({ ...prev, [id]: error instanceof Error ? error.message : "查询失败" }));
+      if (isMountedRef.current) setModelError((prev) => ({ ...prev, [id]: error instanceof Error ? error.message : "查询失败" }));
     } finally {
-      setLoadingModels(null);
+      if (isMountedRef.current) setLoadingModels(null);
     }
   };
 

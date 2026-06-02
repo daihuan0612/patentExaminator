@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { SearchProviderConnection, SearchProviderId } from "@shared/types/agents";
 import { PRESET_SEARCH_PROVIDERS } from "@shared/types/agents";
 import { useSettingsStore } from "../../store";
@@ -16,6 +16,12 @@ export function SearchProvidersConfigPanel() {
   const [secretInput, setSecretInput] = useState("");
   const [verifying, setVerifying] = useState<string | null>(null);
   const [verifyResult, setVerifyResult] = useState<Record<string, VerifyResult>>({});
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   const searchProviders = settings.searchProviders ?? [];
 
@@ -86,6 +92,7 @@ export function SearchProvidersConfigPanel() {
         })
       });
       const data = await res.json() as VerifyResult & { providerId?: string };
+      if (!isMountedRef.current) return;
       const result: VerifyResult = {
         ok: data.ok,
         ...(data.message ? { message: data.message } : {}),
@@ -96,12 +103,14 @@ export function SearchProvidersConfigPanel() {
         [provider.providerId]: result
       }));
     } catch (err) {
-      setVerifyResult((prev) => ({
-        ...prev,
-        [provider.providerId]: { ok: false, error: `请求失败: ${String(err)}` }
-      }));
+      if (isMountedRef.current) {
+        setVerifyResult((prev) => ({
+          ...prev,
+          [provider.providerId]: { ok: false, error: `请求失败: ${String(err)}` }
+        }));
+      }
     } finally {
-      setVerifying(null);
+      if (isMountedRef.current) setVerifying(null);
     }
   };
 

@@ -14,21 +14,25 @@ const SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".txt", ".html"];
 export function DocumentUploadPanel() {
   const { caseId } = useParams<{ caseId: string }>();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isMountedRef = useRef(true);
   const [status, setStatus] = useState<string>("");
   const { addDocument, setDocuments } = useDocumentsStore();
 
   useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
+
+  useEffect(() => {
     if (!caseId) return;
-    let cancelled = false;
     (async () => {
       try {
         const docs = await readDocumentsByCaseId(caseId);
-        if (!cancelled) setDocuments(docs);
+        if (isMountedRef.current) setDocuments(docs);
       } catch {
         /* IndexedDB unavailable (test env) */
       }
     })();
-    return () => { cancelled = true; };
   }, [caseId, setDocuments]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -36,6 +40,7 @@ export function DocumentUploadPanel() {
     if (!files || !caseId) return;
 
     for (const file of Array.from(files)) {
+      if (!isMountedRef.current) return;
       const ext = getFileExtension(file.name);
       if (!SUPPORTED_EXTENSIONS.includes(ext)) {
         setStatus(`不支持的文件格式: ${ext}`);
@@ -85,10 +90,11 @@ export function DocumentUploadPanel() {
         };
 
         await createDocument(doc);
+        if (!isMountedRef.current) return;
         addDocument(doc);
         setStatus(`${file.name} 处理完成`);
       } catch (err) {
-        setStatus(`处理 ${file.name} 时出错: ${err}`);
+        if (isMountedRef.current) setStatus(`处理 ${file.name} 时出错: ${err}`);
       }
     }
   };

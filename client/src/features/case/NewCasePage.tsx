@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { createCase } from "../../lib/repos";
 import { loadPresetCase } from "../../lib/presetLoader";
@@ -7,6 +8,12 @@ import type { PatentCase } from "@shared/types/domain";
 export function NewCasePage() {
   const navigate = useNavigate();
   const { setCurrentCase } = useCaseStore();
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   const handleCreate = async () => {
     const id = `case-${Date.now()}`;
@@ -26,12 +33,14 @@ export function NewCasePage() {
       updatedAt: now
     };
     await createCase(newCase);
+    if (!isMountedRef.current) return;
     setCurrentCase(newCase);
     navigate(`/cases/${id}/setup`);
   };
 
   const handleLoadPreset = async () => {
     const caseId = await loadPresetCase();
+    if (!isMountedRef.current) return;
     navigate(`/cases/${caseId}/setup`);
   };
 
