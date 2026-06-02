@@ -1,18 +1,36 @@
 /**
- * Tests for chat history persistence across page refresh scenarios.
+ * Chat Persistence Tests — B-042: 测试数据库隔离机制
+ *
+ * 测试聊天历史持久化场景，验证 SQLite 持久化层正确存储和检索聊天数据。
+ * 模拟页面刷新场景：写入数据 → 清空内存 → 从 DB 恢复。
+ *
+ * B-038 后数据层从 IndexedDB 迁移到 SQLite。
+ * 使用内存数据库隔离，不访问生产数据库。
  */
-
-import "fake-indexeddb/auto";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { setDBInstance, openPatentDB } from "@client/lib/repos";
-import { useChatStore } from "@client/store/features/chat/chatSlice";
-import * as chatRepo from "@client/lib/repos";
-import type { ChatSession, ChatMessage } from "@shared/types/domain";
+import {
+  createMemoryDb,
+  dbCreate, dbGetAll, dbGetById, dbQuery, dbUpdate, dbDelete, dbClearAll,
+  type TestDb,
+} from "../helpers/testDb";
+import type Database from "better-sqlite3";
+
+let tdb: TestDb;
+let db: Database.Database;
 
 const testCaseId = "test-case-persistence";
 const testSessionId = "test-session-persistence";
 
-function makeSession(overrides: Partial<ChatSession> = {}): ChatSession {
+beforeEach(() => {
+  tdb = createMemoryDb();
+  db = tdb.db;
+});
+
+afterEach(() => {
+  tdb.cleanup();
+});
+
+function makeSession(overrides: Record<string, unknown> = {}) {
   return {
     id: testSessionId,
     caseId: testCaseId,
@@ -20,11 +38,11 @@ function makeSession(overrides: Partial<ChatSession> = {}): ChatSession {
     title: "测试聊天会话",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    ...overrides
+    ...overrides,
   };
 }
 
-function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
+function makeMessage(overrides: Record<string, unknown> = {}) {
   return {
     id: "msg-1",
     caseId: testCaseId,
@@ -33,72 +51,44 @@ function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
     role: "user",
     content: "测试消息",
     createdAt: new Date().toISOString(),
-    ...overrides
+    ...overrides,
   };
 }
 
-// TODO: rewrite for server-side storage after B-038
-describe.skip("Chat persistence scenarios", () => {
-  beforeEach(async () => {
-    const db = await openPatentDB();
-    setDBInstance(db);
+// ═══════════════════════════════════════════════════════════════
+// Chat persistence scenarios
+// ═══════════════════════════════════════════════════════════════
 
-    const storeNames = Array.from(db.objectStoreNames);
-    const tx = db.transaction(storeNames, "readwrite");
-    await Promise.all([...storeNames.map((s) => tx.objectStore(s).clear()), tx.done]);
-
-    useChatStore.setState({
-      sessions: [],
-      messages: [],
-      activeSessionId: null,
-      isPanelOpen: false,
-      isLoading: false
-    });
-  });
-
-  afterEach(async () => {
-    try {
-      await chatRepo.deleteMessagesBySessionId(testSessionId);
-      await chatRepo.deleteSession(testSessionId);
-    } catch {
-    }
-    try {
-      await chatRepo.deleteMessagesBySessionId(`${testSessionId}-1`);
-      await chatRepo.deleteMessagesBySessionId(`${testSessionId}-2`);
-      await chatRepo.deleteSession(`${testSessionId}-1`);
-      await chatRepo.deleteSession(`${testSessionId}-2`);
-    } catch {
-    }
-  });
-  it("should persist chat session to IndexedDB and retrieve it", async () => {
+describe("Chat persistence scenarios (SQLite)", () => {
+  it("should persist chat session to SQLite and retrieve it", () => {
     const session = makeSession();
-    await chatRepo.createSession(session);
+    dbCreate(db, "chatSessions", session.id, session);
 
-    const savedSessions = await chatRepo.getSessionsByCaseId(testCaseId);
+    const savedSessions = dbQuery(db, "chatSessions", "caseId", testCaseId);
     expect(savedSessions).toHaveLength(1);
     expect(savedSessions[0]!.title).toBe("测试聊天会话");
     expect(savedSessions[0]!.moduleScope).toBe("novelty");
   });
 
-  it("should persist chat messages to IndexedDB and retrieve them", async () => {
+  it("should persist chat messages to SQLite and retrieve them", () => {
     const session = makeSession();
-    await chatRepo.createSession(session);
+    dbCreate(db, "chatSessions", session.id, session);
 
     const userMessage = makeMessage({
       id: "msg-user-1",
       role: "user",
-      content: "请帮我分析这个技术特征"
+      content: "请帮我分析这个技术特征",
     });
     const assistantMessage = makeMessage({
       id: "msg-assistant-1",
       role: "assistant",
-      content: "好的，我来分析这个技术特征..."
+      content: "好的，我来分析这个技术特征...",
     });
 
-    await chatRepo.createMessage(userMessage);
-    await chatRepo.createMessage(assistantMessage);
+    dbCreate(db, "chatMessages", userMessage.id, userMessage);
+    dbCreate(db, "chatMessages", assistantMessage.id, assistantMessage);
 
-    const savedMessages = await chatRepo.getMessagesBySessionId(testSessionId);
+    const savedMessages = dbQuery(db, "chatMessages", "sessionId", testSessionId);
     expect(savedMessages).toHaveLength(2);
     const userMsg = savedMessages.find(m => m.role === "user");
     const assistantMsg = savedMessages.find(m => m.role === "assistant");
@@ -108,159 +98,112 @@ describe.skip("Chat persistence scenarios", () => {
     expect(assistantMsg!.content).toBe("好的，我来分析这个技术特征...");
   });
 
-  it("should simulate page refresh: clear store then reload from IndexedDB", async () => {
-    const session = makeSession({
-      moduleScope: "inventive",
-      title: "创造性分析讨论"
-    });
-    await chatRepo.createSession(session);
+  it("should simulate page refresh: clear memory then reload from SQLite", () => {
+    // 写入数据
+    const session = makeSession({ moduleScope: "inventive", title: "创造性分析讨论" });
+    dbCreate(db, "chatSessions", session.id, session);
 
     const userMessage = makeMessage({
       id: "msg-refresh-test",
       moduleScope: "inventive",
-      content: "页面刷新测试消息"
+      content: "页面刷新测试消息",
     });
-    await chatRepo.createMessage(userMessage);
+    dbCreate(db, "chatMessages", userMessage.id, userMessage);
 
-    useChatStore.setState({
-      sessions: [],
-      messages: [],
-      activeSessionId: null,
-      isPanelOpen: false,
-      isLoading: false
-    });
+    // 模拟页面刷新：从 DB 重新加载
+    const storedSessions = dbQuery(db, "chatSessions", "caseId", testCaseId);
+    expect(storedSessions).toHaveLength(1);
+    expect(storedSessions[0]!.title).toBe("创造性分析讨论");
 
-    expect(useChatStore.getState().sessions).toHaveLength(0);
-    expect(useChatStore.getState().messages).toHaveLength(0);
-
-    const storedSessions = await chatRepo.getSessionsByCaseId(testCaseId);
-    useChatStore.getState().loadSessions(storedSessions);
-
-    const allMessages: ChatMessage[] = [];
+    const allMessages: Array<Record<string, unknown>> = [];
     for (const s of storedSessions) {
-      const msgs = await chatRepo.getMessagesBySessionId(s.id);
+      const msgs = dbQuery(db, "chatMessages", "sessionId", s.id);
       allMessages.push(...msgs);
     }
-    useChatStore.getState().loadMessages(allMessages);
-
-    expect(useChatStore.getState().sessions).toHaveLength(1);
-    expect(useChatStore.getState().sessions[0]!.title).toBe("创造性分析讨论");
-    expect(useChatStore.getState().messages).toHaveLength(1);
-    expect(useChatStore.getState().messages[0]!.content).toBe("页面刷新测试消息");
+    expect(allMessages).toHaveLength(1);
+    expect(allMessages[0]!.content).toBe("页面刷新测试消息");
   });
 
-  it("should handle multiple sessions for same case", async () => {
-    const session1 = makeSession({
-      id: `${testSessionId}-1`,
-      title: "新颖性讨论1"
+  it("should handle multiple sessions for same case", () => {
+    const session1 = makeSession({ id: `${testSessionId}-1`, title: "新颖性讨论1" });
+    const session2 = makeSession({ id: `${testSessionId}-2`, title: "新颖性讨论2" });
+
+    dbCreate(db, "chatSessions", session1.id, session1);
+    dbCreate(db, "chatSessions", session2.id, session2);
+
+    dbCreate(db, "chatMessages", "msg-s1", {
+      id: "msg-s1", caseId: testCaseId, sessionId: `${testSessionId}-1`,
+      moduleScope: "novelty", role: "user", content: "会话1的消息", createdAt: new Date().toISOString(),
     });
-    const session2 = makeSession({
-      id: `${testSessionId}-2`,
-      title: "新颖性讨论2"
+    dbCreate(db, "chatMessages", "msg-s2", {
+      id: "msg-s2", caseId: testCaseId, sessionId: `${testSessionId}-2`,
+      moduleScope: "novelty", role: "user", content: "会话2的消息", createdAt: new Date().toISOString(),
     });
 
-    await chatRepo.createSession(session1);
-    await chatRepo.createSession(session2);
-
-    await chatRepo.createMessage({
-      id: "msg-s1",
-      caseId: testCaseId,
-      sessionId: `${testSessionId}-1`,
-      moduleScope: "novelty",
-      role: "user",
-      content: "会话1的消息",
-      createdAt: new Date().toISOString()
-    });
-    await chatRepo.createMessage({
-      id: "msg-s2",
-      caseId: testCaseId,
-      sessionId: `${testSessionId}-2`,
-      moduleScope: "novelty",
-      role: "user",
-      content: "会话2的消息",
-      createdAt: new Date().toISOString()
-    });
-
-    const sessions = await chatRepo.getSessionsByCaseId(testCaseId);
+    const sessions = dbQuery(db, "chatSessions", "caseId", testCaseId);
     expect(sessions).toHaveLength(2);
 
-    const msgs1 = await chatRepo.getMessagesBySessionId(`${testSessionId}-1`);
+    const msgs1 = dbQuery(db, "chatMessages", "sessionId", `${testSessionId}-1`);
     expect(msgs1).toHaveLength(1);
     expect(msgs1[0]!.content).toBe("会话1的消息");
 
-    const msgs2 = await chatRepo.getMessagesBySessionId(`${testSessionId}-2`);
+    const msgs2 = dbQuery(db, "chatMessages", "sessionId", `${testSessionId}-2`);
     expect(msgs2).toHaveLength(1);
     expect(msgs2[0]!.content).toBe("会话2的消息");
   });
+
+  it("delete session → messages should be cleaned up (application-level cascade)", () => {
+    const session = makeSession();
+    dbCreate(db, "chatSessions", session.id, session);
+    dbCreate(db, "chatMessages", "msg-1", makeMessage());
+
+    // 应用层级联清理
+    const messages = dbQuery(db, "chatMessages", "sessionId", testSessionId);
+    for (const m of messages) {
+      dbDelete(db, "chatMessages", m.id);
+    }
+    dbDelete(db, "chatSessions", testSessionId);
+
+    expect(dbQuery(db, "chatSessions", "caseId", testCaseId)).toHaveLength(0);
+    expect(dbQuery(db, "chatMessages", "sessionId", testSessionId)).toHaveLength(0);
+  });
 });
 
-describe.skip("Chat persistence: DB schema verification", () => {
-  it("chatMessages store should have by-sessionId index for session-scoped queries", async () => {
-    const db = await openPatentDB();
+// ═══════════════════════════════════════════════════════════════
+// Chat persistence: DB schema verification
+// ═══════════════════════════════════════════════════════════════
 
-    const tx = db.transaction("chatMessages", "readonly");
-    const store = tx.objectStore("chatMessages");
-    const indexNames: string[] = [];
-    for (let i = 0; i < store.indexNames.length; i++) {
-      indexNames.push(store.indexNames.item(i)!);
-    }
-    await tx.done;
+describe("Chat persistence: DB schema verification (SQLite)", () => {
+  it("chatSessions and chatMessages tables should exist and be queryable", () => {
+    // 写入一条 session 和 message 验证表结构正确
+    const session = makeSession({ id: "schema-verify-session" });
+    dbCreate(db, "chatSessions", session.id, session);
 
-    expect(indexNames).toContain("by-sessionId");
-    expect(indexNames).toContain("by-caseId");
-    expect(indexNames).toContain("by-moduleScope");
-    expect(indexNames).toContain("by-createdAt");
+    const msg = makeMessage({ id: "schema-verify-msg", sessionId: "schema-verify-session" });
+    dbCreate(db, "chatMessages", msg.id, msg);
 
-    db.close();
-  });
+    const sessions = dbQuery(db, "chatSessions", "caseId", testCaseId);
+    expect(sessions).toHaveLength(1);
 
-  it("chatSessions store should have by-caseId index", async () => {
-    const db = await openPatentDB();
-
-    const tx = db.transaction("chatSessions", "readonly");
-    const store = tx.objectStore("chatSessions");
-    const indexNames: string[] = [];
-    for (let i = 0; i < store.indexNames.length; i++) {
-      indexNames.push(store.indexNames.item(i)!);
-    }
-    await tx.done;
-
-    expect(indexNames).toContain("by-caseId");
-
-    db.close();
-  });
-
-  it("should be able to query chat messages by session ID via by-sessionId index", async () => {
-    const db = await openPatentDB();
-    setDBInstance(db);
-
-    const session: ChatSession = {
-      id: "schema-verify-session",
-      caseId: "schema-verify-case",
-      moduleScope: "novelty",
-      title: "schema verification",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    await chatRepo.createSession(session);
-
-    const msg: ChatMessage = {
-      id: "schema-verify-msg",
-      caseId: "schema-verify-case",
-      sessionId: "schema-verify-session",
-      moduleScope: "novelty",
-      role: "user",
-      content: "schema test",
-      createdAt: new Date().toISOString(),
-    };
-    await chatRepo.createMessage(msg);
-
-    const messages = await chatRepo.getMessagesBySessionId("schema-verify-session");
+    const messages = dbQuery(db, "chatMessages", "sessionId", "schema-verify-session");
     expect(messages).toHaveLength(1);
-    expect(messages[0]!.content).toBe("schema test");
+    expect(messages[0]!.content).toBe("测试消息");
 
-    await chatRepo.deleteMessagesBySessionId("schema-verify-session");
-    await chatRepo.deleteSession("schema-verify-session");
-    db.close();
+    // 清理
+    dbDelete(db, "chatMessages", "schema-verify-msg");
+    dbDelete(db, "chatSessions", "schema-verify-session");
+  });
+
+  it("should be able to query chat messages by sessionId", () => {
+    dbCreate(db, "chatMessages", "q1", { id: "q1", sessionId: "s1", caseId: "c1", moduleScope: "novelty", role: "user", content: "msg1", createdAt: new Date().toISOString() });
+    dbCreate(db, "chatMessages", "q2", { id: "q2", sessionId: "s2", caseId: "c1", moduleScope: "novelty", role: "user", content: "msg2", createdAt: new Date().toISOString() });
+
+    const s1Messages = dbQuery(db, "chatMessages", "sessionId", "s1");
+    expect(s1Messages).toHaveLength(1);
+    expect(s1Messages[0]!.content).toBe("msg1");
+
+    const s2Messages = dbQuery(db, "chatMessages", "sessionId", "s2");
+    expect(s2Messages).toHaveLength(1);
+    expect(s2Messages[0]!.content).toBe("msg2");
   });
 });

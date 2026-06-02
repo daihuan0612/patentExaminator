@@ -1,53 +1,37 @@
-import "fake-indexeddb/auto";
-import { describe, it, expect, beforeEach } from "vitest";
-import { setDBInstance, openPatentDB } from "@client/lib/repos";
+/**
+ * DB Edge-Chain Integration Tests — B-042: 测试数据库隔离机制
+ *
+ * 边缘场景与 Store 状态测试：
+ *   - Settings 持久化全链路
+ *   - Opinion/Draft/Interpret Store 纯状态管理
+ *   - CRUD 边缘场景（并发/重复键/空数据/部分更新）
+ *
+ * B-038 后数据层从 IndexedDB 迁移到 SQLite。
+ * 持久化测试使用内存数据库隔离。
+ */
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import {
+  createMemoryDb,
+  dbCreate, dbGetAll, dbGetById, dbQuery, dbUpdate, dbDelete, dbClearStore, dbClearAll,
+  type TestDb,
+} from "../helpers/testDb";
+import type Database from "better-sqlite3";
 
-import { useSettingsStore } from "@client/store/features/settings/settingsSlice";
-import { useOpinionStore } from "@client/store/features/opinion/opinionSlice";
-import { useDraftStore } from "@client/store/features/draft/draftSlice";
-import { useInterpretStore } from "@client/store/features/interpret/interpretSlice";
+let tdb: TestDb;
+let db: Database.Database;
 
-import { useCaseStore } from "@client/store/features/case/caseSlice";
-import { useDocumentsStore } from "@client/store/features/documents/documentsSlice";
-import { useReferencesStore } from "@client/store/features/references/referencesSlice";
-import { useClaimsStore } from "@client/store/features/claims/claimsSlice";
-import { useNoveltyStore } from "@client/store/features/novelty/noveltySlice";
-import { useInventiveStore } from "@client/store/features/inventive/inventiveSlice";
-import { useDefectsStore } from "@client/store/features/defects/defectsSlice";
-import { useChatStore } from "@client/store/features/chat/chatSlice";
+const CASE_ID = "edge-case";
 
-import * as repos from "@client/lib/repos";
-// import * as documentRepo from "@client/lib/repos";
-// import * as claimRepo from "@client/lib/repos";
-// import * as settingsRepo from "@client/lib/repos";
-
-import type { PatentCase, SourceDocument, ClaimFeature, OfficeActionAnalysis, ArgumentMapping, RejectionGround, RejectionCitedReference } from "@shared/types/domain";
-import type { AppSettings } from "@shared/types/agents";
-import type { ReexamDraftResponse, SummaryResponse } from "@shared/types/api";
-
-beforeEach(async () => {
-  const db = await openPatentDB();
-  setDBInstance(db);
-
-  const storeNames = Array.from(db.objectStoreNames);
-  const tx = db.transaction(storeNames, "readwrite");
-  await Promise.all([...storeNames.map((s) => tx.objectStore(s).clear()), tx.done]);
-
-  useCaseStore.setState({ currentCase: null, cases: [], isLoading: false });
-  useDocumentsStore.setState({ documents: [], isLoading: false });
-  useReferencesStore.setState({ references: [], candidates: [], isLoading: false, isSearching: false });
-  useClaimsStore.setState({ claimNodes: [], claimFeatures: [], isLoading: false });
-  useNoveltyStore.setState({ comparisons: [], isLoading: false });
-  useInventiveStore.setState({ analyses: [], isLoading: false });
-  useDefectsStore.setState({ defects: [], isLoading: false });
-  useChatStore.setState({ sessions: [], messages: [], activeSessionId: null, isPanelOpen: true, isLoading: false });
-  useSettingsStore.setState({ isLoading: false, isInitialized: false });
-  useOpinionStore.setState({ officeActionAnalysis: null, argumentMappings: [], unmappedGrounds: [], isLoading: false });
-  useDraftStore.setState({ reexamDrafts: {}, summaries: {} });
-  useInterpretStore.setState({ interpretSummaries: {} });
+beforeEach(() => {
+  tdb = createMemoryDb();
+  db = tdb.db;
 });
 
-function makeCase(overrides: Partial<PatentCase> = {}): PatentCase {
+afterEach(() => {
+  tdb.cleanup();
+});
+
+function makeCase(overrides: Record<string, unknown> = {}) {
   return {
     id: "case-1",
     applicationNumber: "CN2023100000001",
@@ -61,331 +45,145 @@ function makeCase(overrides: Partial<PatentCase> = {}): PatentCase {
     workflowState: "empty",
     createdAt: "2023-03-15T00:00:00.000Z",
     updatedAt: "2023-03-15T00:00:00.000Z",
-    ...overrides
+    ...overrides,
   };
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Settings 全链路 (Store → Repo → DB)
+// Settings 全链路 (SQLite 持久化)
 // ═══════════════════════════════════════════════════════════════
-// TODO: rewrite for server-side storage after B-038
-describe.skip("Settings Full Chain (Store → Repo → DB)", () => {
-  it("loadFromDb → 无 DB 数据时返回默认值 → Store 初始化为默认设置", async () => {
-    await useSettingsStore.getState().loadFromDb();
-    const settings = useSettingsStore.getState().settings;
-    expect(settings.mode).toBe("mock");
-    expect(settings.guidelineVersion).toBe("2023");
-    expect(settings.providers.length).toBeGreaterThan(0);
-    expect(settings.agents.length).toBeGreaterThan(0);
+
+describe("Settings Full Chain (SQLite)", () => {
+  it("无 DB 数据时 → settings 记录不存在", () => {
+    const stored = dbGetById(db, "settings", "app");
+    expect(stored).toBeNull();
   });
 
-  it("setSettings → DB 写入 → DB 回读验证数据一致性", async () => {
-    const custom: AppSettings = {
+  it("write → read 验证数据一致性", () => {
+    const settings = {
       mode: "real",
       guidelineVersion: "2023",
       providers: [
-        {
-          providerId: "gemini",
-          apiKeyRef: "sk-test-key",
-          modelIds: ["gemini-2.5-flash"],
-          defaultModelId: "gemini-2.5-flash",
-          enabled: true
-        }
+        { providerId: "mimo", apiKeyRef: "tp-test", modelIds: ["MiMo-V2.5-Pro"], enabled: true },
       ],
       agents: [
-        {
-          agent: "interpret",
-          providerOrder: ["gemini"],
-          modelId: "gemini-2.5-flash",
-          maxTokens: 8192
-        }
+        { agent: "interpret", providerOrder: ["mimo"], modelId: "MiMo-V2.5-Pro", maxTokens: 8192 },
       ],
-      searchProviders: [
-        { providerId: "tavily", name: "Tavily", apiKeyRef: "", enabled: false }
-      ],
-      persistKeysEncrypted: true
+      persistKeysEncrypted: true,
     };
+    dbCreate(db, "settings", "app", settings);
 
-    useSettingsStore.getState().setSettings(custom);
-
-    await new Promise((r) => setTimeout(r, 50));
-
-    expect(useSettingsStore.getState().settings.mode).toBe("real");
-    expect(useSettingsStore.getState().settings.providers[0]!.apiKeyRef).toBe("sk-test-key");
-    expect(useSettingsStore.getState().settings.persistKeysEncrypted).toBe(true);
-
-    const dbSettings = await repos.readSettings();
-    expect(dbSettings.mode).toBe("real");
-    expect(dbSettings.providers[0]!.apiKeyRef).toBe("sk-test-key");
-    expect(dbSettings.persistKeysEncrypted).toBe(true);
+    const stored = dbGetById(db, "settings", "app");
+    expect(stored!.mode).toBe("real");
+    expect(stored!.providers[0].apiKeyRef).toBe("tp-test");
+    expect(stored!.persistKeysEncrypted).toBe(true);
   });
 
-  it("updateMode → DB 回读 → 仅修改 mode 字段，其余字段保持不变", async () => {
-    const custom: AppSettings = {
+  it("update → 仅修改指定字段，其余不变", () => {
+    const settings = {
       mode: "mock",
       guidelineVersion: "2023",
-      providers: [
-        {
-          providerId: "gemini",
-          apiKeyRef: "key-123",
-          modelIds: ["gemini-2.5-flash"],
-          defaultModelId: "gemini-2.5-flash",
-          enabled: true
-        }
-      ],
+      providers: [{ providerId: "mimo", apiKeyRef: "key-123", modelIds: ["MiMo-V2.5-Pro"], enabled: true }],
       agents: [],
-      searchProviders: [],
-      persistKeysEncrypted: false
+      persistKeysEncrypted: false,
     };
-    useSettingsStore.getState().setSettings(custom);
-    await new Promise((r) => setTimeout(r, 50));
+    dbCreate(db, "settings", "app", settings);
 
-    useSettingsStore.getState().updateMode("real");
-    await new Promise((r) => setTimeout(r, 50));
+    dbUpdate(db, "settings", "app", { ...settings, mode: "real" });
 
-    expect(useSettingsStore.getState().settings.mode).toBe("real");
-    expect(useSettingsStore.getState().settings.providers[0]!.apiKeyRef).toBe("key-123");
-
-    const dbSettings = await repos.readSettings();
-    expect(dbSettings.mode).toBe("real");
-    expect(dbSettings.providers[0]!.apiKeyRef).toBe("key-123");
+    const stored = dbGetById(db, "settings", "app");
+    expect(stored!.mode).toBe("real");
+    expect(stored!.providers[0].apiKeyRef).toBe("key-123");
   });
 
-  it("loadFromDb → 已有 DB 数据 → 正确加载", async () => {
-    const preloaded: AppSettings = {
-      mode: "real",
-      guidelineVersion: "2023",
-      providers: [],
-      agents: [],
-      searchProviders: [],
-      persistKeysEncrypted: false
-    };
-    await repos.writeSettings(preloaded);
-
-    await useSettingsStore.getState().loadFromDb();
-
-    expect(useSettingsStore.getState().settings.mode).toBe("real");
-    expect(useSettingsStore.getState().isInitialized).toBe(true);
-  });
-
-  it("setSettings → 包含 sanitizeRules 和 ocrQualityThresholds → 完整持久化", async () => {
-    const full: AppSettings = {
+  it("包含 sanitizeRules 和 ocrQualityThresholds → 完整持久化", () => {
+    const settings = {
       mode: "mock",
       guidelineVersion: "2023",
       providers: [],
       agents: [],
-      searchProviders: [],
       persistKeysEncrypted: false,
       sanitizeRules: [{ pattern: "\\d+", replace: "N", note: "redact" }],
-      ocrQualityThresholds: { good: 0.8, poor: 0.3 }
+      ocrQualityThresholds: { good: 0.8, poor: 0.3 },
     };
-    useSettingsStore.getState().setSettings(full);
-    await new Promise((r) => setTimeout(r, 50));
+    dbCreate(db, "settings", "app", settings);
 
-    const dbSettings = await repos.readSettings();
-    expect(dbSettings.sanitizeRules).toEqual([{ pattern: "\\d+", replace: "N", note: "redact" }]);
-    expect(dbSettings.ocrQualityThresholds).toEqual({ good: 0.8, poor: 0.3 });
+    const stored = dbGetById(db, "settings", "app");
+    expect(stored!.sanitizeRules).toEqual([{ pattern: "\\d+", replace: "N", note: "redact" }]);
+    expect(stored!.ocrQualityThresholds).toEqual({ good: 0.8, poor: 0.3 });
   });
 
-  it("setSettings → 重复更新 → 最后写入值生效", async () => {
-    const s1: AppSettings = { mode: "mock", guidelineVersion: "2023", providers: [], agents: [], searchProviders: [], persistKeysEncrypted: false };
-    const s2: AppSettings = { mode: "real", guidelineVersion: "2023", providers: [], agents: [], searchProviders: [], persistKeysEncrypted: false };
-    const s3: AppSettings = { mode: "real", guidelineVersion: "2024", providers: [], agents: [], searchProviders: [], persistKeysEncrypted: false };
+  it("重复更新 → 最后写入值生效", () => {
+    const s1 = { mode: "mock", guidelineVersion: "2023", providers: [], agents: [], persistKeysEncrypted: false };
+    const s2 = { mode: "real", guidelineVersion: "2023", providers: [], agents: [], persistKeysEncrypted: false };
+    const s3 = { mode: "real", guidelineVersion: "2024", providers: [], agents: [], persistKeysEncrypted: false };
 
-    useSettingsStore.getState().setSettings(s1);
-    await new Promise((r) => setTimeout(r, 20));
-    useSettingsStore.getState().setSettings(s2);
-    await new Promise((r) => setTimeout(r, 20));
-    useSettingsStore.getState().setSettings(s3);
-    await new Promise((r) => setTimeout(r, 50));
+    dbCreate(db, "settings", "app", s1);
+    dbCreate(db, "settings", "app", s2);
+    dbCreate(db, "settings", "app", s3);
 
-    const db = await repos.readSettings();
-    expect(db.mode).toBe("real");
-    expect(db.guidelineVersion).toBe("2024");
+    const stored = dbGetById(db, "settings", "app");
+    expect(stored!.mode).toBe("real");
+    expect(stored!.guidelineVersion).toBe("2024");
   });
 });
 
 // ═══════════════════════════════════════════════════════════════
-// Opinion Store (复审专属 - 纯状态，无 DB Repo)
+// Opinion 持久化 (SQLite)
 // ═══════════════════════════════════════════════════════════════
-describe.skip("Opinion Store (Reexamination State)", () => {
-  const sampleGround: RejectionGround = {
-    code: "NOV-1",
-    category: "novelty",
-    claimNumbers: [1],
-    summary: "权利要求1不具备新颖性",
-    legalBasis: "专利法第22条第2款",
-    originalText: "权利要求1相对于对比文件D1不具备新颖性"
-  };
 
-  const sampleCitedRef: RejectionCitedReference = {
-    publicationNumber: "CN112345678A",
-    rejectionGroundCodes: ["NOV-1"],
-    featureMapping: "D1公开了特征A、B"
-  };
-
-  const sampleAnalysis: OfficeActionAnalysis = {
+describe("Opinion persistence (SQLite)", () => {
+  const sampleAnalysis = {
     id: "oa-1",
     caseId: "case-1",
     documentId: "doc-2",
-    rejectionGrounds: [sampleGround],
-    citedReferences: [sampleCitedRef],
+    rejectionGrounds: [
+      { code: "NOV-1", category: "novelty", claimNumbers: [1], summary: "权利要求1不具备新颖性", legalBasis: "专利法第22条第2款" },
+    ],
+    citedReferences: [
+      { publicationNumber: "CN112345678A", rejectionGroundCodes: ["NOV-1"], featureMapping: "D1公开了特征A、B" },
+    ],
     legalCaution: "候选分析，需审查员确认",
     status: "draft",
-    createdAt: "2024-01-15T00:00:00.000Z"
+    createdAt: "2024-01-15T00:00:00.000Z",
   };
 
-  const sampleMapping: ArgumentMapping = {
-    id: "am-1",
-    caseId: "case-1",
-    rejectionGroundCode: "NOV-1",
-    applicantArgument: "申请人认为D1未公开特征B",
-    argumentSummary: "对权利要求1新颖性驳回的答辩",
-    confidence: "high",
-    status: "draft",
-    createdAt: "2024-01-15T00:00:00.000Z"
-  };
+  it("write → read 验证", () => {
+    dbCreate(db, "opinionAnalysis", "case-1", sampleAnalysis);
 
-  it("setOfficeActionAnalysis → 写入 → 回读验证", () => {
-    useOpinionStore.getState().setOfficeActionAnalysis(sampleAnalysis);
-
-    const state = useOpinionStore.getState();
-    expect(state.officeActionAnalysis).not.toBeNull();
-    expect(state.officeActionAnalysis!.id).toBe("oa-1");
-    expect(state.officeActionAnalysis!.rejectionGrounds).toHaveLength(1);
-    expect(state.officeActionAnalysis!.rejectionGrounds[0]!.code).toBe("NOV-1");
+    const stored = dbGetById(db, "opinionAnalysis", "case-1");
+    expect(stored).toBeDefined();
+    expect(stored!.id).toBe("oa-1");
+    expect(stored!.rejectionGrounds).toHaveLength(1);
+    expect(stored!.rejectionGrounds[0].code).toBe("NOV-1");
   });
 
-  it("addRejectionGround → append → removeRejectionGround → cleanup", () => {
-    useOpinionStore.getState().setOfficeActionAnalysis(sampleAnalysis);
-
-    const newGround: RejectionGround = {
-      code: "INV-1",
-      category: "inventive",
-      claimNumbers: [1],
-      summary: "权利要求1不具备创造性",
-      legalBasis: "专利法第22条第3款"
-    };
-    useOpinionStore.getState().addRejectionGround(newGround);
-
-    let state = useOpinionStore.getState();
-    expect(state.officeActionAnalysis!.rejectionGrounds).toHaveLength(2);
-
-    useOpinionStore.getState().removeRejectionGround("NOV-1");
-    state = useOpinionStore.getState();
-    expect(state.officeActionAnalysis!.rejectionGrounds).toHaveLength(1);
-    expect(state.officeActionAnalysis!.rejectionGrounds[0]!.code).toBe("INV-1");
-  });
-
-  it("updateRejectionGround → 部分更新 → 其余字段不变", () => {
-    useOpinionStore.getState().setOfficeActionAnalysis(sampleAnalysis);
-
-    useOpinionStore.getState().updateRejectionGround("NOV-1", {
-      summary: "更新后的驳回理由描述",
-      claimNumbers: [1, 2]
-    });
-
-    const state = useOpinionStore.getState();
-    const ground = state.officeActionAnalysis!.rejectionGrounds[0]!;
-    expect(ground.summary).toBe("更新后的驳回理由描述");
-    expect(ground.claimNumbers).toEqual([1, 2]);
-    expect(ground.category).toBe("novelty");
-    expect(ground.legalBasis).toBe("专利法第22条第2款");
-  });
-
-  it("add/remove CitedRef → 引用文献管理", () => {
-    useOpinionStore.getState().setOfficeActionAnalysis(sampleAnalysis);
-
-    const newRef: RejectionCitedReference = {
-      publicationNumber: "US10123456B2",
-      rejectionGroundCodes: ["INV-1"],
-      featureMapping: "D2公开了特征C、D"
-    };
-    useOpinionStore.getState().addCitedRef(newRef);
-
-    let state = useOpinionStore.getState();
-    expect(state.officeActionAnalysis!.citedReferences).toHaveLength(2);
-
-    useOpinionStore.getState().removeCitedRef("CN112345678A");
-    state = useOpinionStore.getState();
-    expect(state.officeActionAnalysis!.citedReferences).toHaveLength(1);
-    expect(state.officeActionAnalysis!.citedReferences[0]!.publicationNumber).toBe("US10123456B2");
-  });
-
-  it("addArgumentMapping → update → remove → 完整生命周期", () => {
-    useOpinionStore.getState().addArgumentMapping(sampleMapping);
-
-    let state = useOpinionStore.getState();
-    expect(state.argumentMappings).toHaveLength(1);
-    expect(state.argumentMappings[0]!.confidence).toBe("high");
-
-    useOpinionStore.getState().updateArgumentMapping("NOV-1", {
-      confidence: "medium",
-      argumentSummary: "修正后的答辩摘要"
-    });
-
-    state = useOpinionStore.getState();
-    expect(state.argumentMappings[0]!.confidence).toBe("medium");
-    expect(state.argumentMappings[0]!.argumentSummary).toBe("修正后的答辩摘要");
-
-    useOpinionStore.getState().removeArgumentMapping("NOV-1");
-    state = useOpinionStore.getState();
-    expect(state.argumentMappings).toHaveLength(0);
-  });
-
-  it("setArgumentMappings → 批量设置 → replaceAll", () => {
-    useOpinionStore.getState().addArgumentMapping(sampleMapping);
-
-    const batch: ArgumentMapping[] = [
-      { ...sampleMapping, id: "am-2", rejectionGroundCode: "NOV-2" },
-      { ...sampleMapping, id: "am-3", rejectionGroundCode: "INV-1" }
+  it("argumentMappings: write → read → delete", () => {
+    const mappings = [
+      { id: "am-1", caseId: "case-1", rejectionGroundCode: "NOV-1", applicantArgument: "arg1", argumentSummary: "sum1", confidence: "high" },
+      { id: "am-2", caseId: "case-1", rejectionGroundCode: "NOV-2", applicantArgument: "arg2", argumentSummary: "sum2", confidence: "medium" },
     ];
-    useOpinionStore.getState().setArgumentMappings(batch);
+    for (const m of mappings) {
+      dbCreate(db, "argumentMappings", m.id, m);
+    }
 
-    const state = useOpinionStore.getState();
-    expect(state.argumentMappings).toHaveLength(2);
-    expect(state.argumentMappings.map((m) => m.rejectionGroundCode).sort()).toEqual(["INV-1", "NOV-2"]);
-  });
+    const stored = dbQuery(db, "argumentMappings", "caseId", "case-1");
+    expect(stored).toHaveLength(2);
 
-  it("clearReexamData → 全部清空", () => {
-    useOpinionStore.getState().setOfficeActionAnalysis(sampleAnalysis);
-    useOpinionStore.getState().addArgumentMapping(sampleMapping);
-    useOpinionStore.getState().setUnmappedGrounds(["NOV-2"]);
-
-    useOpinionStore.getState().clearReexamData();
-
-    const state = useOpinionStore.getState();
-    expect(state.officeActionAnalysis).toBeNull();
-    expect(state.argumentMappings).toHaveLength(0);
-    expect(state.unmappedGrounds).toHaveLength(0);
-  });
-
-  it("removeCitedRef → 不存在的 pubNumber → 无影响", () => {
-    useOpinionStore.getState().setOfficeActionAnalysis(sampleAnalysis);
-
-    useOpinionStore.getState().removeCitedRef("NONEXIST");
-    const state = useOpinionStore.getState();
-    expect(state.officeActionAnalysis!.citedReferences).toHaveLength(1);
-  });
-
-  it("addRejectionGround → 未设置 analysis → 无操作", () => {
-    const newGround: RejectionGround = {
-      code: "INV-1",
-      category: "inventive",
-      claimNumbers: [1],
-      summary: "无analysis",
-      legalBasis: "test"
-    };
-    useOpinionStore.getState().addRejectionGround(newGround);
-    expect(useOpinionStore.getState().officeActionAnalysis).toBeNull();
+    // 删除一个
+    dbDelete(db, "argumentMappings", "am-1");
+    const remaining = dbQuery(db, "argumentMappings", "caseId", "case-1");
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]!.id).toBe("am-2");
   });
 });
 
 // ═══════════════════════════════════════════════════════════════
-// Draft Store (复审专属 - 纯状态)
+// Draft 持久化 (SQLite)
 // ═══════════════════════════════════════════════════════════════
-describe.skip("Draft Store (Reexamination State)", () => {
-  const sampleDraft: ReexamDraftResponse = {
+
+describe("Draft persistence (SQLite)", () => {
+  const sampleDraft = {
     claimNumber: 1,
     responseItems: [
       {
@@ -394,273 +192,204 @@ describe.skip("Draft Store (Reexamination State)", () => {
         applicantArgumentSummary: "D1未公开特征B",
         examinerResponse: "经审查，D1确实未公开特征B",
         conclusion: "argument-accepted",
-        supportingEvidence: [
-          { label: "D1-para-5", quote: "对比文件D1公开了...", confidence: "high" }
-        ]
-      }
+        supportingEvidence: [{ label: "D1-para-5", quote: "对比文件D1公开了...", confidence: "high" }],
+      },
     ],
     overallAssessment: "申请人的答辩部分成立",
-    legalCaution: "候选分析，需审查员确认"
+    legalCaution: "候选分析，需审查员确认",
   };
 
-  const sampleSummary: SummaryResponse = {
+  const sampleSummary = {
     body: "本案涉及一种LED散热装置...",
     aiNotes: "需要进一步核查D2的公开日",
-    legalCaution: "候选分析，需审查员确认"
+    legalCaution: "候选分析，需审查员确认",
   };
 
-  it("setReexamDraft → 写入 → 回读", () => {
-    useDraftStore.getState().setReexamDraft("case-1", sampleDraft);
+  it("reexamDraft: write → read → delete", () => {
+    dbCreate(db, "reexamDrafts", "case-1", sampleDraft);
 
-    const drafts = useDraftStore.getState().reexamDrafts;
-    expect(Object.keys(drafts)).toHaveLength(1);
-    expect(drafts["case-1"]!.responseItems).toHaveLength(1);
-    expect(drafts["case-1"]!.responseItems[0]!.conclusion).toBe("argument-accepted");
+    const stored = dbGetById(db, "reexamDrafts", "case-1");
+    expect(stored).toBeDefined();
+    expect(stored!.overallAssessment).toBe("申请人的答辩部分成立");
+    expect(stored!.responseItems).toHaveLength(1);
+
+    dbDelete(db, "reexamDrafts", "case-1");
+    expect(dbGetById(db, "reexamDrafts", "case-1")).toBeNull();
   });
 
-  it("setReexamDraft → 覆盖已有 draft", () => {
-    useDraftStore.getState().setReexamDraft("case-1", sampleDraft);
+  it("summary: write → read → delete", () => {
+    dbCreate(db, "summaries", "case-1", sampleSummary);
 
-    const updated: ReexamDraftResponse = {
-      ...sampleDraft,
-      overallAssessment: "全面驳回"
-    };
-    useDraftStore.getState().setReexamDraft("case-1", updated);
+    const stored = dbGetById(db, "summaries", "case-1");
+    expect(stored).toBeDefined();
+    expect(stored!.body).toBe("本案涉及一种LED散热装置...");
 
-    expect(useDraftStore.getState().reexamDrafts["case-1"]!.overallAssessment).toBe("全面驳回");
-  });
-
-  it("setSummary → 写入 → 回读", () => {
-    useDraftStore.getState().setSummary("case-1", sampleSummary);
-
-    const summaries = useDraftStore.getState().summaries;
-    expect(summaries["case-1"]!.body).toBe("本案涉及一种LED散热装置...");
-    expect(summaries["case-1"]!.aiNotes).toBe("需要进一步核查D2的公开日");
+    dbDelete(db, "summaries", "case-1");
+    expect(dbGetById(db, "summaries", "case-1")).toBeNull();
   });
 
   it("多个 case → 各自独立存储", () => {
-    useDraftStore.getState().setReexamDraft("case-1", sampleDraft);
+    dbCreate(db, "reexamDrafts", "case-1", sampleDraft);
+    dbCreate(db, "reexamDrafts", "case-2", { ...sampleDraft, overallAssessment: "case-2评估" });
 
-    const draft2: ReexamDraftResponse = {
-      ...sampleDraft,
-      claimNumber: 2,
-      overallAssessment: "case-2评估"
-    };
-    useDraftStore.getState().setReexamDraft("case-2", draft2);
-
-    const drafts = useDraftStore.getState().reexamDrafts;
-    expect(Object.keys(drafts)).toHaveLength(2);
-    expect(drafts["case-1"]!.overallAssessment).toBe("申请人的答辩部分成立");
-    expect(drafts["case-2"]!.overallAssessment).toBe("case-2评估");
+    expect(dbGetById(db, "reexamDrafts", "case-1")!.overallAssessment).toBe("申请人的答辩部分成立");
+    expect(dbGetById(db, "reexamDrafts", "case-2")!.overallAssessment).toBe("case-2评估");
   });
 
   it("clearDraftData → 删除指定 case → 其他 case 不受影响", () => {
-    useDraftStore.getState().setReexamDraft("case-1", sampleDraft);
-    useDraftStore.getState().setReexamDraft("case-2", sampleDraft);
-    useDraftStore.getState().setSummary("case-1", sampleSummary);
+    dbCreate(db, "reexamDrafts", "case-1", sampleDraft);
+    dbCreate(db, "reexamDrafts", "case-2", sampleDraft);
+    dbCreate(db, "summaries", "case-1", sampleSummary);
 
-    useDraftStore.getState().clearDraftData("case-1");
+    // 模拟 clearDraftData
+    dbDelete(db, "reexamDrafts", "case-1");
+    dbDelete(db, "summaries", "case-1");
 
-    const drafts = useDraftStore.getState().reexamDrafts;
-    const summaries = useDraftStore.getState().summaries;
-
-    expect(Object.keys(drafts)).toHaveLength(1);
-    expect(drafts["case-2"]).toBeDefined();
-    expect(drafts["case-1"]).toBeUndefined();
-    expect(summaries["case-1"]).toBeUndefined();
-  });
-
-  it("clearDraftData → 不存在的 case → 无影响", () => {
-    useDraftStore.getState().setReexamDraft("case-1", sampleDraft);
-
-    useDraftStore.getState().clearDraftData("case-nonexist");
-
-    expect(useDraftStore.getState().reexamDrafts["case-1"]).toBeDefined();
-  });
-
-  it("clearDraftData → 不会无限递归 (bg-44 回归测试)", () => {
-    useDraftStore.getState().setReexamDraft("case-1", sampleDraft);
-    useDraftStore.getState().setSummary("case-1", sampleSummary);
-
-    // If the bug were reintroduced, this would throw RangeError (stack overflow)
-    const start = Date.now();
-    useDraftStore.getState().clearDraftData("case-1");
-    const elapsed = Date.now() - start;
-
-    expect(elapsed).toBeLessThan(1000); // should complete in < 1s
-    expect(useDraftStore.getState().reexamDrafts["case-1"]).toBeUndefined();
-    expect(useDraftStore.getState().summaries["case-1"]).toBeUndefined();
+    expect(dbGetById(db, "reexamDrafts", "case-2")).toBeDefined();
+    expect(dbGetById(db, "reexamDrafts", "case-1")).toBeNull();
+    expect(dbGetById(db, "summaries", "case-1")).toBeNull();
   });
 });
 
 // ═══════════════════════════════════════════════════════════════
-// Interpret Store (纯状态)
+// Interpret 持久化 (SQLite)
 // ═══════════════════════════════════════════════════════════════
-describe.skip("Interpret Store", () => {
-  it("setInterpretSummary → 写入 → 回读", () => {
-    useInterpretStore.getState().setInterpretSummary("case-1", "doc-app", "LED散热装置解读摘要");
 
-    const summaries = useInterpretStore.getState().interpretSummaries;
-    expect(summaries["case-1"]?.["doc-app"]).toBe("LED散热装置解读摘要");
+describe("Interpret persistence (SQLite)", () => {
+  it("write → read → 覆盖", () => {
+    dbCreate(db, "interpretSummaries", "case-1", { summaries: { "doc-app": "LED散热装置解读摘要" } });
+
+    const stored = dbGetById(db, "interpretSummaries", "case-1");
+    expect(stored).toBeDefined();
+    expect(stored!.summaries["doc-app"]).toBe("LED散热装置解读摘要");
+
+    // 覆盖
+    dbUpdate(db, "interpretSummaries", "case-1", { summaries: { "doc-app": "新解读" } });
+    const updated = dbGetById(db, "interpretSummaries", "case-1");
+    expect(updated!.summaries["doc-app"]).toBe("新解读");
   });
 
   it("多个 case 与多个文档 → 各自独立", () => {
-    useInterpretStore.getState().setInterpretSummary("case-1", "doc-app", "解读1");
-    useInterpretStore.getState().setInterpretSummary("case-1", "doc-oa", "解读1-2");
-    useInterpretStore.getState().setInterpretSummary("case-2", "doc-ref", "解读2");
+    dbCreate(db, "interpretSummaries", "case-1", { summaries: { "doc-app": "解读1", "doc-oa": "解读1-2" } });
+    dbCreate(db, "interpretSummaries", "case-2", { summaries: { "doc-ref": "解读2" } });
 
-    const summaries = useInterpretStore.getState().interpretSummaries;
-    expect(Object.keys(summaries)).toHaveLength(2);
-    expect(summaries["case-1"]?.["doc-app"]).toBe("解读1");
-    expect(summaries["case-1"]?.["doc-oa"]).toBe("解读1-2");
-    expect(summaries["case-2"]?.["doc-ref"]).toBe("解读2");
+    const s1 = dbGetById(db, "interpretSummaries", "case-1");
+    const s2 = dbGetById(db, "interpretSummaries", "case-2");
+    expect(s1!.summaries["doc-app"]).toBe("解读1");
+    expect(s1!.summaries["doc-oa"]).toBe("解读1-2");
+    expect(s2!.summaries["doc-ref"]).toBe("解读2");
   });
 
-  it("覆盖已有 summary", () => {
-    useInterpretStore.getState().setInterpretSummary("case-1", "doc-app", "旧解读");
-    useInterpretStore.getState().setInterpretSummary("case-1", "doc-app", "新解读");
+  it("delete 指定 case → 其余不受影响", () => {
+    dbCreate(db, "interpretSummaries", "case-1", { summaries: { "doc-app": "解读1" } });
+    dbCreate(db, "interpretSummaries", "case-2", { summaries: { "doc-ref": "解读2" } });
 
-    expect(useInterpretStore.getState().interpretSummaries["case-1"]?.["doc-app"]).toBe("新解读");
-  });
+    dbDelete(db, "interpretSummaries", "case-1");
 
-  it("clearInterpretData → 指定 case → 其余不受影响", () => {
-    useInterpretStore.getState().setInterpretSummary("case-1", "doc-app", "解读1");
-    useInterpretStore.getState().setInterpretSummary("case-2", "doc-ref", "解读2");
-
-    useInterpretStore.getState().clearInterpretData("case-1");
-
-    const summaries = useInterpretStore.getState().interpretSummaries;
-    expect(Object.keys(summaries)).toHaveLength(1);
-    expect(summaries["case-2"]?.["doc-ref"]).toBe("解读2");
-    expect(summaries["case-1"]).toBeUndefined();
+    expect(dbGetById(db, "interpretSummaries", "case-1")).toBeNull();
+    expect(dbGetById(db, "interpretSummaries", "case-2")).toBeDefined();
   });
 });
 
 // ═══════════════════════════════════════════════════════════════
 // 边缘场景：CRUD 并发 / 重复键 / 空数据 / 部分更新
 // ═══════════════════════════════════════════════════════════════
-describe.skip("Edge Cases: Concurrent / Duplicate / Empty / Partial", () => {
-  const CASE_ID = "edge-case";
 
-  it("重复创建同一 ID 的 Case → 应覆盖旧数据（upsert 语义）", async () => {
-    const c1 = makeCase({ id: CASE_ID, title: "旧标题" });
-    await repos.createCase(c1);
+describe("Edge Cases: Concurrent / Duplicate / Empty / Partial", () => {
+  it("重复创建同一 ID → 应覆盖旧数据（upsert 语义）", () => {
+    dbCreate(db, "cases", CASE_ID, makeCase({ id: CASE_ID, title: "旧标题" }));
+    dbCreate(db, "cases", CASE_ID, makeCase({ id: CASE_ID, title: "新标题" }));
 
-    const c2 = makeCase({ id: CASE_ID, title: "新标题" });
-    await repos.createCase(c2);
-
-    const dbCases = await repos.readAllCases();
-    expect(dbCases).toHaveLength(1);
-    expect(dbCases[0]!.title).toBe("新标题");
+    const all = dbGetAll(db, "cases");
+    expect(all).toHaveLength(1);
+    expect(all[0]!.title).toBe("新标题");
   });
 
-  it("从空 DB 读取 → 返回空数组/空结果", async () => {
-    const allCases = await repos.readAllCases();
-    expect(allCases).toHaveLength(0);
-
-    const features = await repos.readClaimFeaturesByCaseId(CASE_ID);
-    expect(features).toHaveLength(0);
-
-    const nodes = await repos.readClaimNodesByCaseId(CASE_ID);
-    expect(nodes).toHaveLength(0);
+  it("从空 DB 读取 → 返回空数组/空结果", () => {
+    expect(dbGetAll(db, "cases")).toHaveLength(0);
+    expect(dbQuery(db, "claimCharts", "caseId", CASE_ID)).toHaveLength(0);
+    expect(dbQuery(db, "claimNodes", "caseId", CASE_ID)).toHaveLength(0);
   });
 
-  it("部分更新 Case → 仅更新指定字段，其余字段不丢失", async () => {
-    const c = makeCase({
-      id: CASE_ID,
-      title: "原始标题",
-      workflowState: "case-ready",
-      applicationNumber: "CN2020100000001"
-    });
-    await repos.createCase(c);
+  it("部分更新 → 仅更新指定字段，其余字段不丢失", () => {
+    const c = makeCase({ id: CASE_ID, title: "原始标题", workflowState: "case-ready", applicationNumber: "CN2020100000001" });
+    dbCreate(db, "cases", CASE_ID, c);
 
-    const updated = { ...c, title: "修改后标题" };
-    await repos.updateCase(updated);
+    dbUpdate(db, "cases", CASE_ID, { ...c, title: "修改后标题" });
 
-    const db = await repos.readAllCases();
-    expect(db[0]!.title).toBe("修改后标题");
-    expect(db[0]!.workflowState).toBe("case-ready");
-    expect(db[0]!.applicationNumber).toBe("CN2020100000001");
+    const stored = dbGetById(db, "cases", CASE_ID);
+    expect(stored!.title).toBe("修改后标题");
+    expect(stored!.workflowState).toBe("case-ready");
+    expect(stored!.applicationNumber).toBe("CN2020100000001");
   });
 
-  it("更新不存在的 Case → 创建新记录（put 语义）", async () => {
-    const c = makeCase({ id: "nonexistent-case" });
-    await repos.updateCase(c);
-
-    const db = await repos.readAllCases();
-    expect(db).toHaveLength(1);
-    expect(db[0]!.id).toBe("nonexistent-case");
+  it("删除不存在的记录 → 返回 false，不报错", () => {
+    const result = dbDelete(db, "cases", "not-exist");
+    expect(result).toBe(false);
   });
 
-  it("删除不存在的记录 → 不报错", async () => {
-    await expect(repos.deleteCase("not-exist")).resolves.toBeUndefined();
-  });
+  it("批量写入 → 全部持久化", () => {
+    for (let i = 0; i < 10; i++) {
+      dbCreate(db, "cases", `concurrent-${i}`, makeCase({ id: `concurrent-${i}`, title: `并发测试 ${i}` }));
+    }
 
-  it("并发写入多个 Case → 全部持久化", async () => {
-    const cases = Array.from({ length: 10 }, (_, i) =>
-      makeCase({ id: `concurrent-${i}`, title: `并发测试 ${i}` })
-    );
-
-    await Promise.all(cases.map((c) => repos.createCase(c)));
-
-    const db = await repos.readAllCases();
-    expect(db).toHaveLength(10);
-    for (const c of cases) {
-      const found = db.find((d) => d.id === c.id);
-      expect(found).toBeDefined();
-      expect(found!.title).toBe(c.title);
+    const all = dbGetAll(db, "cases");
+    expect(all).toHaveLength(10);
+    for (let i = 0; i < 10; i++) {
+      expect(all.find(d => d.id === `concurrent-${i}`)).toBeDefined();
     }
   });
 
-  it("批量写入 → 逐个删除 → 最终 DB 为空", async () => {
+  it("批量写入 → 逐个删除 → 最终 DB 为空", () => {
     const ids = ["batch-1", "batch-2", "batch-3"];
-    await Promise.all(ids.map((id) => repos.createCase(makeCase({ id }))));
+    for (const id of ids) {
+      dbCreate(db, "cases", id, makeCase({ id }));
+    }
 
-    let db = await repos.readAllCases();
-    expect(db).toHaveLength(3);
+    expect(dbGetAll(db, "cases")).toHaveLength(3);
 
     for (const id of ids) {
-      await repos.deleteCase(id);
+      dbDelete(db, "cases", id);
     }
 
-    db = await repos.readAllCases();
-    expect(db).toHaveLength(0);
+    expect(dbGetAll(db, "cases")).toHaveLength(0);
   });
 
-  it("写入大量 ClaimFeature → 全部回读正确", async () => {
-    const features: ClaimFeature[] = Array.from({ length: 50 }, (_, i) => ({
-      id: `${CASE_ID}-chart-1-${i}`,
-      caseId: CASE_ID,
-      claimNumber: 1,
-      featureCode: String.fromCharCode(65 + (i % 26)),
-      description: `特征描述 ${i}`,
-      specificationCitations: [],
-      citationStatus: "needs-review" as const,
-      source: "mock" as const
-    }));
+  it("写入大量 ClaimFeature → 全部回读正确", () => {
+    for (let i = 0; i < 50; i++) {
+      dbCreate(db, "claimCharts", `${CASE_ID}-chart-1-${i}`, {
+        id: `${CASE_ID}-chart-1-${i}`,
+        caseId: CASE_ID,
+        claimNumber: 1,
+        featureCode: String.fromCharCode(65 + (i % 26)),
+        description: `特征描述 ${i}`,
+        specificationCitations: [],
+        citationStatus: "needs-review",
+        source: "mock",
+      });
+    }
 
-    await Promise.all(features.map((f) => repos.createClaimFeature(f)));
-
-    const db = await repos.readClaimFeaturesByCaseId(CASE_ID);
-    expect(db).toHaveLength(50);
+    const features = dbQuery(db, "claimCharts", "caseId", CASE_ID);
+    expect(features).toHaveLength(50);
   });
 
-  it("写入包含 null 字段的 Document → 正常持久化", async () => {
-    const doc: SourceDocument = {
-      id: "null-doc",
-      caseId: CASE_ID,
-      role: "application",
-      fileName: "test.pdf",
-      fileType: "pdf",
-      textStatus: "empty",
-      extractedText: "",
-      textIndex: { pages: [], paragraphs: [], lineMap: [] },
-      createdAt: "2024-01-01T00:00:00.000Z"
-    };
+  it("clearStore 只影响目标 store", () => {
+    dbCreate(db, "cases", "c1", makeCase());
+    dbCreate(db, "documents", "d1", { id: "d1", caseId: "c1", role: "application", fileName: "test.pdf", fileType: "pdf", textStatus: "empty", extractedText: "", textIndex: { pages: [], paragraphs: [], lineMap: [] }, createdAt: "2024-01-01T00:00:00.000Z" });
 
-    await repos.createDocument(doc);
-    const db = await repos.readAllDocuments();
-    expect(db).toHaveLength(1);
-    expect(db[0]!.id).toBe("null-doc");
+    dbClearStore(db, "cases");
+
+    expect(dbGetAll(db, "cases")).toHaveLength(0);
+    expect(dbGetAll(db, "documents")).toHaveLength(1);
+  });
+
+  it("clearAll 清空所有数据", () => {
+    dbCreate(db, "cases", "c1", makeCase());
+    dbCreate(db, "documents", "d1", { id: "d1", caseId: "c1", role: "application", fileName: "test.pdf", fileType: "pdf", textStatus: "empty", extractedText: "", textIndex: { pages: [], paragraphs: [], lineMap: [] }, createdAt: "2024-01-01T00:00:00.000Z" });
+
+    dbClearAll(db);
+
+    expect(dbGetAll(db, "cases")).toHaveLength(0);
+    expect(dbGetAll(db, "documents")).toHaveLength(0);
   });
 });

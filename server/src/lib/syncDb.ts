@@ -18,12 +18,19 @@ let db: Database.Database | null = null;
 export function getSyncDb(): Database.Database {
   if (db) return db;
 
-  // 确保 data 目录存在
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  // B-042: 支持测试注入的自定义路径
+  const testPath = (globalThis as Record<string, unknown>).__TEST_SYNC_DB_PATH__ as string | undefined;
+  const effectivePath = testPath ?? DB_PATH;
+
+  // 确保 data 目录存在（内存数据库跳过）
+  if (effectivePath !== ":memory:") {
+    const dir = path.dirname(effectivePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
   }
 
-  db = new Database(DB_PATH);
+  db = new Database(effectivePath);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
 
@@ -130,5 +137,20 @@ export function closeSyncDb(): void {
     db.close();
     db = null;
     logger.info("Sync database closed");
+  }
+}
+
+/**
+ * 重置数据库连接（仅测试用）
+ * B-042: 测试数据库隔离机制 — 允许测试注入自定义数据库路径
+ */
+export function resetSyncDbForTesting(customPath?: string): void {
+  if (db) {
+    db.close();
+    db = null;
+  }
+  if (customPath !== undefined) {
+    // 覆盖模块级 DB_PATH（通过 monkey-patch）
+    (globalThis as Record<string, unknown>).__TEST_SYNC_DB_PATH__ = customPath;
   }
 }

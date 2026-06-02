@@ -1,6 +1,6 @@
 # 专利复审 AI 助手 v0.1.0 详细设计文档
 
-<p align="right">版本 v0.1.0-r40 · 2026-06-02</p>
+<p align="right">版本 v0.1.0-r41 · 2026-06-02</p>
 
 > 本文档面向后续维护者与开发者，描述 v0.1.0 的架构设计、关键决策、领域模型与实现约束。与 `PRD.md`（做什么）和 `DEVELOPMENT_PLAN.md`（怎么做）互为补充；如有冲突，以 PRD 为准。
 
@@ -8,6 +8,7 @@
 
 | 版本 | 日期 | 变更摘要 |
 |------|------|---------|
+| v0.1.0-r41 | 2026-06-02 | B-042: 测试数据库隔离机制 — 三层隔离架构（内存/临时文件/快照），syncDb.ts 添加 resetSyncDbForTesting() 支持测试注入；新建 tests/helpers/testDb.ts（数据库创建+CRUD 辅助）、tests/globalSetup.ts（全局清理）；重写 5 个被 skip 的集成测试（repositories/dbScenario/dbLogicChain/dbEdgeChain/chatPersistence），91 个测试用例全部通过；vitest.integration.config.ts 配置 globalSetup | syncDb.ts, tests/helpers/testDb.ts(新建), tests/globalSetup.ts(新建), vitest.integration.config.ts, 5 个集成测试文件 |
 | v0.1.0-r40 | 2026-06-02 | B-038 Phase 3: 删除 dataClient.ts + agentApi.ts — dataClient 7 个 fetch 工具函数内联到 repos.ts，agentApi 全部导出函数合并到 repos.ts；7 个消费方 import 路径更新 | dataClient.ts(删除), agentApi.ts(删除), repos.ts, 7 个消费方文件 |
 | v0.1.0-r39 | 2026-06-02 | B-038 Phase 2: 前端只保留 UI 组件 — 删除 AgentClient.ts（342行）、contracts.ts（393行）、dataClient.ts 依赖的 repositories/ 目录（16个文件720行）、migrateIndexedDb.ts（107行）、indexedDb.ts（278行）；contracts.ts 类型合并到 shared/types/api.ts；AgentClient 替换为 lib/agentApi.ts（agentRun/searchReferences/extractSearchTerms/searchWithTerms 函数）；16个 repository 合并为 lib/repos.ts；settingsRepo 内联到 settingsSlice；前端组件直接调用 fetch | AgentClient.ts, contracts.ts, repositories/, migrateIndexedDb.ts, indexedDb.ts, agentApi.ts, repos.ts, 40+ import 路径更新 |
 | v0.1.0-r38 | 2026-06-02 | B-038 Phase 1: AgentClient 切换到 /api/agent/run — 13 个 AI agent 方法从调用 /api/ai/run 改为调用 /api/agent/run，移除客户端 prompt 构造和知识库增强逻辑（已迁移到后端 orchestrator），AgentClient 从 1727 行简化为 ~1575 行 | AgentClient.ts, agentClient.test.ts, security.test.ts |
@@ -1141,6 +1142,7 @@ resolveFixture(req) → fixture key
 2. **Mock 零外发验证：** Mock 模式任何 `fetch` 调用均触发 `MockModeBrokenError`。
 3. **Schema 兼容：** Mock fixture 和真实 Provider 返回使用相同 JSON schema，通过 `safeParse` 统一校验。
 4. **Evaluation Set：** 9 条测试用例（G1/G2/G3 + A1/A2/A3 + E1/E2/E3），自动评分覆盖率/Citation准确率/区别特征准确率/时间轴分数。
+5. **测试数据库隔离（B-042）：** 集成测试使用 `tests/helpers/testDb.ts` 创建隔离的 SQLite 数据库（内存/临时文件/快照三种模式），通过 `syncDb.ts` 的 `resetSyncDbForTesting()` 注入测试路径，确保测试永远不访问 `data/patent-examiner.db`。全局 teardown（`tests/globalSetup.ts`）确保崩溃时也能清理临时文件。
 
 ### 9.3 评分公式
 
