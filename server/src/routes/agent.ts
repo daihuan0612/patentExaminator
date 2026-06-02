@@ -22,6 +22,7 @@ agentRouter.post("/agent/run", express.json({ limit: "10mb" }), async (req, res)
       enableModelFallback,
       providerBaseUrls,
       maxTokens,
+      knowledgeEnabled,
     } = req.body as {
       agent: string;
       caseId: string;
@@ -32,6 +33,7 @@ agentRouter.post("/agent/run", express.json({ limit: "10mb" }), async (req, res)
       enableModelFallback?: Record<string, boolean>;
       providerBaseUrls?: Record<string, string>;
       maxTokens?: number;
+      knowledgeEnabled?: boolean;
     };
 
     if (!agent || !caseId) {
@@ -52,6 +54,7 @@ agentRouter.post("/agent/run", express.json({ limit: "10mb" }), async (req, res)
       providerBaseUrls,
       maxTokens,
       signal: req.signal,
+      knowledgeEnabled,
     });
 
     if (!result.ok) {

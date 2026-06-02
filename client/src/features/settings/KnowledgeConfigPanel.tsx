@@ -59,7 +59,9 @@ export function KnowledgeConfigPanel() {
 
   /** 更新 settings（用于 knowledgeProviders） */
   const updateSettings = (partial: Partial<typeof settings>) => {
-    setSettings({ ...settings, ...partial });
+    const newSettings = { ...settings, ...partial };
+    console.log("[KnowledgeConfig] updateSettings:", { knowledgeProviders: newSettings.knowledgeProviders?.map(k => ({ id: k.providerId, hasKey: !!k.apiKeyRef, enabled: k.enabled })) });
+    setSettings(newSettings);
   };
 
   const refresh = useCallback(async () => {
@@ -297,6 +299,8 @@ export function KnowledgeConfigPanel() {
         <span>知识条目: {stats.chunkCount}</span>
       </div>
 
+      {/* bg-75: 知识库未启用时，以下设置项置灰色 */}
+      <div className={`knowledge-config-sections-wrapper${config.enabled ? "" : " knowledge-disabled"}`}>
       {/* cr-1: Embedding Provider 配置 — 纯远程 API，可选 */}
       <div className="knowledge-config-section">
         <h4>Embedding Provider（可选）</h4>
@@ -358,7 +362,7 @@ export function KnowledgeConfigPanel() {
           accept={ACCEPTED_FORMATS}
           multiple
           onChange={handleFileUpload}
-          disabled={importing}
+          disabled={importing || !config.enabled}
           data-testid="knowledge-file-input"
         />
         {importing && !importProgress && <span className="knowledge-status">处理中...</span>}
@@ -385,9 +389,10 @@ export function KnowledgeConfigPanel() {
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
             placeholder="输入网页 URL"
+            disabled={!config.enabled}
             data-testid="knowledge-url-input"
           />
-          <button type="button" onClick={handleUrlImport} disabled={importing || !urlInput.trim()}>
+          <button type="button" onClick={handleUrlImport} disabled={importing || !urlInput.trim() || !config.enabled}>
             导入
           </button>
         </div>
@@ -411,13 +416,13 @@ export function KnowledgeConfigPanel() {
                 <span className="knowledge-source-meta">
                   {s.mediaType} · {s.chunkCount} 条
                 </span>
-                <button type="button" onClick={() => handleDelete(s.id)} className="btn-delete">
+                <button type="button" onClick={() => handleDelete(s.id)} className="btn-delete" disabled={!config.enabled}>
                   删除
                 </button>
               </div>
             ))}
           </div>
-          <button type="button" onClick={handleClearAll} className="btn-clear-all">
+          <button type="button" onClick={handleClearAll} className="btn-clear-all" disabled={!config.enabled}>
             清空全部
           </button>
         </div>
@@ -433,6 +438,7 @@ export function KnowledgeConfigPanel() {
         ) : (
           <p className="knowledge-hint">上传文件后自动处理</p>
         )}
+      </div>
       </div>
 
       {/* 检索测试 */}
@@ -512,6 +518,7 @@ function KnowledgeProviderCard({ preset, existing, onUpdate }: KnowledgeProvider
   };
 
   const handleSaveKey = () => {
+    console.log("[KnowledgeConfig] Saving key:", { providerId: preset.providerId, apiKeyRef: apiKey ? "***" : "(empty)", apiKeyLength: apiKey.length });
     onUpdate({
       providerType: preset.providerType,
       providerId: preset.providerId,
@@ -584,6 +591,7 @@ function KnowledgeProviderCard({ preset, existing, onUpdate }: KnowledgeProvider
             <div style={{ display: "flex", gap: "8px" }}>
               <input
                 type="password"
+                autoComplete="off"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder={preset.keyPlaceholder}

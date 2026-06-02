@@ -4977,6 +4977,13 @@ select.inline-edit-input {
   font-weight: 500;
 }
 
+/* bg-75: 知识库未启用时，相关设置项置灰色 */
+.knowledge-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+  user-select: none;
+}
+
 .knowledge-hint {
   margin-top: 0.25rem;
   font-size: 0.85rem;

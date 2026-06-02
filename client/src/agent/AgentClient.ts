@@ -565,6 +565,7 @@ export class AgentClient {
       modelFallbacks,
       enableModelFallback,
       providerBaseUrls,
+      knowledgeEnabled: this.knowledgeConfig?.enabled ?? false,
     };
 
     log("Calling agent gateway", {

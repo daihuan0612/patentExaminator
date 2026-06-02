@@ -8,6 +8,7 @@
  * 4. 返回结果
  */
 import { logger } from "./logger.js";
+import type { ChatRequest } from "../providers/ProviderAdapter.js";
 
 function truncate(text: string, maxLen: number): string {
   return text.length > maxLen ? text.slice(0, maxLen) : text;
@@ -26,6 +27,8 @@ export interface AgentRunRequest {
   providerBaseUrls?: Record<string, string>;
   maxTokens?: number;
   signal?: AbortSignal;
+  /** bg-75: 用户是否启用了知识库 */
+  knowledgeEnabled?: boolean;
 }
 
 export interface AgentRunResponse {
@@ -471,9 +474,15 @@ function buildClassifyDocumentsPrompt(request: Record<string, unknown>): string 
 async function enhanceWithKnowledge(
   prompt: string,
   query: string,
-  agentType: string
+  agentType: string,
+  knowledgeEnabled: boolean = false
 ): Promise<{ prompt: string; citations: Array<{ source: string; score: number; excerpt: string }> }> {
   try {
+    // bg-75: 检查用户是否启用了知识库
+    if (!knowledgeEnabled) {
+      return { prompt, citations: [] };
+    }
+
     // 使用服务端混合检索（直接调用内部函数，避免 HTTP 往返）
     const { hybridSearch } = await import("./hybridSearch.js");
     const { getAllChunks } = await import("./knowledgeDb.js");
@@ -585,7 +594,7 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
 
     // 2. 知识库增强
     const query = extractQuery(req.agent, req.request);
-    const { prompt: enhancedPrompt, citations } = await enhanceWithKnowledge(prompt, query, req.agent);
+    const { prompt: enhancedPrompt, citations } = await enhanceWithKnowledge(prompt, query, req.agent, req.knowledgeEnabled);
 
     // 3. 调用内部 AI Gateway
     const aiResponse = await callInternalGateway({
@@ -678,19 +687,24 @@ async function callInternalGateway(req: InternalGatewayRequest): Promise<Interna
 
   const providerOrder = (req.providerPreference ?? []) as Array<"kimi" | "glm" | "minimax" | "mimo" | "deepseek" | "qwen" | "gemini">;
 
-  const result = await registry.runWithFallback({
+  const chatRequest: ChatRequest = {
     agent: req.agent,
-    providerOrder,
     modelId: req.modelId ?? "",
     prompt: req.prompt,
-    apiKeys: providerApiKeys,
-    providerApiKeys,
-    modelFallbacks: req.modelFallbacks as Record<"kimi" | "glm" | "minimax" | "mimo" | "deepseek" | "qwen" | "gemini", string[]> | undefined,
-    enableModelFallback: req.enableModelFallback as Record<"kimi" | "glm" | "minimax" | "mimo" | "deepseek" | "qwen" | "gemini", boolean> | undefined,
-    providerBaseUrls: req.providerBaseUrls as Record<"kimi" | "glm" | "minimax" | "mimo" | "deepseek" | "qwen" | "gemini", string> | undefined,
+    apiKey: "",
     maxTokens: req.maxTokens,
     signal: req.signal,
-  });
+  };
+
+  const result = await registry.runWithFallback(
+    providerOrder,
+    chatRequest,
+    undefined,
+    req.modelFallbacks as Record<string, string[]>,
+    req.enableModelFallback as Record<string, boolean>,
+    req.providerBaseUrls as Record<string, string>,
+    providerApiKeys
+  );
 
   return {
     output: result.output,
