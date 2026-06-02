@@ -65,7 +65,7 @@ export function DocumentUploadPanel() {
           text = result.text;
           textStatus = result.text ? "extracted" : "empty";
         } else if (ext === ".html") {
-          const result = extractHtmlText(await file.text());
+          const result = await extractHtmlText(await file.text());
           text = result.text;
           textStatus = result.text ? "extracted" : "empty";
         } else if (ext === ".txt") {

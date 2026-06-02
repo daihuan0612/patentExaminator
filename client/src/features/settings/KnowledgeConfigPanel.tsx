@@ -208,8 +208,8 @@ export function KnowledgeConfigPanel() {
           } else if (data.message) {
             if (isMountedRef.current) setImportResult(`⏳ ${file.name} — ${data.message}`);
           }
-        } catch {
-          // 忽略解析错误
+        } catch (e) {
+          log("Failed to parse SSE data:", e);
         }
       }
     }
@@ -322,7 +322,7 @@ export function KnowledgeConfigPanel() {
             <KnowledgeProviderCard
               key={preset.providerId}
               preset={preset}
-              existing={existing}
+              {...(existing ? { existing } : {})}
               onUpdate={(updated) => {
                 const others = knowledgeProviders.filter(
                   (p) => !(p.providerType === "embedding" && p.providerId === preset.providerId)
@@ -348,7 +348,7 @@ export function KnowledgeConfigPanel() {
             <KnowledgeProviderCard
               key={preset.providerId}
               preset={preset}
-              existing={existing}
+              {...(existing ? { existing } : {})}
               onUpdate={(updated) => {
                 const others = knowledgeProviders.filter(
                   (p) => !(p.providerType === "reranker" && p.providerId === preset.providerId)

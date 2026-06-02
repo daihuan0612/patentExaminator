@@ -59,8 +59,8 @@ export async function uploadToServer(): Promise<SyncResult> {
             data: r
           }));
         }
-      } catch {
-        // store 可能不存在，跳过
+      } catch (e) {
+        log("Failed to read store for sync upload:", e);
       }
     }
 
@@ -95,8 +95,8 @@ export async function downloadFromServer(): Promise<SyncResult> {
           await create(storeName, record.data as { id: string });
           downloaded++;
         }
-      } catch {
-        // store 可能不存在，跳过
+      } catch (e) {
+        log("Failed to write synced records for store:", e);
       }
     }
 
@@ -118,5 +118,9 @@ export async function syncWithServer(): Promise<SyncResult> {
   if (!downloadResult.ok) return downloadResult;
 
   log(`Sync complete: uploaded ${uploadResult.uploaded}, downloaded ${downloadResult.downloaded}`);
-  return { ok: true, uploaded: uploadResult.uploaded, downloaded: downloadResult.downloaded };
+  return {
+    ok: true,
+    ...(uploadResult.uploaded !== undefined ? { uploaded: uploadResult.uploaded } : {}),
+    ...(downloadResult.downloaded !== undefined ? { downloaded: downloadResult.downloaded } : {}),
+  };
 }

@@ -49,7 +49,7 @@ export interface SourceDocument {
   fileName: string;
   fileType: "pdf" | "docx" | "txt" | "html" | "manual";
   fileHash?: string;
-  textLayerStatus?: "present" | "absent" | "unknown";
+  textLayerStatus?: "present" | "absent" | "ocr" | "unknown" | undefined;
   ocrStatus?: "not-needed" | "pending" | "running" | "completed" | "failed";
   textStatus: "empty" | "extracted" | "confirmed" | "needs-review";
   extractedText: string;
@@ -242,7 +242,10 @@ export type ModuleScope =
   | "documents"
   | "interpret"
   | "opinion-analysis"
-  | "argument-mapping";
+  | "argument-mapping"
+  | "search-references"
+  | "translate"
+  | "classify-documents";
 
 export interface ChatSession {
   id: string;

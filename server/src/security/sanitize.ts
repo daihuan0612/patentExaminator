@@ -37,8 +37,8 @@ export function sanitizeText(
       try {
         const regex = new RegExp(rule.pattern, "g");
         result = result.replace(regex, rule.replace);
-      } catch {
-        // Skip invalid regex patterns
+      } catch (e) {
+        console.warn("Failed to apply sanitize rule:", e);
       }
     }
   }

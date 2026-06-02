@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
-import type { ReferenceDocument } from "@shared/types/domain";
+import type { ReferenceDocument, SourceDocument } from "@shared/types/domain";
 import type { SearchReferencesCandidate, SearchReferencesResponse } from "@shared/types/api";
 import { classifyReferenceDate } from "../../lib/dateRules";
 import { TimelineStatusBadge } from "../../components/TimelineStatusBadge";
@@ -245,7 +245,7 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
     abortControllersRef.current.set(`accept-${candidateId}`, controller);
     const timelineStatus = classifyReferenceDate(baselineDate, candidate.publicationDate, candidate.publicationDateConfidence);
     try {
-      await createDocument({ ...candidate, timelineStatus });
+      await createDocument({ ...candidate, timelineStatus } as SourceDocument);
       if (!isMountedRef.current) return;
       acceptCandidate(candidateId);
     } finally {

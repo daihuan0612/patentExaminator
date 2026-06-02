@@ -19,7 +19,8 @@ async function checkServerHealth(url: string): Promise<boolean> {
     
     clearTimeout(timeoutId);
     return response.ok;
-  } catch {
+  } catch (e) {
+    log("Health check request failed:", e);
     return false;
   }
 }

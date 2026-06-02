@@ -394,26 +394,21 @@ describe("buildContextSummary", () => {
 
   describe("moduleScope: opinion-analysis", () => {
     it("lists office action analyses", () => {
-      // The source code reads opinionState.officeActionAnalyses (plural),
-      // but the store type has officeActionAnalysis (singular).
-      // We set the plural form directly on state to match what the code reads.
       (useOpinionStore.setState as (partial: Record<string, unknown>) => void)({
-        officeActionAnalyses: [
-          {
-            id: "oa-1",
-            caseId: CASE_ID,
-            documentId: "doc-oa",
-            rejectionGrounds: [
-              { code: "X1", category: "novelty", claimNumbers: [1], summary: "s", legalBasis: "l" }
-            ],
-            citedReferences: [
-              { publicationNumber: "CN123", rejectionGroundCodes: ["X1"], featureMapping: "fm" }
-            ],
-            legalCaution: "",
-            status: "draft",
-            createdAt: "2023-03-15T00:00:00.000Z"
-          }
-        ]
+        officeActionAnalysis: {
+          id: "oa-1",
+          caseId: CASE_ID,
+          documentId: "doc-oa",
+          rejectionGrounds: [
+            { code: "X1", category: "novelty", claimNumbers: [1], summary: "s", legalBasis: "l" }
+          ],
+          citedReferences: [
+            { publicationNumber: "CN123", rejectionGroundCodes: ["X1"], featureMapping: "fm" }
+          ],
+          legalCaution: "",
+          status: "draft",
+          createdAt: "2023-03-15T00:00:00.000Z"
+        }
       });
 
       const result = buildContextSummary(CASE_ID, "opinion-analysis");
@@ -424,11 +419,11 @@ describe("buildContextSummary", () => {
 
     it("shows zero when no analyses exist", () => {
       (useOpinionStore.setState as (partial: Record<string, unknown>) => void)({
-        officeActionAnalyses: []
+        officeActionAnalysis: null
       });
 
       const result = buildContextSummary(CASE_ID, "opinion-analysis");
-      expect(result).toContain("审查意见解析: 0 份");
+      expect(result).toContain("暂无模块数据");
     });
   });
 

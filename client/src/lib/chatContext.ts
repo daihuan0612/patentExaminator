@@ -108,11 +108,11 @@ export function buildContextSummary(caseId: string, moduleScope: ModuleScope): s
 
     case "opinion-analysis": {
       const opinionState = useOpinionStore.getState();
-      const analyses = opinionState.officeActionAnalyses.filter((a) => a.caseId === caseId);
-      lines.push(`审查意见解析: ${analyses.length} 份`);
-      for (const a of analyses) {
-        lines.push(`  驳回理由: ${a.rejectionGrounds.length} 条`);
-        lines.push(`  引用文献: ${a.citedReferences.length} 篇`);
+      const analysis = opinionState.officeActionAnalysis;
+      if (analysis && analysis.caseId === caseId) {
+        lines.push(`审查意见解析: 1 份`);
+        lines.push(`  驳回理由: ${analysis.rejectionGrounds.length} 条`);
+        lines.push(`  引用文献: ${analysis.citedReferences.length} 篇`);
       }
       break;
     }

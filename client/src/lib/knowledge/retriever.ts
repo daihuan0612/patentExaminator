@@ -3,7 +3,7 @@
  * MIGRATE-004: 检索已迁移到后端
  * bg-71: 查询扩展已迁移到服务端 queryExpand.ts
  */
-import type { KnowledgeSearchResult, KnowledgeConfig } from "@shared/types/knowledge";
+import type { KnowledgeSearchResult, KnowledgeConfig, ChunkMetadata } from "@shared/types/knowledge";
 import { createLogger } from "../logger";
 
 const log = createLogger("KnowledgeRetriever");
@@ -139,7 +139,7 @@ export async function retrieve(
         index: (r.metadata?.index as number) ?? 0,
         text: r.text,
         strategy: "auto" as const,
-        metadata: r.metadata,
+        metadata: r.metadata as unknown as ChunkMetadata,
         embedded: true,
         createdAt: new Date().toISOString(),
       },

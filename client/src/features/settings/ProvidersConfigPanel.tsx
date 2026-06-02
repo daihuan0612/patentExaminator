@@ -15,8 +15,8 @@ function loadExpandedState(): Record<string, boolean> {
     if (saved) {
       return JSON.parse(saved);
     }
-  } catch {
-    // ignore
+  } catch (e) {
+    console.warn("Failed to load provider expanded state:", e);
   }
   return {};
 }
@@ -24,8 +24,8 @@ function loadExpandedState(): Record<string, boolean> {
 function saveExpandedState(state: Record<string, boolean>) {
   try {
     localStorage.setItem(PROVIDER_EXPANDED_KEY, JSON.stringify(state));
-  } catch {
-    // ignore
+  } catch (e) {
+    console.warn("Failed to save provider expanded state:", e);
   }
 }
 
@@ -36,8 +36,8 @@ function loadProviderOrder(): ProviderId[] {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) return parsed;
     }
-  } catch {
-    // ignore
+  } catch (e) {
+    console.warn("Failed to load provider order:", e);
   }
   return [];
 }
@@ -45,8 +45,8 @@ function loadProviderOrder(): ProviderId[] {
 function saveProviderOrder(order: ProviderId[]) {
   try {
     localStorage.setItem(PROVIDER_ORDER_KEY, JSON.stringify(order));
-  } catch {
-    // ignore
+  } catch (e) {
+    console.warn("Failed to save provider order:", e);
   }
 }
 

@@ -3,8 +3,8 @@ import type { Citation, TextIndex } from "@shared/types/domain";
 export interface MatchResult {
   status: "found" | "not-found";
   confidence: "high" | "medium" | "low";
-  matchedParagraphId?: string;
-  matchedOffset?: { start: number; end: number };
+  matchedParagraphId?: string | undefined;
+  matchedOffset?: { start: number; end: number } | undefined;
 }
 
 /**

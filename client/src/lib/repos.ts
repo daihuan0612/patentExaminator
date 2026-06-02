@@ -653,8 +653,8 @@ async function trackTokenUsage(
       outputTokens: tokenUsage.output,
       totalTokens: tokenUsage.total,
     });
-  } catch {
-    // Silently ignore
+  } catch (e) {
+    log("Failed to record token usage:", e);
   }
 }
 
@@ -681,8 +681,8 @@ async function trackProviderErrors(
         caseId,
       });
     }
-  } catch {
-    // Silently ignore
+  } catch (e) {
+    log("Failed to record AI run marker:", e);
   }
 }
 

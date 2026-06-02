@@ -111,8 +111,8 @@ export async function extractCaseFieldsFallback(
       targetClaimNumber = Math.min(...indep.map((c) => c.claimNumber));
       confidence.targetClaimNumber = "high";
     }
-  } catch {
-    // parseClaims may fail
+  } catch (e) {
+    console.warn("Failed to parse claims:", e);
   }
 
   return {
