@@ -1,4 +1,5 @@
 import { marked } from "marked";
+import DOMPurify from "dompurify";
 
 marked.setOptions({
   breaks: true,
@@ -7,5 +8,6 @@ marked.setOptions({
 
 export function renderMarkdown(text: string): string {
   if (!text) return "";
-  return marked.parse(text) as string;
+  const html = marked.parse(text) as string;
+  return DOMPurify.sanitize(html);
 }
