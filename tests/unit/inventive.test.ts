@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { MockProvider } from "@client/features/mock/MockProvider";
-import { loadFixture } from "@client/features/mock/mockRouter";
+import inventiveFixture from "@shared/fixtures/inventive-g2.json";
 import { inventiveSchema } from "@shared/schemas/inventive.schema";
+
+const fixture = inventiveFixture;
 
 describe("Inventive fixture (G2)", () => {
   it("passes inventiveSchema validation", () => {
-    const fixture = loadFixture("inventive", "g2-battery");
+    const fixture = inventiveFixture;
     const result = inventiveSchema.safeParse(fixture);
     if (!result.success) {
       console.error("Inventive validation errors:", JSON.stringify(result.error.issues, null, 2));
@@ -56,24 +57,15 @@ describe("Inventive fixture (G2)", () => {
   });
 });
 
-describe("MockProvider.runInventive", () => {
+describe("Inventive fixture for G2", () => {
   it("returns inventive fixture for G2", async () => {
-    const provider = new MockProvider({ mode: "none" });
-    const result = await provider.runInventive({
-      caseId: "g2-battery",
-      claimNumber: 1,
-      features: [
-        { featureCode: "A", description: "一种电池管理系统，包括电池组" },
-        { featureCode: "B", description: "电池状态监测模块" }
-      ],
-      availableReferences: [
-        {
-          referenceId: "g2-ref-d1",
-          label: "D1",
-          excerpt: "一种电池管理系统"
-        }
-      ]
-    });
+    const result = inventiveFixture as unknown as {
+      claimNumber: number;
+      sharedFeatureCodes: string[];
+      distinguishingFeatureCodes: string[];
+      closestPriorArtId: string;
+      candidateAssessment: string;
+    };
 
     expect(result.distinguishingFeatureCodes).toContain("B");
     expect(result.candidateAssessment).toBe("possibly-lacks-inventiveness");

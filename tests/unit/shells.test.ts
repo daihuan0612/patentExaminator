@@ -1,10 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { loadFixture } from "@client/features/mock/mockRouter";
+import g3Fixture from "@shared/fixtures/g3-sensor.json";
 import { claimChartSchema } from "@shared/schemas/claimChart.schema";
+
+const fixture = g3Fixture;
 
 describe("G3 fixture with defectHints", () => {
   it("passes claimChartSchema validation", () => {
-    const fixture = loadFixture("claim-chart", "g3-sensor");
+    const fixture = g3Fixture;
     const result = claimChartSchema.safeParse(fixture);
     if (!result.success) {
       console.error("G3 validation errors:", JSON.stringify(result.error.issues, null, 2));

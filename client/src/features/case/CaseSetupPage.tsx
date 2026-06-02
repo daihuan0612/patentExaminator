@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import type { PatentCase, SourceDocument } from "@shared/types/domain";
+import type { ClassifyDocumentsResponse } from "../../agent/contracts";
 import { extractPdfText } from "../../lib/pdfText";
 import { extractDocxText } from "../../lib/docxText";
 import { extractHtmlText } from "../../lib/htmlText";
@@ -485,7 +486,7 @@ export function CaseSetupPage() {
         }))
       };
 
-      const result = await client.runClassifyDocuments(request);
+      const result = await client.run<ClassifyDocumentsResponse>("classify-documents", request, request.caseId);
       if (!isMountedRef.current) return;
 
       // 根据分类结果更新文档角色

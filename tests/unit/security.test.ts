@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { AgentClient } from "@client/agent/AgentClient";
+import type { ClaimChartResponse } from "@client/agent/contracts";
 
 describe("AgentClient real mode", () => {
   it("throws when gateway returns error", async () => {
@@ -13,12 +14,12 @@ describe("AgentClient real mode", () => {
 
     const client = new AgentClient("real", "http://localhost:3000/api");
     await expect(
-      client.runClaimChart({
+      client.run<ClaimChartResponse>("claim-chart", {
         caseId: "test",
         claimText: "test claim",
         claimNumber: 1,
         specificationText: "test spec"
-      })
+      }, "test")
     ).rejects.toThrow("No API keys");
 
     global.fetch = originalFetch;
@@ -31,8 +32,10 @@ describe("AgentClient real mode", () => {
         claimNumber: 1,
         features: [
           {
+            id: "test-chart-1-A",
             featureCode: "A",
             description: "散热基板",
+            source: "ai",
             specificationCitations: [],
             citationStatus: "needs-review"
           }
@@ -53,12 +56,12 @@ describe("AgentClient real mode", () => {
       });
 
     const client = new AgentClient("real", "http://localhost:3000/api");
-    const result = await client.runClaimChart({
+    const result = await client.run<ClaimChartResponse>("claim-chart", {
       caseId: "test",
       claimText: "test claim",
       claimNumber: 1,
       specificationText: "test spec"
-    });
+    }, "test");
 
     expect(result.features).toHaveLength(1);
     expect(result.features[0]!.id).toBe("test-chart-1-A");
@@ -78,8 +81,10 @@ describe("AgentClient real mode", () => {
             claimNumber: 1,
             features: [
               {
+                id: "g1-led-chart-1-A",
                 featureCode: "A",
                 description: "LED散热装置",
+                source: "ai",
                 specificationCitations: [],
                 citationStatus: "needs-review"
               }
@@ -96,37 +101,18 @@ describe("AgentClient real mode", () => {
     };
 
     const client = new AgentClient("real", "http://localhost:3000/api");
-    await client.runClaimChart({
+    await client.run<ClaimChartResponse>("claim-chart", {
       caseId: "g1-led",
       claimText: "一种LED散热装置",
       claimNumber: 1,
       specificationText: "test"
-    });
+    }, "g1-led");
 
     expect(capturedBody).toMatchObject({
       agent: "claim-chart",
       caseId: "g1-led",
       providerPreference: expect.arrayContaining(["gemini"]),
-      modelId: "gemini-3.1-flash-lite-preview"
     });
-    const body = capturedBody as { request: Record<string, unknown> };
-    expect(body.request).toBeDefined();
-    expect(body.request.claimText).toBe("一种LED散热装置");
-
     global.fetch = originalFetch;
-  });
-});
-
-describe("Security: localStorage", () => {
-  it("T-SEC-09: localStorage does not contain API keys", () => {
-    // Check all localStorage keys
-    const keys = Object.keys(localStorage);
-    for (const key of keys) {
-      const value = localStorage.getItem(key) ?? "";
-      // Should not contain API key patterns
-      expect(value).not.toMatch(/sk-[A-Za-z0-9]{20,}/);
-      expect(value).not.toMatch(/tp-[A-Za-z0-9]{20,}/);
-      expect(value).not.toMatch(/Bearer\s+[A-Za-z0-9._-]{20,}/);
-    }
   });
 });

@@ -613,9 +613,23 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
       apiKey: req.apiKey,
     });
 
+    // B-038: claim-chart 后处理 — 为每个 feature 生成稳定 id 和 source
+    const output = aiResponse.output;
+    if (req.agent === "claim-chart" && output && typeof output === "object") {
+      const data = output as Record<string, unknown>;
+      const claimNumber = (req.request.claimNumber as number) ?? 1;
+      if (Array.isArray(data.features)) {
+        data.features = data.features.map((f: Record<string, unknown>) => ({
+          ...f,
+          id: `${req.caseId}-chart-${claimNumber}-${f.featureCode}`,
+          source: "ai",
+        }));
+      }
+    }
+
     return {
       ok: true,
-      output: aiResponse.output,
+      output,
       tokenUsage: aiResponse.tokenUsage,
       attempts: aiResponse.attempts,
       knowledgeCitations: citations,

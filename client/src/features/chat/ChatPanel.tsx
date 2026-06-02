@@ -3,6 +3,7 @@ import { useParams, useLocation } from "react-router-dom";
 import { useChatStore, useCaseStore } from "../../store";
 import { ChatBubble } from "./ChatBubble";
 import { buildContextSummary } from "../../lib/chatContext";
+import type { ChatResponse } from "../../agent/contracts";
 import { AgentClient } from "../../agent/AgentClient";
 import { createSession, createMessage, deleteSession, deleteMessagesBySessionId, updateSession, getSessionsByCaseId, getMessagesBySessionId } from "../../lib/repositories/chatRepo";
 import { formatAiErrorMessage } from "../../lib/errorDisplay";
@@ -265,7 +266,7 @@ export function ChatPanel() {
       };
 
       log("Calling AI...");
-      const response = await client.runChat(request, { signal: controller.signal });
+      const response = await client.run<ChatResponse>("chat", request, caseId, { signal: controller.signal });
       if (!isMountedRef.current) return;
 
       let replyContent = response.reply;

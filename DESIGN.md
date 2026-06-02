@@ -40,6 +40,7 @@
 | v0.1.0-r12 | 2026-05-09 | 三文档一致性审查第四轮修复（3 项）：§3.4 状态转换图补充可选文档解读步骤、§6.1 Agent 映射补充创造性分析 Agent → `inventive` |
 | v0.1.0-r13 | 2026-05-09 | 新增 Deepseek Provider（5 家）：§1.1 架构图、§2 ADR-005、§3.3 ProviderId、§4.1 数据流图、§5.4 Provider 表 |
 | B-041 | 2026-06-02 | .env key 不再污染用户 keyStore — 移除 index.ts 中的 .env key 加载，新增请求体 `apiKey` 可选字段 | server/src/index.ts, schemas.ts, ai.ts, agent.ts, orchestrator.ts |
+| B-038 | 2026-06-02 | AgentClient 简化 1570→341 行 + Mock 迁移到后端 — 删除前端 MockProvider/mockRouter，/agent/run 支持 mock 模式 | AgentClient.ts, agent.ts, orchestrator.ts, router.tsx |
 | v0.1.0-r20 | 2026-05-22 | bug #39：文档解读扩展为案件级多文件分组解读（申请文件/审查意见书/意见陈述书/对比文件），解读结果按 documentId 持久化并在历史案件加载时恢复，综合视图明确列出文件名 |
 | v0.1.0-r14 | 2026-05-13 | B-008: 产品转向复审 AI 助手 — 新增复审数据模型（OfficeActionAnalysis/ArgumentMapping）、opinion-analysis/argument-analysis/reexam-draft Agent、复审路由和逐条回应草稿；全系统影响（领域模型、Agent、路由、Prompt、Mock E2E、文档） |
 | v0.1.0-r19 | 2026-05-21 | B-028: AI 智能文档分类 — 新增 classify-documents Agent（prompt、schema、fixture）、CaseSetupPage 批量上传和 AI 分类功能、文档拖拽移动和删除、角色下拉选择分类 |
@@ -1434,3 +1435,4 @@ Supabase（后端服务）
 | v0.1.0-r12 | 2026-05-09 | 三文档一致性审查第四轮修复（3 项）：§3.4 状态转换图补充可选文档解读步骤、§6.1 Agent 映射补充创造性分析 Agent → `inventive` |
 | v0.1.0-r13 | 2026-05-09 | 新增 Deepseek Provider（5 家）：§1.1 架构图、§2 ADR-005、§3.3 ProviderId、§4.1 数据流图、§5.4 Provider 表 |
 | B-041 | 2026-06-02 | .env key 不再污染用户 keyStore — 移除 index.ts 中的 .env key 加载，新增请求体 `apiKey` 可选字段 | server/src/index.ts, schemas.ts, ai.ts, agent.ts, orchestrator.ts |
+| B-038 | 2026-06-02 | AgentClient 简化 1570→341 行 + Mock 迁移到后端 — 删除前端 MockProvider/mockRouter，/agent/run 支持 mock 模式 | AgentClient.ts, agent.ts, orchestrator.ts, router.tsx |

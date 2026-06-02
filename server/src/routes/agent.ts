@@ -2,6 +2,7 @@
  * Agent 编排 API 路由 — B-035: 将 AgentClient 协调逻辑迁移到服务端
  *
  * POST /api/agent/run — 服务端编排入口
+ * B-038: 支持 mock 模式（返回 fixture 数据）
  */
 import { Router } from "express";
 import express from "express";
@@ -24,6 +25,8 @@ agentRouter.post("/agent/run", express.json({ limit: "10mb" }), async (req, res)
       maxTokens,
       knowledgeEnabled,
       apiKey,
+      mock,
+      mockKey,
     } = req.body as {
       agent: string;
       caseId: string;
@@ -36,11 +39,33 @@ agentRouter.post("/agent/run", express.json({ limit: "10mb" }), async (req, res)
       maxTokens?: number;
       knowledgeEnabled?: boolean;
       apiKey?: string;
+      mock?: boolean;
+      mockKey?: string;
     };
 
     if (!agent || !caseId) {
       res.status(400).json({ ok: false, error: { type: "validation", message: "Missing agent or caseId" } });
       return;
+    }
+
+    // B-038: Mock 模式 — 返回 fixture 数据，不调用真实 AI
+    if (mock) {
+      try {
+        const { loadFixture } = await import("../../../shared/src/fixtures/loadFixture.js");
+        const key = mockKey || caseId;
+        const fixture = loadFixture(agent, key);
+        logger.info(`Mock fixture loaded: agent=${agent}, key=${key}`);
+        res.json({ ok: true, output: fixture });
+        return;
+      } catch (mockErr) {
+        const msg = mockErr instanceof Error ? mockErr.message : String(mockErr);
+        logger.warn(`Mock fixture not found: agent=${agent}, key=${mockKey || caseId}: ${msg}`);
+        res.status(400).json({
+          ok: false,
+          error: { type: "mock-fixture-not-found", message: `No mock fixture for agent=${agent} key=${mockKey || caseId}` }
+        });
+        return;
+      }
     }
 
     logger.info(`Agent run request: agent=${agent}, caseId=${caseId}`);

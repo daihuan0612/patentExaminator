@@ -1,4 +1,5 @@
 import type { AgentClient } from "../agent/AgentClient";
+import type { ExtractCaseFieldsResponse } from "../agent/contracts";
 import type { ClaimNode } from "@shared/types/domain";
 import { parseClaims } from "./claimParser";
 
@@ -23,10 +24,10 @@ export async function extractCaseFields(
   caseId: string,
   agentClient: AgentClient
 ): Promise<ExtractedFields> {
-  const response = await agentClient.runExtractCaseFields({
+  const response = await agentClient.run<ExtractCaseFieldsResponse>("extract-case-fields", {
     caseId,
     documents
-  });
+  }, caseId);
 
   const claims: ClaimNode[] = (response.claims ?? []).map((c) => ({
     id: `${caseId}-claim-${c.claimNumber}`,

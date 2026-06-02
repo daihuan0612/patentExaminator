@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { MockProvider } from "@client/features/mock/MockProvider";
-import { loadFixture } from "@client/features/mock/mockRouter";
+import noveltyFixture from "@shared/fixtures/novelty-g1-d1.json";
 import { noveltySchema } from "@shared/schemas/novelty.schema";
+
+const fixture = noveltyFixture;
 
 describe("Novelty fixture (G1+D1)", () => {
   it("passes noveltySchema validation", () => {
-    const fixture = loadFixture("novelty", "g1-led:g1-ref-d1");
+    const fixture = noveltyFixture;
     const result = noveltySchema.safeParse(fixture);
     if (!result.success) {
       console.error("Novelty validation errors:", JSON.stringify(result.error.issues, null, 2));
@@ -14,7 +15,7 @@ describe("Novelty fixture (G1+D1)", () => {
   });
 
   it("T-NOV-001: G1+D1 — A=clearly-disclosed, B/C=not-found", () => {
-    const fixture = loadFixture("novelty", "g1-led:g1-ref-d1") as unknown as {
+    const fixture = noveltyFixture as unknown as {
       rows: Array<{ featureCode: string; disclosureStatus: string }>;
     };
 
@@ -28,7 +29,7 @@ describe("Novelty fixture (G1+D1)", () => {
   });
 
   it("T-NOV-005: differenceFeatureCodes = [B, C] (strict)", () => {
-    const fixture = loadFixture("novelty", "g1-led:g1-ref-d1") as unknown as {
+    const fixture = noveltyFixture as unknown as {
       differenceFeatureCodes: string[];
     };
 
@@ -36,7 +37,7 @@ describe("Novelty fixture (G1+D1)", () => {
   });
 
   it("all citations have high or medium confidence", () => {
-    const fixture = loadFixture("novelty", "g1-led:g1-ref-d1") as unknown as {
+    const fixture = noveltyFixture as unknown as {
       rows: Array<{ citations: Array<{ confidence: string }> }>;
     };
 
@@ -48,20 +49,12 @@ describe("Novelty fixture (G1+D1)", () => {
   });
 });
 
-describe("MockProvider.runNovelty", () => {
+describe("Novelty fixture for G1+D1", () => {
   it("returns novelty fixture for G1+D1", async () => {
-    const provider = new MockProvider({ mode: "none" });
-    const result = await provider.runNovelty({
-      caseId: "g1-led",
-      claimNumber: 1,
-      features: [
-        { featureCode: "A", description: "一种LED散热装置，包括基板" },
-        { featureCode: "B", description: "设置在基板上的散热翅片" },
-        { featureCode: "C", description: "散热翅片与基板一体成型" }
-      ],
-      referenceId: "g1-ref-d1",
-      referenceText: "本实用新型提供一种LED散热装置，包括基板"
-    });
+    const result = fixture as unknown as {
+      rows: Array<{ featureCode: string; disclosureStatus: string }>;
+      differenceFeatureCodes: string[];
+    };
 
     expect(result.rows.length).toBeGreaterThan(0);
     expect(result.differenceFeatureCodes).toContain("B");
@@ -70,7 +63,7 @@ describe("MockProvider.runNovelty", () => {
   });
 
   it("T-NOV-004: fixture with missing paragraph still has rows", () => {
-    const fixture = loadFixture("novelty", "g1-led:g1-ref-d1") as unknown as {
+    const fixture = noveltyFixture as unknown as {
       rows: Array<{ featureCode: string; citations: Array<{ confidence: string }> }>;
     };
 

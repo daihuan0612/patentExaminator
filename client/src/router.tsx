@@ -1,5 +1,10 @@
 import { createBrowserRouter, Navigate, Outlet, useParams } from "react-router-dom";
 import { useEffect, useMemo, useCallback, useState } from "react";
+import type {
+  SummaryResponse, NoveltyResponse, InventiveResponse, InterpretResponse,
+  TranslateResponse, OpinionAnalysisResponse, ArgumentAnalysisResponse,
+  DefectResponse, ReexamDraftResponse
+} from "./agent/contracts";
 import { createLogger } from "./lib/logger";
 import { AppShell } from "./components/AppShell";
 import { ShellPlaceholder } from "./components/ShellPlaceholder";
@@ -76,13 +81,13 @@ export function SummaryWrapper() {
       caseId={caseId ?? ""}
       runSummary={async () => {
         const client = new AgentClient(settings.mode, "/api", settings);
-        return client.runSummary({
+        return client.run<SummaryResponse>("summary", {
           caseId: caseId ?? "",
           caseBaseline: JSON.stringify(currentCase ?? {}),
           confirmedFeatures: JSON.stringify(claimFeatures.filter((f) => f.citationStatus === "confirmed")),
           reviewedNoveltyComparisons: JSON.stringify(comparisons.filter((c) => c.caseId === caseId)),
           inventiveAnalysis: JSON.stringify(analyses.filter((a) => a.caseId === caseId))
-        });
+        }, caseId ?? "");
       }}
     />
   );
@@ -163,7 +168,7 @@ export function NoveltyWrapper() {
         {...(amendedClaimText ? { amendedClaimText } : {} as Record<string, never>)}
         runNovelty={async (request, options) => {
           const client = new AgentClient(settings.mode, "/api", settings);
-          return client.runNovelty(request, { signal: options?.signal ?? null });
+          return client.run<NoveltyResponse>("novelty", request, request.caseId, { signal: options?.signal ?? null });
         }}
       />
       {caseComparisons.length > 0 ? (
@@ -233,7 +238,7 @@ export function InventiveWrapper() {
       applicantArguments={applicantArguments || undefined}
       runInventive={async (request, options) => {
         const client = new AgentClient(settings.mode, "/api", settings);
-        return client.runInventive(request, { signal: options?.signal ?? null });
+        return client.run<InventiveResponse>("inventive", request, request.caseId, { signal: options?.signal ?? null });
       }}
     />
   );
@@ -277,7 +282,7 @@ export function InterpretWrapper() {
     options?: { signal?: AbortSignal }
   ) => {
     const client = new AgentClient(settings.mode, "/api", settings);
-    const response = await client.runInterpret({
+    const response = await client.run<InterpretResponse>("interpret", {
       caseId: caseId ?? "",
       documentId: document.id,
       fileName: document.fileName,
@@ -287,13 +292,13 @@ export function InterpretWrapper() {
         fileName: doc.fileName,
         documentType: doc.documentType
       }))
-    }, options?.signal ? { signal: options.signal } : undefined);
+    }, caseId ?? "", options?.signal ? { signal: options.signal } : undefined);
     return response.reply;
   }, [caseId, settings]);
 
   const runTranslate = useCallback(async (text: string) => {
     const client = new AgentClient(settings.mode, "/api", settings);
-    const response = await client.runTranslate({ caseId: caseId ?? "", documentText: text });
+    const response = await client.run<TranslateResponse>("translate", { caseId: caseId ?? "", documentText: text }, caseId ?? "");
     return response.translatedText;
   }, [caseId, settings]);
 
@@ -332,11 +337,11 @@ export function OpinionAnalysisWrapper() {
       initialResult={initialResult}
       runAnalysis={async (options) => {
         const client = new AgentClient(settings.mode, "/api", settings);
-        return client.runOpinionAnalysis({
+        return client.run<OpinionAnalysisResponse>("opinion-analysis", {
           caseId: caseId ?? "",
           documentId: officeActionDoc?.id ?? "office-action",
           officeActionText: officeActionDoc?.extractedText ?? ""
-        }, { signal: options?.signal ?? null });
+        }, caseId ?? "", { signal: options?.signal ?? null });
       }}
       onComplete={(result) => {
         const now = new Date().toISOString();
@@ -393,12 +398,12 @@ export function ArgumentMappingWrapper() {
       initialResult={initialResult}
       runAnalysis={async (options) => {
         const client = new AgentClient(settings.mode, "/api", settings);
-        return client.runArgumentAnalysis({
+        return client.run<ArgumentAnalysisResponse>("argument-analysis", {
           caseId: caseId ?? "",
           rejectionGrounds,
           responseText: responseDoc?.extractedText ?? "",
           ...(amendedDoc?.extractedText ? { amendedClaimsText: amendedDoc.extractedText } : {})
-        }, { signal: options?.signal ?? null });
+        }, caseId ?? "", { signal: options?.signal ?? null });
       }}
       onComplete={(result) => {
         const now = new Date().toISOString();
@@ -497,34 +502,34 @@ export function OpinionComparisonWrapper() {
       initialArgumentResult={initialArgumentResult}
       runOpinionAnalysis={async (options) => {
         const client = new AgentClient(settings.mode, "/api", settings);
-        return client.runOpinionAnalysis({
+        return client.run<OpinionAnalysisResponse>("opinion-analysis", {
           caseId: caseId ?? "",
           documentId: officeActionDoc?.id ?? "office-action",
           officeActionText: officeActionDoc?.extractedText ?? ""
-        }, { signal: options?.signal ?? null });
+        }, caseId ?? "", { signal: options?.signal ?? null });
       }}
       runArgumentAnalysis={async (options) => {
         const client = new AgentClient(settings.mode, "/api", settings);
-        return client.runArgumentAnalysis({
+        return client.run<ArgumentAnalysisResponse>("argument-analysis", {
           caseId: caseId ?? "",
           rejectionGrounds: officeActionAnalysis?.rejectionGrounds ?? [],
           responseText: responseDoc?.extractedText ?? "",
           ...(amendedDoc?.extractedText ? { amendedClaimsText: amendedDoc.extractedText } : {})
-        }, { signal: options?.signal ?? null });
+        }, caseId ?? "", { signal: options?.signal ?? null });
       }}
       runFullAnalysis={async (options) => {
         const client = new AgentClient(settings.mode, "/api", settings);
-        const opinionResult = await client.runOpinionAnalysis({
+        const opinionResult = await client.run<OpinionAnalysisResponse>("opinion-analysis", {
           caseId: caseId ?? "",
           documentId: officeActionDoc?.id ?? "office-action",
           officeActionText: officeActionDoc?.extractedText ?? ""
-        }, { signal: options?.signal ?? null });
-        const argResult = await client.runArgumentAnalysis({
+        }, caseId ?? "", { signal: options?.signal ?? null });
+        const argResult = await client.run<ArgumentAnalysisResponse>("argument-analysis", {
           caseId: caseId ?? "",
           rejectionGrounds: opinionResult.rejectionGrounds ?? [],
           responseText: responseDoc?.extractedText ?? "",
           ...(amendedDoc?.extractedText ? { amendedClaimsText: amendedDoc.extractedText } : {})
-        }, { signal: options?.signal ?? null });
+        }, caseId ?? "", { signal: options?.signal ?? null });
         return { opinionResult, argumentResult: argResult };
       }}
       onOpinionComplete={(result) => {
@@ -638,7 +643,7 @@ export function DefectWrapper() {
       claimFeatures={features}
       runDefectCheck={async (request, options) => {
         const client = new AgentClient(settings.mode, "/api", settings);
-        return client.runDefectCheck(request, { signal: options?.signal ?? null });
+        return client.run<DefectResponse>("defects", request, request.caseId, { signal: options?.signal ?? null });
       }}
     />
   );
@@ -658,7 +663,7 @@ export function DraftWrapper() {
       caseId={caseId ?? ""}
       runReexamDraft={async (options) => {
         const client = new AgentClient(settings.mode, "/api", settings);
-        return client.runReexamDraft({
+        return client.run<ReexamDraftResponse>("reexam-draft", {
           caseId: caseId ?? "",
           claimNumber,
           rejectionGrounds: officeActionAnalysis?.rejectionGrounds ?? [],
@@ -666,7 +671,7 @@ export function DraftWrapper() {
           noveltyResults: JSON.stringify(comparisons.filter((c) => c.caseId === caseId)),
           inventiveResults: JSON.stringify(analyses.filter((a) => a.caseId === caseId)),
           defectResults: JSON.stringify(defects.filter((d) => d.caseId === caseId))
-        }, { signal: options?.signal ?? null });
+        }, caseId ?? "", { signal: options?.signal ?? null });
       }}
     />
   );

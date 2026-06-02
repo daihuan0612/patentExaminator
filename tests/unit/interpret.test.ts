@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { MockProvider } from "@client/features/mock/MockProvider";
+import interpretFixture from "@shared/fixtures/interpret-g1.json";
 import { useInterpretStore } from "@client/store";
 import { AiGatewayError, AiErrorType } from "@client/agent/contracts";
 import {
@@ -28,9 +28,8 @@ describe("Interpret module", () => {
     expect(typeof mod.InterpretPanel).toBe("function");
   });
 
-  it("MockProvider.runInterpret returns response for G1", async () => {
-    const provider = new MockProvider({ mode: "none" });
-    const result = await provider.runInterpret("g1-led");
+  it("interpret fixture returns response for G1", async () => {
+    const result = interpretFixture.response;
     expect(result).toContain("LED散热");
     expect(result).toContain("技术方案");
     expect(result).toContain("技术效果");

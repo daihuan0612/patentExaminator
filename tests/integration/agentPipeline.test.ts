@@ -3,6 +3,10 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { setDBInstance, openPatentDB } from "@client/lib/indexedDb";
 
 import { AgentClient } from "@client/agent/AgentClient";
+import type {
+  ClaimChartResponse, InventiveResponse, DefectResponse,
+  ChatResponse, InterpretResponse, ExtractCaseFieldsResponse
+} from "@client/agent/contracts";
 
 import { useCaseStore } from "@client/store/features/case/caseSlice";
 import { useDocumentsStore } from "@client/store/features/documents/documentsSlice";
@@ -84,7 +88,7 @@ const MOCK_CLAIM_TEXT = "一种LED散热装置，包括散热基板、导热界�
 describe("Agent Pipeline: ClaimChart (Mock)", () => {
   it("runClaimChart → 返回特征数组 → 持久化到 DB → 回读一致", async () => {
     const client = makeMockClient();
-    const resp = await client.runClaimChart({
+    const resp = await client.run<ClaimChartResponse>("claim-chart", {
       caseId: CASE_ID,
       claimText: MOCK_CLAIM_TEXT,
       claimNumber: 1,
@@ -109,7 +113,7 @@ describe("Agent Pipeline: ClaimChart (Mock)", () => {
   it("runClaimChart → 独立权利要求含'包括'特征 → 正确拆分", async () => {
     const client = makeMockClient();
     const claimWithIncludes = "一种LED散热装置，包括散热基板、导热界面层和散热翅片，其特征在于：散热翅片与导热界面层通过卡扣连接。";
-    const resp = await client.runClaimChart({
+    const resp = await client.run<ClaimChartResponse>("claim-chart", {
       caseId: CASE_ID,
       claimText: claimWithIncludes,
       claimNumber: 1,
@@ -123,7 +127,7 @@ describe("Agent Pipeline: ClaimChart (Mock)", () => {
 
   it("runClaimChart → 空权利要求文本 → 返回空特征数组", async () => {
     const client = makeMockClient();
-    const resp = await client.runClaimChart({
+    const resp = await client.run<ClaimChartResponse>("claim-chart", {
       caseId: CASE_ID,
       claimText: "",
       claimNumber: 1,
@@ -149,7 +153,7 @@ describe("Agent Pipeline: Inventive (Mock)", () => {
       { referenceId: "ref-1", label: "CN112345678A §5", excerpt: "对比文件公开了散热基板与散热翅片的结构组合" }
     ];
 
-    const resp = await client.runInventive({
+    const resp = await client.run<InventiveResponse>("inventive", {
       caseId: CASE_ID,
       claimNumber: 1,
       features,
@@ -205,7 +209,7 @@ describe("Agent Pipeline: Inventive (Mock)", () => {
       { referenceId: "ref-1", label: "CN112345678A §5", excerpt: "散热基板已被公开" }
     ];
 
-    const resp = await client.runInventive({
+    const resp = await client.run<InventiveResponse>("inventive", {
       caseId: CASE_ID,
       claimNumber: 1,
       features,
@@ -221,7 +225,7 @@ describe("Agent Pipeline: Inventive (Mock)", () => {
       { featureCode: "A", description: "散热基板" }
     ];
 
-    const resp = await client.runInventive({
+    const resp = await client.run<InventiveResponse>("inventive", {
       caseId: CASE_ID,
       claimNumber: 1,
       features,
@@ -235,7 +239,7 @@ describe("Agent Pipeline: Inventive (Mock)", () => {
 describe("Agent Pipeline: Defect (Mock)", () => {
   it("runDefectCheck → 返回缺陷列表 → 持久化到 DB → 回读一致", async () => {
     const client = makeMockClient();
-    const resp = await client.runDefectCheck({
+    const resp = await client.run<DefectResponse>("defects", {
       caseId: CASE_ID,
       claimText: MOCK_CLAIM_TEXT,
       specificationText: MOCK_SPEC_TEXT,
@@ -269,7 +273,7 @@ describe("Agent Pipeline: Defect (Mock)", () => {
     const client = makeMockClient();
     const longSpec = MOCK_SPEC_TEXT.repeat(100);
 
-    const resp = await client.runDefectCheck({
+    const resp = await client.run<DefectResponse>("defects", {
       caseId: CASE_ID,
       claimText: MOCK_CLAIM_TEXT,
       specificationText: longSpec,
@@ -283,7 +287,7 @@ describe("Agent Pipeline: Defect (Mock)", () => {
 
   it("runDefectCheck → 短说明书仅返回基础缺陷", async () => {
     const client = makeMockClient();
-    const resp = await client.runDefectCheck({
+    const resp = await client.run<DefectResponse>("defects", {
       caseId: CASE_ID,
       claimText: MOCK_CLAIM_TEXT,
       specificationText: "简短说明书。",
@@ -302,7 +306,7 @@ describe("Agent Pipeline: ExtractCaseFields (Mock)", () => {
       text: "发明名称：一种LED散热装置\n申请号：CN2023100000001\n申请人：某某科技公司\n申请日：2023年1月15日\n优先权日：2022年6月1日\n权利要求：\n1. 一种LED散热装置，包括散热基板、导热界面层和散热翅片，其特征在于：散热翅片与导热界面层通过卡扣连接。\n2. 根据权利要求1所述的装置，其中散热基板采用铝基材质。"
     }];
 
-    const resp = await client.runExtractCaseFields({
+    const resp = await client.run<ExtractCaseFieldsResponse>("extract-case-fields", {
       caseId: CASE_ID,
       documents
     });
@@ -336,7 +340,7 @@ describe("Agent Pipeline: ExtractCaseFields (Mock)", () => {
       text: "一种图像处理方法及装置\n申请号：CN202410567890.1\n"
     }];
 
-    const resp = await client.runExtractCaseFields({
+    const resp = await client.run<ExtractCaseFieldsResponse>("extract-case-fields", {
       caseId: CASE_ID,
       documents: docs
     });
@@ -346,7 +350,7 @@ describe("Agent Pipeline: ExtractCaseFields (Mock)", () => {
 
   it("runExtractCaseFields → 空文档文本 → 返回null字段", async () => {
     const client = makeMockClient();
-    const resp = await client.runExtractCaseFields({
+    const resp = await client.run<ExtractCaseFieldsResponse>("extract-case-fields", {
       caseId: CASE_ID,
       documents: [{ fileName: "empty.txt", text: "" }]
     });
@@ -381,7 +385,7 @@ describe("Agent Pipeline: SearchReferences (Mock)", () => {
 
   it("runSearchReferences → 返回候选文献列表 → acceptCandidate到references store", async () => {
     const client = makeMockClient();
-    const resp = await client.runSearchReferences({
+    const resp = await client.searchReferences({
       caseId: CASE_ID,
       claimText: MOCK_CLAIM_TEXT,
       features: [
@@ -407,7 +411,7 @@ describe("Agent Pipeline: SearchReferences (Mock)", () => {
 
   it("runSearchReferences → rejectCandidate → 候选列表缩小", async () => {
     const client = makeMockClient();
-    const resp = await client.runSearchReferences({
+    const resp = await client.searchReferences({
       caseId: CASE_ID,
       claimText: MOCK_CLAIM_TEXT,
       features: []
@@ -421,7 +425,7 @@ describe("Agent Pipeline: SearchReferences (Mock)", () => {
 
   it("runSearchReferences → clearCandidates → 候选列表为空", async () => {
     const client = makeMockClient();
-    const resp = await client.runSearchReferences({
+    const resp = await client.searchReferences({
       caseId: CASE_ID,
       claimText: MOCK_CLAIM_TEXT,
       features: []
@@ -437,7 +441,7 @@ describe("Agent Pipeline: SearchReferences (Mock)", () => {
 describe("Agent Pipeline: Two-Step Search nf-7 (Mock)", () => {
   it("runExtractSearchTerms → 返回检索词列表", async () => {
     const client = makeMockClient();
-    const resp = await client.runExtractSearchTerms({
+    const resp = await client.extractSearchTerms({
       caseId: CASE_ID,
       claimText: MOCK_CLAIM_TEXT,
       features: [
@@ -456,7 +460,7 @@ describe("Agent Pipeline: Two-Step Search nf-7 (Mock)", () => {
 
   it("runSearchWithTerms → 用编辑后的检索词搜索 → 返回候选文献", async () => {
     const client = makeMockClient();
-    const resp = await client.runSearchWithTerms({
+    const resp = await client.searchWithTerms({
       caseId: CASE_ID,
       claimText: MOCK_CLAIM_TEXT,
       features: [{ featureCode: "A", description: "散热基板" }],
@@ -578,7 +582,7 @@ describe("Agent Pipeline: Two-Step Search nf-7 (Mock)", () => {
 describe("Agent Pipeline: Chat (Mock)", () => {
   it("runChat → 普通消息 → 上下文感知回复", async () => {
     const client = makeMockClient();
-    const resp = await client.runChat({
+    const resp = await client.run<ChatResponse>("chat", {
       caseId: CASE_ID,
       sessionId: "session-1",
       moduleScope: "claim-chart",
@@ -593,7 +597,7 @@ describe("Agent Pipeline: Chat (Mock)", () => {
 
   it("runChat → 包含'重新'关键词 → 返回regenerate action", async () => {
     const client = makeMockClient();
-    const resp = await client.runChat({
+    const resp = await client.run<ChatResponse>("chat", {
       caseId: CASE_ID,
       sessionId: "session-1",
       moduleScope: "novelty",
@@ -609,7 +613,7 @@ describe("Agent Pipeline: Chat (Mock)", () => {
 
   it("runChat → 重新创造性 → 返回对应action", async () => {
     const client = makeMockClient();
-    const resp = await client.runChat({
+    const resp = await client.run<ChatResponse>("chat", {
       caseId: CASE_ID,
       sessionId: "session-1",
       moduleScope: "inventive",
@@ -624,7 +628,7 @@ describe("Agent Pipeline: Chat (Mock)", () => {
 
   it("runChat → 默认模块scope → 兼容处理", async () => {
     const client = makeMockClient();
-    const resp = await client.runChat({
+    const resp = await client.run<ChatResponse>("chat", {
       caseId: CASE_ID,
       sessionId: "session-1",
       moduleScope: "unknown-module",
@@ -641,7 +645,7 @@ describe("Agent Pipeline: Chat (Mock)", () => {
 describe("Agent Pipeline: Interpret (Mock)", () => {
   it("runInterpret → 演示模式返回提示文本 → setInterpretSummary", async () => {
     const client = makeMockClient();
-    const resp = await client.runInterpret({
+    const resp = await client.run<InterpretResponse>("interpret", {
       caseId: CASE_ID,
       documentId: "doc-app",
       fileName: "申请文件.pdf",
@@ -659,7 +663,7 @@ describe("Agent Pipeline: Interpret (Mock)", () => {
 
   it("runInterpret → 审查意见通知书类型 → 使用对应模板", async () => {
     const client = makeMockClient();
-    const resp = await client.runInterpret({
+    const resp = await client.run<InterpretResponse>("interpret", {
       caseId: CASE_ID,
       documentId: "doc-oa",
       fileName: "审查意见通知书.pdf",
@@ -673,7 +677,7 @@ describe("Agent Pipeline: Interpret (Mock)", () => {
 
   it("runInterpret → 意见陈述书类型 → 使用对应模板", async () => {
     const client = makeMockClient();
-    const resp = await client.runInterpret({
+    const resp = await client.run<InterpretResponse>("interpret", {
       caseId: CASE_ID,
       documentId: "doc-response",
       fileName: "意见陈述书.pdf",

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { AgentClient } from "../../agent/AgentClient";
+import type { ClaimChartResponse } from "../../agent/contracts";
 import { useClaimsStore, useCaseStore, useSettingsStore } from "../../store";
 import { ErrorBanner } from "../../lib/errorDisplay";
 import type { ClaimNode } from "@shared/types/domain";
@@ -54,12 +55,12 @@ export function ClaimChartActions({ claimNodes, specificationText }: ClaimChartA
 
     try {
       const client = new AgentClient(settings.mode, "/api", settings);
-      const response = await client.runClaimChart({
+      const response = await client.run<ClaimChartResponse>("claim-chart", {
         caseId,
         claimText: targetClaim.rawText,
         claimNumber: targetClaim.claimNumber,
         specificationText
-      }, { signal: controller.signal });
+      }, caseId, { signal: controller.signal });
 
       if (!isMountedRef.current || controller.signal.aborted) return;
 

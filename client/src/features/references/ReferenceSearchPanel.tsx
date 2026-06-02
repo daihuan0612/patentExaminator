@@ -88,7 +88,7 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
 
     try {
       const agentClient = new AgentClient(settings.mode, "/api", settings);
-      const res = await agentClient.runExtractSearchTerms({
+      const res = await agentClient.extractSearchTerms({
         caseId: caseId ?? "",
         claimText,
         features
@@ -138,7 +138,7 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
 
       const responses = await Promise.all(
         enabledSearchProviders.map((sp) =>
-          agentClient.runSearchWithTerms({
+          agentClient.searchWithTerms({
             caseId: caseId ?? "",
             claimText,
             features,
