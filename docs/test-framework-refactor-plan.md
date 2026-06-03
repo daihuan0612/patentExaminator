@@ -665,3 +665,248 @@ const rerankerConfig = {
 3. `node tests/e2e.mjs --auto` — 根据 git diff 正确选择测试组
 4. 确认 `tests/knowledge-base-e2e.mjs` 已删除
 5. 确认 embedding config 在上传请求中正确传递（有 siliconflow_Key 时启用向量化）
+
+---
+
+## 十一、测试数据路径集中管理 ❌ 未完成
+
+> 2026-06-03 新增
+
+### 11.1 问题
+
+测试数据分散在两个目录，没有集中管理：
+
+| 目录 | 用途 | 当前引用方式 |
+|------|------|-------------|
+| `samples/led-heatsink-mini/` | 案件测试数据（PDF 文件） | 无集中管理，服务端 mock fixture 按 caseId 加载 |
+| `samples/knowledge-base/` | 知识库测试数据（PDF/TXT/MD/JSON/CSV/XLSX/PNG） | 各测试文件独立定义 `SAMPLES_DIR` |
+
+**具体问题**：
+- `tests/e2e/knowledge.mjs:23` 独立定义 `const SAMPLES_DIR = path.resolve(__dirname, "../../samples/knowledge-base")`
+- `tests/e2e/knowledge-code-structure.mjs:18` 独立定义 `const SAMPLES_DIR = path.join(ROOT, "samples", "knowledge-base")`
+- `tests/e2e-shared/sample-data.mjs` 只有硬编码文本常量（`SAMPLE_CLAIM_G1` 等），没有文件路径
+- 新增测试文件时，开发者需要自己知道 `SAMPLES_DIR` 怎么定义，容易遗漏或写错
+
+### 11.2 方案
+
+在 `tests/e2e-shared/config.mjs` 中集中定义样本路径常量：
+
+```js
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, "../..");
+
+/** 案件测试数据目录 */
+export const SAMPLES_CASE_DIR = path.join(ROOT, "samples", "led-heatsink-mini");
+
+/** 知识库测试数据目录 */
+export const SAMPLES_KNOWLEDGE_DIR = path.join(ROOT, "samples", "knowledge-base");
+```
+
+然后各测试文件从 shared 模块导入，不再独立定义。
+
+### 11.3 修改文件清单
+
+| 文件 | 操作 | 状态 |
+|------|------|------|
+| `tests/e2e-shared/config.mjs` | **新增** `SAMPLES_CASE_DIR` + `SAMPLES_KNOWLEDGE_DIR` | ❌ 未完成 |
+| `tests/e2e/knowledge.mjs` | **更新**，删除本地 `SAMPLES_DIR`，改用 `SAMPLES_KNOWLEDGE_DIR` | ❌ 未完成 |
+| `tests/e2e/knowledge-code-structure.mjs` | **更新**，删除本地 `SAMPLES_DIR`，改用 `SAMPLES_KNOWLEDGE_DIR` | ❌ 未完成 |
+
+### 11.4 验证方法
+
+1. `grep -rn "SAMPLES_DIR" tests/e2e/` — 应无结果（全部改用 shared 常量）
+2. `node tests/e2e.mjs --only knowledge` — 知识库测试全通过
+3. `node tests/e2e.mjs --only knowledgeCodeStructure` — 代码结构测试全通过
+
+---
+
+## 十二、自动测试框架全面 Gap 分析 ❌ 未完成
+
+> 2026-06-03 新增 — 10 个维度综合审查
+
+### 12.1 审查总览
+
+| 维度 | 状态 | 关键问题 |
+|------|------|---------|
+| 测试运行器 | 🔶 部分完成 | 无服务器生命周期管理、duration 硬编码为 0、FATAL handler bug |
+| 测试数据 | 🔶 部分完成 | 路径未集中管理、样本完整性测试滞后、无边界数据 |
+| 测试配置 | ✅ 基本完成 | `REAL_MODE_TEST_TIMEOUT` 定义但未使用、无 `.env.example` |
+| 测试选择 | 🔶 部分完成 | `--auto` 组匹配脆弱、有死代码测试 |
+| 测试环境 | 🔶 部分完成 | 无服务器启动检查、无 DB 隔离、无测试后清理 |
+| 测试工具 | ✅ 基本完成 | 多个死代码函数、HTTP helper 无超时 |
+| 测试报告 | 🔶 部分完成 | 无机器可读输出、跳过测试不可见 |
+| 质量门禁 | ✅ 基本完成 | lint/typecheck 顺序反、无覆盖率门禁 |
+| 测试隔离 | 🔶 部分完成 | 知识库测试共享服务器状态、无测试后清理 |
+| 错误处理 | 🔶 部分完成 | `withRetry()` 未被使用、无单测超时、FATAL handler exit code bug |
+
+### 12.2 P0 — 必须修复（影响测试正确性） ✅ 已完成
+
+| # | 问题 | 位置 | 修复 |
+|---|------|------|------|
+| 1 | FATAL handler exit code bug | `e2e.mjs` | catch 后 `process.exit(1)` ✅ |
+| 2 | Duration 硬编码为 0 | `e2e.mjs` | `Date.now()` 实际测量 ✅ |
+| 3 | 无服务器启动检查 | `e2e.mjs` | 运行前 `fetch(/health)` 检查 ✅ |
+| 4 | `REAL_MODE_TEST_TIMEOUT` 死代码 | `config.mjs` | `withTimeout()` 包裹所有 real mode 测试 ✅ |
+
+### 12.3 P1 — 应该修复（影响开发体验） ✅ 已完成
+
+| # | 问题 | 位置 | 修复 |
+|---|------|------|------|
+| 5 | `--auto` 组匹配脆弱 | `e2e.mjs` | 改为 `setGroup()` 显式标签 ✅ |
+| 6 | 重复的 real-mode 代码块 | `e2e.mjs` | 仍存在（两处 real mode 段），低优先级 |
+| 7 | 无测试后清理 | `e2e.mjs` | 仍存在（知识库测试后不清理），低优先级 |
+| 8 | 跳过测试不可见 | `test-runner.mjs` | `log()` 支持 skipped 选项，`getSummary()` 区分 passed/failed/skipped ✅ |
+| 9 | 无机器可读输出 | `test-runner.mjs` | 跳过（低优先级） |
+| 10 | `withRetry()` 死代码 | `retry.mjs` | 跳过（不影响功能） |
+| 11 | 知识库样本完整性测试滞后 | `knowledge-code-structure.mjs` | 仍存在（只检查 12 个文件），低优先级 |
+| 12 | HTTP helper 无超时 | `http.mjs` | `postJSON()`/`getJSON()` 添加 `AbortSignal.timeout(60s)` ✅ |
+
+### 12.4 P2 — 可以改善（代码质量）
+
+| # | 问题 | 位置 | 说明 |
+|---|------|------|------|
+| 13 | `testSchemaSearchReferences` 死代码 | `index.mjs:63` | 导出但 `e2e.mjs` 从未调用 |
+| 14 | `runTests()` 死代码 | `test-runner.mjs:70` | 批量运行器从未使用 |
+| 15 | `uploadMultipleFiles()`/`uploadDirectory()` 死代码 | `upload.mjs:78-105` | 从未使用且签名与新接口不一致 |
+| 16 | `parseJsonResponse()`/`parseSSEResponse()` 死代码 | `http.mjs` | 从未使用 |
+| 17 | `KNOWLEDGE_TEST_PORT`/`KNOWLEDGE_TEST_BASE` 死代码 | `config.mjs:128-131` | 定义但从未使用 |
+| 18 | DB 测试未集成 `maybe()` 过滤 | `e2e.mjs:521-525` | 函数名不含组关键词，`--only`/`--auto` 永远跳过 |
+| 19 | Quality gate 顺序反 | `e2e.mjs:149-181` | typecheck（慢）先于 lint（快），应反过来 |
+| 20 | Gate 错误截断 5 行 | `e2e.mjs:157` | 大量 typecheck 错误时只看到前 5 个 |
+| 21 | 无 `.env.example` | 项目根目录 | 新开发者不知道需要配置哪些 key |
+| 22 | 无覆盖率门禁 | `package.json` | `--check` 只有 lint+typecheck，无覆盖率阈值 |
+| 23 | `knowledge/clear` 静默吞错 | `e2e.mjs:450` | `.catch(() => {})` 导致服务器挂了也不报错 |
+| 24 | Mock 测试无重试 | `mock-agents.mjs` | 瞬态错误直接失败，无重试机制 |
+| 25 | 无单测超时 | 所有测试 | 无 `AbortSignal.timeout()` 或 `Promise.race`，hung call 永久阻塞 |
+| 26 | 样本数据与集成测试不共享 | `sample-data.mjs` vs `tests/fixtures/` | E2E 和集成测试各自维护测试数据 |
+| 27 | 模型 ID 硬编码版本 | `config.mjs` | `gemini-3.1-flash-lite-preview` 等会过时 |
+| 28 | 无测试前总数量提示 | `e2e.mjs` | 运行时不打印"Running N tests"，用户不知道预期多少 |
+
+### 12.5 按维度详细说明
+
+#### 维度 1：测试运行器
+
+**现状**：自定义 Node.js CLI，非 vitest。支持 `--real`/`--check`/`--auto`/`--only`。
+
+**问题**：
+- 无服务器生命周期管理（不启动、不检查、不清理）
+- `duration` 硬编码为 0
+- FATAL handler 在测试运行前出错时 exit code 为 0（bug）
+- DB 测试通过 `execSync` 委托给 vitest，但 `maybe()` 无法过滤它们
+- 无并行执行，real-mode 每个测试间固定等待 8 秒
+
+#### 维度 2：测试数据
+
+**现状**：`sample-data.mjs` 有文本常量，`knowledge.mjs`/`knowledge-code-structure.mjs` 各自定义 `SAMPLES_DIR`。
+
+**问题**：
+- 路径未集中管理（已在第十一节记录）
+- `testSampleDataIntegrity` 只检查 12 个文件，实际有 21 个
+- 无边界测试数据（空文档、超大文档、损坏文件、特殊编码）
+- E2E 和集成测试的 fixtures 不共享
+
+#### 维度 3：测试配置
+
+**现状**：`config.mjs` 集中管理 API key 映射、fallback 模型、超时、重试参数。
+
+**问题**：
+- `REAL_MODE_TEST_TIMEOUT` 定义但未使用
+- `KNOWLEDGE_TEST_PORT`/`KNOWLEDGE_TEST_BASE` 死代码
+- 无 `.env.example`
+- 模型 ID 硬编码版本号
+
+#### 维度 4：测试选择
+
+**现状**：`--only` 按函数名子串匹配，`--auto` 按 `git diff` + `FILE_TO_TEST_MAP` 映射。
+
+**问题**：
+- `--auto` 组匹配在 `maybe()` 中用 15+ 个 `!name.includes(...)` 实现，极度脆弱
+- `--auto` 无 diff 时默认跑全量（可能不是用户预期）
+- `testSchemaSearchReferences` 导出但从未调用
+
+#### 维度 5：测试环境
+
+**现状**：假设服务器在 localhost:3000 运行。知识库测试开始前 clear。
+
+**问题**：
+- 不检查服务器是否运行
+- 不隔离 DB（测试数据写入生产 DB）
+- 测试后不清理
+- `catch(() => {})` 静默吞掉 clear 失败
+
+#### 维度 6：测试工具
+
+**现状**：http.mjs、retry.mjs、test-runner.mjs、upload.mjs、env.mjs、schema-validators.mjs。
+
+**问题**：
+- `withRetry()` 未被 E2E 测试使用
+- `runTests()`、`parseJsonResponse()`、`parseSSEResponse()` 死代码
+- HTTP helper 无请求超时
+
+#### 维度 7：测试报告
+
+**现状**：`[PASS]`/`[FAIL]` 前缀 + 最终 summary + exit code。
+
+**问题**：
+- 无 JSON/JUnit XML 输出
+- Duration 始终为 0
+- 跳过测试不计入 summary
+- 无测试总数预告
+
+#### 维度 8：质量门禁
+
+**现状**：`--check` 运行 typecheck + lint。
+
+**问题**：
+- 先 typecheck（慢）后 lint（快）
+- 错误截断 5 行
+- 无覆盖率门禁
+
+#### 维度 9：测试隔离
+
+**现状**：知识库测试开始前 clear，mock 测试用 `mock: true`。
+
+**问题**：
+- 测试后不清理
+- 无测试专用 DB
+- `knowledge/clear` 静默吞错
+- Mock 测试无 cache-busting
+
+#### 维度 10：错误处理
+
+**现状**：`runTest()` 捕获所有异常，real-mode 三级 fallback，key 缺失时 skip。
+
+**问题**：
+- `withRetry()` 死代码
+- Mock 测试无重试
+- 无单测超时
+- FATAL handler exit code bug
+- 跳过测试伪装成 pass
+
+### 12.6 修复优先级建议
+
+**第一阶段（P0，影响正确性）**：4 项
+- FATAL handler exit code fix
+- Duration 实际测量
+- 服务器启动检查
+- 使用 `REAL_MODE_TEST_TIMEOUT`
+
+**第二阶段（P1，影响体验）**：8 项
+- `--auto` 组匹配重构（函数标签替代 name.includes）
+- 合并重复的 real-mode 代码块
+- 测试后清理
+- 跳过测试独立计数
+- 机器可读输出
+- 使用 `withRetry()`
+- 更新样本完整性测试
+- HTTP helper 加超时
+
+**第三阶段（P2，代码质量）**：16 项
+- 清理死代码（6 项）
+- DB 测试集成 `maybe()` 过滤
+- Quality gate 顺序调整
+- 添加 `.env.example`
+- 其他改善
