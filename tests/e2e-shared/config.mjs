@@ -152,10 +152,10 @@ export const KNOWLEDGE_TEST_BASE = `http://localhost:${KNOWLEDGE_TEST_PORT}/api`
  * 用于 `node tests/e2e.mjs --auto`。
  */
 export const FILE_TO_TEST_MAP = [
-  // 知识库相关
-  { pattern: /^server\/src\/routes\/knowledge/, groups: ["knowledge", "knowledgeIntegration"] },
-  { pattern: /^server\/src\/lib\/knowledgeDb/, groups: ["knowledge", "knowledgeIntegration"] },
-  { pattern: /^client\/src\/lib\/knowledge/, groups: ["knowledge", "knowledgeIntegration"] },
+  // 知识库相关（knowledge 包含上传/搜索/集成测试）
+  { pattern: /^server\/src\/routes\/knowledge/, groups: ["knowledge"] },
+  { pattern: /^server\/src\/lib\/knowledgeDb/, groups: ["knowledge"] },
+  { pattern: /^client\/src\/lib\/knowledge/, groups: ["knowledge"] },
   { pattern: /^client\/src\/features\/settings\/Knowledge/, groups: ["knowledge"] },
   { pattern: /^samples\/knowledge-base/, groups: ["knowledge"] },
   { pattern: /^shared\/src\/types\/knowledge/, groups: ["knowledgeCodeStructure"] },

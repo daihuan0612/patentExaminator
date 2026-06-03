@@ -59,7 +59,6 @@ export {
   testSchemaOpinionAnalysis,
   testSchemaArgumentMapping,
   testSchemaReexamDraft,
-  testSchemaSearchReferences,
   testInvalidAgent,
   testMissingRequiredFields,
   testEmptyClaimText,

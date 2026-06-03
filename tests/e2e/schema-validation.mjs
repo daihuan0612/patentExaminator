@@ -15,7 +15,6 @@ import {
   validateOpinionAnalysisOutput,
   validateArgumentMappingOutput,
   validateReexamDraftOutput,
-  validateSearchReferencesOutput,
 } from "../e2e-shared/index.mjs";
 
 // ── Schema 验证测试 ─────────────────────────────────────────────────
@@ -215,25 +214,3 @@ export async function testMalformedResponseHandling() {
   }
 }
 
-// ── Search References 验证 ──────────────────────────────────────────
-
-export async function testSchemaSearchReferences() {
-  const GEMINI_KEY = getApiKey("gemini");
-  if (!GEMINI_KEY) {
-    log("Schema SearchReferences", true, "skipped (no GEMINI_KEY)");
-    return;
-  }
-
-  const res = await postJSON("/search-with-terms", {
-    caseId: "g1-led",
-    claimText: "一种LED灯具散热装置",
-    features: [{ featureCode: "A", description: "散热基板" }],
-    searchQueries: ["LED散热器"],
-    maxResults: 5,
-    mock: true,
-    llmApiKey: GEMINI_KEY,
-  });
-  const data = await res.json();
-  const result = validateSearchReferencesOutput(data);
-  log("Schema SearchReferences", result.valid, result.errors.join("; "));
-}

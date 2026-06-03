@@ -47,8 +47,6 @@ export {
   getJSON,
   getJSONWithParams,
   uploadFile,
-  parseJsonResponse,
-  parseSSEResponse,
 } from "./http.mjs";
 
 // 重试逻辑模块
@@ -86,8 +84,6 @@ export {
 // 文件上传模块
 export {
   uploadKnowledgeFile,
-  uploadMultipleFiles,
-  uploadDirectory,
 } from "./upload.mjs";
 
 // 测试数据模块
@@ -113,7 +109,6 @@ export {
   setSuiteName,
   log,
   runTest,
-  runTests,
   getSummary,
   printSummary,
   allPassed,
