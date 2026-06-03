@@ -738,7 +738,9 @@ searchRouter.post("/search-with-terms", async (req, res) => {
       publicationNumber: `CN20231000000${i + 1}A`,
       publicationDate: "2023-01-01",
       abstract: `Mock abstract for query: ${query}`,
+      summary: `Mock summary for query: ${query}`,
       relevanceScore: 0.9 - i * 0.1,
+      recommendationReason: `Mock recommendation for query: ${query}`,
       source: "mock",
     }));
     res.json({
