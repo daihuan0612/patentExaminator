@@ -1,20 +1,10 @@
 import { defineConfig } from "vitest/config";
-import { fileURLToPath } from "url";
-
-const root = fileURLToPath(new URL(".", import.meta.url));
+import { baseConfig, baseTestConfig } from "./vitest.base.config";
 
 export default defineConfig({
   test: {
+    ...baseTestConfig,
     include: ["tests/evaluation/**/*.test.ts"],
-    environment: "happy-dom",
-    setupFiles: ["./tests/setup.ts"],
-    globals: true
   },
-  resolve: {
-    alias: {
-      "@shared": `${root}/shared/src`,
-      "@client": `${root}/client/src`,
-      "@server": `${root}/server/src`
-    }
-  }
+  resolve: baseConfig.resolve,
 });

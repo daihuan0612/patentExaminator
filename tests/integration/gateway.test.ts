@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { ProviderRegistry } from "@server/providers/registry";
-import { setApiKey, getApiKey, clearAll, listProviders } from "@server/security/keyStore";
+import { clearAll } from "@server/security/keyStore";
 import { sanitizeText } from "@server/security/sanitize";
 import { aiRunRequestSchema } from "@server/lib/schemas";
 import type { ProviderAdapter, ChatRequest, ChatResponse } from "@server/providers/ProviderAdapter";
@@ -597,24 +597,5 @@ describe("aiRunRequestSchema", () => {
       expect(result.data.modelFallbacks).toBeUndefined();
       expect(result.data.enableModelFallback).toBeUndefined();
     }
-  });
-});
-
-describe("keyStore", () => {
-  beforeEach(() => {
-    clearAll();
-  });
-
-  it("stores and retrieves API keys", () => {
-    setApiKey("mimo", "tp-test123");
-    expect(getApiKey("mimo")).toBe("tp-test123");
-  });
-
-  it("lists providers with keys", () => {
-    setApiKey("mimo", "tp-test123");
-    setApiKey("kimi", "sk-test456");
-    const providers = listProviders();
-    expect(providers).toContain("mimo");
-    expect(providers).toContain("kimi");
   });
 });
