@@ -28,13 +28,18 @@ export function setSuiteName(name) {
 
 /**
  * 记录测试结果
+ * @param {string} test - 测试名称
+ * @param {boolean} pass - 是否通过
+ * @param {string} detail - 详情
+ * @param {object} [options] - 额外选项
+ * @param {boolean} [options.skipped] - 是否为跳过
  */
-export function log(test, pass, detail = "") {
-  const icon = pass ? "PASS" : "FAIL";
+export function log(test, pass, detail = "", options = {}) {
+  const icon = options.skipped ? "SKIP" : pass ? "PASS" : "FAIL";
   const prefix = currentSuiteName ? `[${currentSuiteName}] ` : "";
   console.log(`[${icon}] ${prefix}${test}${detail ? " - " + detail : ""}`);
 
-  if (!pass) {
+  if (!pass && !options.skipped) {
     const stack = new Error().stack
       ?.split("\n")
       .slice(2, 5)
@@ -43,7 +48,7 @@ export function log(test, pass, detail = "") {
     console.log(`       at: ${stack}`);
   }
 
-  results.push({ test: `${prefix}${test}`, pass, detail });
+  results.push({ test: `${prefix}${test}`, pass, detail, skipped: options.skipped || false });
 }
 
 /**
@@ -91,9 +96,9 @@ export async function runTests(tests) {
  * 获取测试汇总
  */
 export function getSummary(duration) {
-  const passed = results.filter((r) => r.pass).length;
+  const passed = results.filter((r) => r.pass && !r.skipped).length;
   const failed = results.filter((r) => !r.pass).length;
-  const skipped = 0; // 目前不支持跳过
+  const skipped = results.filter((r) => r.skipped).length;
 
   return {
     total: results.length,
@@ -113,10 +118,10 @@ export function printSummary(duration) {
   const summary = getSummary(duration);
 
   console.log("\n═══════════════════════════════════════════");
-  console.log(`  测试结果: ${summary.passed}/${summary.total} 通过`);
-  if (summary.failed > 0) {
-    console.log(`  失败: ${summary.failed} 个`);
-  }
+  const parts = [`${summary.passed}/${summary.total} 通过`];
+  if (summary.failed > 0) parts.push(`${summary.failed} 失败`);
+  if (summary.skipped > 0) parts.push(`${summary.skipped} 跳过`);
+  console.log(`  测试结果: ${parts.join(" | ")}`);
   if (duration) {
     console.log(`  耗时: ${(duration / 1000).toFixed(2)}s`);
   }
