@@ -250,7 +250,7 @@ describe("buildCqlQuery", () => {
 
       const results = await callSearchEpo("LED heatsink");
       expect(results).toHaveLength(1);
-      expect(results[0].title).toBe("LED Heatsink Patent");
+      expect(results[0]!.title).toBe("LED Heatsink Patent");
     });
 
     it("throws on auth failure", async () => {

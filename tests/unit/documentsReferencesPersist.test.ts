@@ -24,7 +24,7 @@ function makeDoc(overrides: Partial<SourceDocument> = {}): SourceDocument {
     caseId: "case-1",
     role: "application",
     fileName: "test.pdf",
-    fileType: "application/pdf",
+    fileType: "pdf",
     extractedText: "test text",
     createdAt: "2024-01-01T00:00:00Z",
     ...overrides
@@ -37,7 +37,7 @@ function makeRef(overrides: Partial<ReferenceDocument> = {}): ReferenceDocument 
     caseId: "case-1",
     role: "reference",
     fileName: "reference.pdf",
-    fileType: "application/pdf",
+    fileType: "pdf",
     extractedText: "ref text",
     createdAt: "2024-01-01T00:00:00Z",
     source: "user-upload",

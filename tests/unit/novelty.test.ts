@@ -54,6 +54,7 @@ describe("Novelty fixture for G1+D1", () => {
     const result = fixture as unknown as {
       rows: Array<{ featureCode: string; disclosureStatus: string }>;
       differenceFeatureCodes: string[];
+      legalCaution: string;
     };
 
     expect(result.rows.length).toBeGreaterThan(0);

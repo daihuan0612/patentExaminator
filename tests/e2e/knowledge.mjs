@@ -67,9 +67,9 @@ export async function testKnowledgeDuplicateDetection() {
 export async function testKnowledgeStats() {
   const res = await getJSON("/knowledge/stats");
   const data = await res.json();
-  const hasStats = data.totalChunks > 0 && data.totalSources > 0;
+  const hasStats = data.chunkCount > 0 && data.sourceCount > 0;
   log("Knowledge Stats", hasStats,
-    hasStats ? `chunks=${data.totalChunks}, sources=${data.totalSources}` : JSON.stringify(data));
+    hasStats ? `chunks=${data.chunkCount}, sources=${data.sourceCount}` : JSON.stringify(data));
 }
 
 export async function testKnowledgeSearch() {

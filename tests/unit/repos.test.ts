@@ -21,6 +21,7 @@ import {
   createDocument, readAllDocuments, readDocumentsByCaseId, readDocumentById,
   updateDocument, deleteDocument
 } from "@client/lib/repos";
+import type { PatentCase, SourceDocument } from "@shared/types/domain";
 
 const API_BASE = "/api/data";
 
@@ -191,7 +192,7 @@ describe("repos.ts — Domain Functions", () => {
     };
 
     it("createCase calls POST", async () => {
-      await createCase(mockCase as any);
+      await createCase(mockCase as PatentCase);
       expect(mockFetch).toHaveBeenCalledWith(`${API_BASE}/cases`, expect.objectContaining({ method: "POST" }));
     });
 
@@ -220,7 +221,7 @@ describe("repos.ts — Domain Functions", () => {
     });
 
     it("updateCase calls PUT", async () => {
-      await updateCase(mockCase as any);
+      await updateCase(mockCase as PatentCase);
       expect(mockFetch).toHaveBeenCalledWith(`${API_BASE}/cases/case-1`, expect.objectContaining({ method: "PUT" }));
     });
 
@@ -246,7 +247,7 @@ describe("repos.ts — Domain Functions", () => {
     };
 
     it("createDocument calls POST", async () => {
-      await createDocument(mockDoc as any);
+      await createDocument(mockDoc as SourceDocument);
       expect(mockFetch).toHaveBeenCalledWith(`${API_BASE}/documents`, expect.objectContaining({ method: "POST" }));
     });
 
@@ -280,7 +281,7 @@ describe("repos.ts — Domain Functions", () => {
     });
 
     it("updateDocument calls PUT", async () => {
-      await updateDocument(mockDoc as any);
+      await updateDocument(mockDoc as SourceDocument);
       expect(mockFetch).toHaveBeenCalledWith(`${API_BASE}/documents/doc-1`, expect.objectContaining({ method: "PUT" }));
     });
 

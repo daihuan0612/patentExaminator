@@ -17,7 +17,8 @@ export const aiRunRequestSchema = z.object({
   metadata: z.object({
     caseId: z.string(),
     moduleScope: z.string(),
-    tokenEstimate: z.number().nonnegative()
+    tokenEstimate: z.number().nonnegative(),
+    mockKey: z.string().optional()
   })
 });
 

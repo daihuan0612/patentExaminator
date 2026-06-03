@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ProviderRegistry } from "@server/providers/registry";
 import type { ProviderAdapter, ChatRequest, ChatResponse } from "@server/providers/ProviderAdapter";
+import type { ProviderId } from "@shared/types/agents";
 
 function createMockAdapter(id: string, chatFn?: (req: ChatRequest) => Promise<ChatResponse>): ProviderAdapter {
   return {
-    id,
+    id: id as ProviderId,
     defaultBaseUrl: `https://api.${id}.com/v1`,
     supportedModels: () => [`${id}-model-1`, `${id}-model-2`],
+    listModels: vi.fn().mockResolvedValue([`${id}-model-1`, `${id}-model-2`]),
     chat: chatFn ?? vi.fn().mockResolvedValue({
       text: "response from " + id,
       rawResponse: {},
@@ -85,7 +87,7 @@ describe("ProviderRegistry", () => {
 
       // Should have retried failing (MAX_RETRIES=2 times) then fallen back to success
       expect(result.response.text).toBe("response from success");
-      expect(result.attempts.some(a => a.providerId === "success" && a.ok)).toBe(true);
+      expect(result.attempts.some(a => a.providerId === ("success" as ProviderId) && a.ok)).toBe(true);
     });
 
     it("TC-REG-006: 401 stops all retries and fallback", async () => {

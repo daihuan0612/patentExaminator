@@ -75,7 +75,7 @@ describe("searchPatents", () => {
     });
 
     expect(result.results.length).toBeGreaterThan(0);
-    expect(result.results[0].title).toBe("Patent A");
+    expect(result.results[0]!.title).toBe("Patent A");
     expect(result.query).toBe("LED heatsink");
     // Tavily does 2 fetch calls per query (patent-domain + general)
     expect(fetchSpy).toHaveBeenCalledTimes(2);
@@ -257,7 +257,7 @@ describe("searchPatents", () => {
     });
 
     expect(result.results.length).toBeGreaterThan(0);
-    expect(result.results[0].title).toBe("Serp Result");
+    expect(result.results[0]!.title).toBe("Serp Result");
   });
 
   it("handles SerpAPI error response", async () => {

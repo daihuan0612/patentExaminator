@@ -64,6 +64,7 @@ describe("Inventive fixture for G2", () => {
       distinguishingFeatureCodes: string[];
       closestPriorArtId: string;
       candidateAssessment: string;
+      legalCaution: string;
     };
 
     expect(result.distinguishingFeatureCodes).toContain("B");

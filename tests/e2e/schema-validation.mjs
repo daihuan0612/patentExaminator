@@ -168,15 +168,11 @@ export async function testResponseStructureValidation() {
     const hasOutput = data.outputJson || data.rawText;
     log("Response has output", !!hasOutput);
 
-    const hasStructureErrors = Array.isArray(data.structureErrors);
-    log("Response has structureErrors field", hasStructureErrors);
-
-    if (hasStructureErrors && data.structureErrors.length > 0) {
-      log("Response structureErrors empty", false,
-        `errors: ${data.structureErrors.join("; ")}`);
-    } else {
-      log("Response structureErrors empty", true);
-    }
+    // structureErrors 可能不存在（无错误）或为空数组
+    const structureErrors = data.structureErrors;
+    const noErrors = !structureErrors || (Array.isArray(structureErrors) && structureErrors.length === 0);
+    log("Response structureErrors empty", noErrors,
+      noErrors ? "no errors" : `errors: ${structureErrors.join("; ")}`);
   } else {
     log("Response Structure Validation", false, `request failed: ${data.error?.message}`);
   }

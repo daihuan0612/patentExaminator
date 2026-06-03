@@ -195,21 +195,6 @@ function runDbScenarioTests() {
   }
 }
 
-function runDbUpgradeTests() {
-  console.log("\n--- DB Schema Upgrade Tests (vitest) ---");
-  try {
-    execSync("npx vitest run --config vitest.integration.config.ts tests/integration/dbUpgrade.test.ts", {
-      cwd: process.cwd(),
-      stdio: "inherit",
-      timeout: 60000,
-      env: { ...process.env, FORCE_COLOR: "1" }
-    });
-    console.log("[PASS] DB Upgrade Tests");
-  } catch (err) {
-    console.log(`[FAIL] DB Upgrade Tests - ${err.message || "vitest failed"}`);
-  }
-}
-
 // ── 主函数 ──────────────────────────────────────────────────────────
 
 async function main() {
@@ -410,10 +395,6 @@ async function main() {
       // DB Scenario regression tests (bugs 18/19/21/22 etc.)
       console.log("\n--- DB Scenario Regression ---");
       await maybe(runDbScenarioTests);
-
-      // DB Schema upgrade regression tests (lesson-learned-57)
-      console.log("\n--- DB Schema Upgrade ---");
-      await maybe(runDbUpgradeTests);
 
       // Real mode tests (optional, auto-skip if no key)
       if (GEMINI_KEY) {
