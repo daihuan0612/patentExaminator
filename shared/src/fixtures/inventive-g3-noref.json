@@ -1,0 +1,11 @@
+{
+  "claimNumber": 1,
+  "closestPriorArtId": null,
+  "sharedFeatureCodes": [],
+  "distinguishingFeatureCodes": ["A", "B", "C"],
+  "objectiveTechnicalProblem": "无对比文件，无法确定客观技术问题",
+  "motivationEvidence": [],
+  "candidateAssessment": "insufficient-evidence",
+  "cautions": ["无对比文件，无法进行创造性三步法分析"],
+  "legalCaution": "以上为候选事实整理，不构成创造性法律结论。"
+}

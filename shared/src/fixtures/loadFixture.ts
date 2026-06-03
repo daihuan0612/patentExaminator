@@ -19,6 +19,7 @@ const FIXTURE_MAP: Record<string, Record<string, string>> = {
   },
   inventive: {
     "g2-battery": "inventive-g2.json",
+    "g3-sensor": "inventive-g3-noref.json",
   },
   interpret: {
     "g1-led": "interpret-g1.json",

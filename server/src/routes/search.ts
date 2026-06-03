@@ -525,6 +525,7 @@ const extractTermsSchema = z.object({
   providerPreference: z.array(z.string()).optional().default(["gemini", "mimo"]),
   modelId: z.string().optional().default("gemini-2.5-flash-lite"),
   llmApiKey: z.string().optional(),
+  mock: z.boolean().optional(),
   modelFallbacks: z.record(z.string(), z.array(z.string())).optional(),
   enableModelFallback: z.record(z.string(), z.boolean()).optional(),
   providerBaseUrls: z.record(z.string(), z.string()).optional()
@@ -543,6 +544,17 @@ searchRouter.post("/extract-search-terms", async (req, res) => {
   }
 
   const request = parseResult.data;
+
+  // Mock mode: return fixture data
+  if (request.mock) {
+    const mockQueries = request.features.map((f) => `${f.description} 专利`);
+    res.json({
+      ok: true,
+      queries: mockQueries,
+      featureCount: request.features.length,
+    } satisfies ExtractSearchTermsResponse);
+    return;
+  }
 
   // SSRF protection
   validateProviderBaseUrls(request.providerBaseUrls as Record<string, string> | undefined);
@@ -698,6 +710,7 @@ const searchWithTermsSchema = z.object({
   searchApiKey: z.string().optional(),
   searchBaseUrl: z.string().optional(),
   llmApiKey: z.string().optional(),
+  mock: z.boolean().optional(),
   providerPreference: z.array(z.string()).optional().default(["gemini", "mimo"]),
   modelId: z.string().optional().default("gemini-2.5-flash-lite"),
   modelFallbacks: z.record(z.string(), z.array(z.string())).optional(),
@@ -717,6 +730,31 @@ searchRouter.post("/search-with-terms", async (req, res) => {
   }
 
   const request = parseResult.data;
+
+  // Mock mode: return fixture data
+  if (request.mock) {
+    const mockCandidates = request.searchQueries.slice(0, request.maxResults).map((query, i) => ({
+      title: `Mock Patent ${i + 1}: ${query}`,
+      publicationNumber: `CN20231000000${i + 1}A`,
+      publicationDate: "2023-01-01",
+      abstract: `Mock abstract for query: ${query}`,
+      relevanceScore: 0.9 - i * 0.1,
+      source: "mock",
+    }));
+    res.json({
+      ok: true,
+      candidates: mockCandidates,
+      searchQuery: request.searchQueries.join("; "),
+      searchSummary: {
+        featureCount: request.features.length,
+        queryCount: request.searchQueries.length,
+        dataSource: "mock",
+        queries: request.searchQueries,
+        providerResults: [],
+      },
+    } satisfies SearchReferencesResponse);
+    return;
+  }
 
   // SSRF protection
   if (request.searchBaseUrl) validateExternalUrl(request.searchBaseUrl);
