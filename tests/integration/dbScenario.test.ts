@@ -17,6 +17,7 @@ import {
   type TestDb,
 } from "../helpers/testDb";
 import type Database from "better-sqlite3";
+import type { NoveltyComparison, NoveltyComparisonRow } from "@shared/types/domain";
 
 let tdb: TestDb;
 let db: Database.Database;
@@ -266,18 +267,18 @@ describe("Bug 21 Regression: Save then readback consistency", () => {
     };
     dbCreate(db, "novelty", novelty.id, novelty);
 
-    const dbItems = dbQuery(db, "novelty", "caseId", CASE_ID);
+    const dbItems = dbQuery(db, "novelty", "caseId", CASE_ID) as unknown as NoveltyComparison[];
     expect(dbItems).toHaveLength(1);
     expect(dbItems[0]!.rows).toHaveLength(2);
 
-    const row0 = dbItems[0]!.rows[0];
+    const row0 = dbItems[0]!.rows[0] as NoveltyComparisonRow;
     expect(row0.featureCode).toBe("A");
     expect(row0.disclosureStatus).toBe("clearly-disclosed");
     expect(row0.citations).toHaveLength(1);
-    expect(row0.citations[0].quote).toBe("散热翅片与基板连接");
-    expect(row0.citations[0].confidence).toBe("high");
+    expect(row0.citations[0]!.quote).toBe("散热翅片与基板连接");
+    expect(row0.citations[0]!.confidence).toBe("high");
 
-    const row1 = dbItems[0]!.rows[1];
+    const row1 = dbItems[0]!.rows[1] as NoveltyComparisonRow;
     expect(row1.featureCode).toBe("B");
     expect(row1.disclosureStatus).toBe("not-found");
 

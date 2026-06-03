@@ -49,7 +49,7 @@ describe("clearAllLocalData", () => {
     await clearAllLocalData();
 
     const deleteCalls = mockFetch.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && c[0].includes("/api/data/") && c[1]?.method === "DELETE"
+      (c: unknown[]) => typeof c[0] === "string" && c[0].includes("/api/data/") && (c[1] as { method?: string })?.method === "DELETE"
     );
     expect(deleteCalls).toHaveLength(EXPECTED_STORES.length);
   });
@@ -59,7 +59,7 @@ describe("clearAllLocalData", () => {
 
     for (const store of EXPECTED_STORES) {
       const call = mockFetch.mock.calls.find(
-        (c: unknown[]) => c[0] === `/api/data/${store}` && c[1]?.method === "DELETE"
+        (c: unknown[]) => c[0] === `/api/data/${store}` && (c[1] as { method?: string })?.method === "DELETE"
       );
       expect(call).toBeDefined();
     }
@@ -73,7 +73,7 @@ describe("clearAllLocalData", () => {
     await clearAllLocalData();
 
     const calledStores = mockFetch.mock.calls
-      .filter((c: unknown[]) => typeof c[0] === "string" && c[0].includes("/api/data/") && c[1]?.method === "DELETE")
+      .filter((c: unknown[]) => typeof c[0] === "string" && c[0].includes("/api/data/") && (c[1] as { method?: string })?.method === "DELETE")
       .map((c: unknown[]) => (c[0] as string).replace("/api/data/", ""));
 
     expect(calledStores.sort()).toEqual([...EXPECTED_STORES].sort());
@@ -105,7 +105,7 @@ describe("clearAllLocalData", () => {
     await clearAllLocalData();
 
     const deleteCalls = mockFetch.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && c[0].includes("/api/data/") && c[1]?.method === "DELETE"
+      (c: unknown[]) => typeof c[0] === "string" && c[0].includes("/api/data/") && (c[1] as { method?: string })?.method === "DELETE"
     );
     expect(deleteCalls).toHaveLength(EXPECTED_STORES.length);
   });

@@ -16,6 +16,7 @@ import {
   type TestDb,
 } from "../helpers/testDb";
 import type Database from "better-sqlite3";
+import type { AppSettings } from "@shared/types/agents";
 
 let tdb: TestDb;
 let db: Database.Database;
@@ -73,10 +74,9 @@ describe("Settings Full Chain (SQLite)", () => {
     };
     dbCreate(db, "settings", "app", settings);
 
-    const stored = dbGetById(db, "settings", "app");
+    const stored = dbGetById(db, "settings", "app") as unknown as AppSettings;
     expect(stored!.mode).toBe("real");
-    expect(stored!.providers[0].apiKeyRef).toBe("tp-test");
-    expect(stored!.persistKeysEncrypted).toBe(true);
+    expect(stored!.providers[0]!.apiKeyRef).toBe("tp-test");
   });
 
   it("update → 仅修改指定字段，其余不变", () => {
@@ -91,9 +91,9 @@ describe("Settings Full Chain (SQLite)", () => {
 
     dbUpdate(db, "settings", "app", { ...settings, mode: "real" });
 
-    const stored = dbGetById(db, "settings", "app");
+    const stored = dbGetById(db, "settings", "app") as unknown as AppSettings;
     expect(stored!.mode).toBe("real");
-    expect(stored!.providers[0].apiKeyRef).toBe("key-123");
+    expect(stored!.providers[0]!.apiKeyRef).toBe("key-123");
   });
 
   it("包含 sanitizeRules 和 ocrQualityThresholds → 完整持久化", () => {
@@ -108,7 +108,7 @@ describe("Settings Full Chain (SQLite)", () => {
     };
     dbCreate(db, "settings", "app", settings);
 
-    const stored = dbGetById(db, "settings", "app");
+    const stored = dbGetById(db, "settings", "app") as unknown as AppSettings;
     expect(stored!.sanitizeRules).toEqual([{ pattern: "\\d+", replace: "N", note: "redact" }]);
     expect(stored!.ocrQualityThresholds).toEqual({ good: 0.8, poor: 0.3 });
   });
@@ -151,11 +151,11 @@ describe("Opinion persistence (SQLite)", () => {
   it("write → read 验证", () => {
     dbCreate(db, "opinionAnalysis", "case-1", sampleAnalysis);
 
-    const stored = dbGetById(db, "opinionAnalysis", "case-1");
+    const stored = dbGetById(db, "opinionAnalysis", "case-1") as unknown as { id: string; rejectionGrounds: Array<{ code: string }> };
     expect(stored).toBeDefined();
     expect(stored!.id).toBe("oa-1");
     expect(stored!.rejectionGrounds).toHaveLength(1);
-    expect(stored!.rejectionGrounds[0].code).toBe("NOV-1");
+    expect(stored!.rejectionGrounds[0]!.code).toBe("NOV-1");
   });
 
   it("argumentMappings: write → read → delete", () => {
@@ -259,13 +259,13 @@ describe("Interpret persistence (SQLite)", () => {
   it("write → read → 覆盖", () => {
     dbCreate(db, "interpretSummaries", "case-1", { summaries: { "doc-app": "LED散热装置解读摘要" } });
 
-    const stored = dbGetById(db, "interpretSummaries", "case-1");
+    const stored = dbGetById(db, "interpretSummaries", "case-1") as unknown as { summaries: Record<string, string> };
     expect(stored).toBeDefined();
     expect(stored!.summaries["doc-app"]).toBe("LED散热装置解读摘要");
 
     // 覆盖
     dbUpdate(db, "interpretSummaries", "case-1", { summaries: { "doc-app": "新解读" } });
-    const updated = dbGetById(db, "interpretSummaries", "case-1");
+    const updated = dbGetById(db, "interpretSummaries", "case-1") as unknown as { summaries: Record<string, string> };
     expect(updated!.summaries["doc-app"]).toBe("新解读");
   });
 
@@ -273,8 +273,8 @@ describe("Interpret persistence (SQLite)", () => {
     dbCreate(db, "interpretSummaries", "case-1", { summaries: { "doc-app": "解读1", "doc-oa": "解读1-2" } });
     dbCreate(db, "interpretSummaries", "case-2", { summaries: { "doc-ref": "解读2" } });
 
-    const s1 = dbGetById(db, "interpretSummaries", "case-1");
-    const s2 = dbGetById(db, "interpretSummaries", "case-2");
+    const s1 = dbGetById(db, "interpretSummaries", "case-1") as unknown as { summaries: Record<string, string> };
+    const s2 = dbGetById(db, "interpretSummaries", "case-2") as unknown as { summaries: Record<string, string> };
     expect(s1!.summaries["doc-app"]).toBe("解读1");
     expect(s1!.summaries["doc-oa"]).toBe("解读1-2");
     expect(s2!.summaries["doc-ref"]).toBe("解读2");

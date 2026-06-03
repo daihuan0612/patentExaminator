@@ -227,7 +227,7 @@ function makeArgumentMapping(overrides: Partial<ArgumentMapping> = {}): Argument
  * Build a fetch mock that returns data from an in-memory store map.
  * Supports GET /api/data/{store}/{id} and POST /api/data/{store}/query.
  */
-function buildFetchMock(storeMap: Record<string, Record<string, unknown>[]>) {
+function buildFetchMock(storeMap: Record<string, unknown[]>) {
   return (url: string, options?: { method?: string; body?: string }) => {
     const method = options?.method ?? "GET";
 
@@ -247,10 +247,10 @@ function buildFetchMock(storeMap: Record<string, Record<string, unknown>[]>) {
     // GET /api/data/{store}/{id}
     if (method === "GET" && url.match(/\/api\/data\/[^/]+\/[^/]+$/)) {
       const parts = url.replace("/api/data/", "").split("/");
-      const store = parts[0];
-      const id = parts[1];
+      const store = parts[0]!;
+      const id = parts[1]!;
       const records = storeMap[store] ?? [];
-      const record = records.find((r) => (r as Record<string, unknown>).id === id);
+      const record = records.find((r: unknown) => (r as Record<string, unknown>).id === id);
       if (record) {
         return Promise.resolve({
           ok: true,

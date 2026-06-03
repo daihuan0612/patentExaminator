@@ -258,7 +258,7 @@ describe("DefectPanel overcome status switching (TC-11)", () => {
   });
 
   it("defect 初始状态为未克服", () => {
-    const defect = makeDefect({ overcomeStatus: undefined });
+    const defect = makeDefect();
     useDefectsStore.getState().setDefects([defect]);
     expect(useDefectsStore.getState().defects[0]!.overcomeStatus).toBeUndefined();
   });

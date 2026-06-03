@@ -4,7 +4,7 @@ import { createServer, type Server } from "http";
 import { agentRun } from "@client/lib/repos";
 import type {
   ClaimChartResponse, InventiveResponse,
-  InterpretResponse, ExtractCaseFieldsResponse
+  InterpretResponse, ExtractCaseFieldsResponse, ReexamDraftResponse
 } from "@shared/types/api";
 import type { AppSettings } from "@shared/types/agents";
 
@@ -42,7 +42,7 @@ beforeAll(async () => {
   const { agentRouter } = await import("@server/routes/agent.js");
 
   const app = express();
-  app.use(express.json({ limit: "10mb", charset: "utf-8" }));
+  app.use(express.json({ limit: "10mb" }));
 
   // 确保所有响应使用 UTF-8 编码
   app.use((_req, res, next) => {
@@ -210,29 +210,38 @@ describe("Agent Pipeline: Inventive (Mock)", () => {
       specificationText: MOCK_SPEC_TEXT,
     });
 
-    // fixture 返回的字段名是 objectiveTechnicalProblem，不是 problem
-    expect(resp.problem || (resp as Record<string, unknown>).objectiveTechnicalProblem).toBeTruthy();
-    expect(resp.differences || (resp as Record<string, unknown>).distinguishingFeatureCodes).toBeDefined();
-    expect(resp.conclusion || (resp as Record<string, unknown>).candidateAssessment).toBeTruthy();
+    expect(resp.objectiveTechnicalProblem).toBeTruthy();
+    expect(resp.distinguishingFeatureCodes).toBeDefined();
+    expect(resp.candidateAssessment).toBeTruthy();
 
     const analysis: InventiveStepAnalysis = {
       id: "inv-1",
       caseId: "g2-battery",
-      referenceId: "ref-1",
-      problem: resp.problem || (resp as Record<string, unknown>).objectiveTechnicalProblem || "测试问题",
-      differences: resp.differences || (resp as Record<string, unknown>).distinguishingFeatureCodes || [],
-      motivation: resp.motivation || (resp as Record<string, unknown>).motivationEvidence?.[0]?.quote || "",
-      conclusion: resp.conclusion || (resp as Record<string, unknown>).candidateAssessment || "possibly-lacks-inventiveness",
-      priorArt: resp.priorArt || (resp as Record<string, unknown>).motivationEvidence || [],
+      closestPriorArtId: resp.closestPriorArtId || "ref-1",
+      sharedFeatureCodes: resp.sharedFeatureCodes || [],
+      distinguishingFeatureCodes: resp.distinguishingFeatureCodes || [],
+      objectiveTechnicalProblem: resp.objectiveTechnicalProblem || "测试问题",
+      motivationEvidence: (resp.motivationEvidence || []).map((e) => {
+        const c: import("@shared/types/domain").Citation = {
+          documentId: e.referenceId,
+          label: e.label,
+          confidence: e.confidence,
+        };
+        if (e.paragraph !== undefined) c.paragraph = e.paragraph;
+        if (e.quote !== undefined) c.quote = e.quote;
+        return c;
+      }),
+      candidateAssessment: resp.candidateAssessment || "possibly-lacks-inventiveness",
+      cautions: resp.cautions || [],
+      legalCaution: resp.legalCaution || "",
+      status: "draft",
       applicantArguments: resp.applicantArguments || "",
-      createdAt: NOW,
-      updatedAt: NOW,
     };
     await repos.createInventive(analysis);
 
     const persisted = await repos.readInventiveByCaseId("g2-battery");
     expect(persisted).toHaveLength(1);
-    expect(persisted[0]!.problem).toBe(analysis.problem);
+    expect(persisted[0]!.objectiveTechnicalProblem).toBe(analysis.objectiveTechnicalProblem);
   });
 
   it("runInventive → 无申请人答辩 → possibly-lacks-inventiveness", async () => {
@@ -252,7 +261,7 @@ describe("Agent Pipeline: Inventive (Mock)", () => {
       specificationText: MOCK_SPEC_TEXT,
     });
 
-    expect(resp.conclusion || (resp as Record<string, unknown>).candidateAssessment).toBeTruthy();
+    expect(resp.candidateAssessment).toBeTruthy();
   });
 });
 
@@ -267,8 +276,8 @@ describe("Agent Pipeline: Interpret (Mock)", () => {
       specificationText: MOCK_SPEC_TEXT,
     });
 
-    // fixture 返回的字段名是 response，不是 interpretation
-    expect(resp.interpretation || (resp as Record<string, unknown>).response).toBeTruthy();
+    const r = resp as unknown as Record<string, unknown>;
+    expect(r.reply || r.response).toBeTruthy();
   });
 });
 
@@ -279,10 +288,8 @@ describe("Agent Pipeline: ExtractCaseFields (Mock)", () => {
       text: MOCK_SPEC_TEXT,
     });
 
-    // fixture 返回的是直接的字段，不是 fields 对象
-    expect(resp.fields || resp).toBeDefined();
-    expect((resp.fields || resp).applicationNumber || (resp as Record<string, unknown>).applicationNumber).toBeTruthy();
-    expect((resp.fields || resp).title || (resp as Record<string, unknown>).title).toBeTruthy();
+    expect(resp).toBeDefined();
+    expect(resp.applicationNumber || resp.title).toBeTruthy();
   });
 });
 
@@ -302,14 +309,13 @@ describe("Novelty Full Chain (Mock AI)", () => {
     expect(chartResp.features.length).toBeGreaterThanOrEqual(2);
 
     // Step 2: Novelty（使用正确的 fixture key: g1-led:g1-ref-d1）
-    const noveltyResp = await runMockAgent<unknown>("novelty", {
+    const noveltyResp = await runMockAgent<NoveltyComparison>("novelty", {
       caseId: "g1-led:g1-ref-d1",
       claimFeatures: chartResp.features,
       references: [{ id: "g1-ref-d1", fileName: "CN112345678A.pdf" }],
       specificationText: MOCK_SPEC_TEXT,
     });
 
-    // fixture 返回的是单个 novelty 对象，不是 comparisons 数组
     expect(noveltyResp).toBeDefined();
     expect(noveltyResp.rows).toBeDefined();
 
@@ -318,11 +324,12 @@ describe("Novelty Full Chain (Mock AI)", () => {
       id: "nov-full-chain",
       caseId: CASE_ID,
       referenceId: noveltyResp.referenceId || "g1-ref-d1",
-      referenceName: "CN112345678A.pdf",
+      claimNumber: 1,
       rows: noveltyResp.rows || [],
-      conclusion: noveltyResp.aiPreliminaryConclusions?.[0] || "测试",
-      createdAt: NOW,
-      updatedAt: NOW,
+      differenceFeatureCodes: noveltyResp.differenceFeatureCodes || [],
+      pendingSearchQuestions: noveltyResp.pendingSearchQuestions || [],
+      status: "draft",
+      legalCaution: noveltyResp.legalCaution || "",
     };
     await repos.createNovelty(novelty);
 
@@ -356,7 +363,7 @@ describe("Novelty Full Chain (Mock AI)", () => {
 describe("Inventive Full Chain (Mock AI)", () => {
   it("runNovelty → runInventive → 持久化 → 回读一致", async () => {
     // Step 1: Inventive（使用 g2-battery fixture）
-    const inventiveResp = await runMockAgent<unknown>("inventive", {
+    const inventiveResp = await runMockAgent<InventiveResponse>("inventive", {
       caseId: "g2-battery",
       claimText: MOCK_CLAIM_TEXT,
       noveltyComparison: {
@@ -372,29 +379,39 @@ describe("Inventive Full Chain (Mock AI)", () => {
       specificationText: MOCK_SPEC_TEXT,
     });
 
-    expect(inventiveResp.objectiveTechnicalProblem || inventiveResp.problem).toBeTruthy();
-    expect(inventiveResp.candidateAssessment || inventiveResp.conclusion).toBeTruthy();
+    expect(inventiveResp.objectiveTechnicalProblem).toBeTruthy();
+    expect(inventiveResp.candidateAssessment).toBeTruthy();
 
     // Step 2: 持久化
     const analysis: InventiveStepAnalysis = {
       id: "inv-full-1",
       caseId: "g2-battery",
-      referenceId: "ref-1",
-      problem: inventiveResp.objectiveTechnicalProblem || inventiveResp.problem || "测试问题",
-      differences: inventiveResp.distinguishingFeatureCodes || inventiveResp.differences || [],
-      motivation: inventiveResp.motivationEvidence?.[0]?.quote || inventiveResp.motivation || "",
-      conclusion: inventiveResp.candidateAssessment || inventiveResp.conclusion || "possibly-lacks-inventiveness",
-      priorArt: inventiveResp.motivationEvidence || inventiveResp.priorArt || [],
+      closestPriorArtId: inventiveResp.closestPriorArtId || "ref-1",
+      sharedFeatureCodes: inventiveResp.sharedFeatureCodes || [],
+      distinguishingFeatureCodes: inventiveResp.distinguishingFeatureCodes || [],
+      objectiveTechnicalProblem: inventiveResp.objectiveTechnicalProblem || "测试问题",
+      motivationEvidence: (inventiveResp.motivationEvidence || []).map((e) => {
+        const c: import("@shared/types/domain").Citation = {
+          documentId: e.referenceId,
+          label: e.label,
+          confidence: e.confidence,
+        };
+        if (e.paragraph !== undefined) c.paragraph = e.paragraph;
+        if (e.quote !== undefined) c.quote = e.quote;
+        return c;
+      }),
+      candidateAssessment: inventiveResp.candidateAssessment || "possibly-lacks-inventiveness",
+      cautions: inventiveResp.cautions || [],
+      legalCaution: inventiveResp.legalCaution || "",
+      status: "draft",
       applicantArguments: inventiveResp.applicantArguments || "",
-      createdAt: NOW,
-      updatedAt: NOW,
     };
     await repos.createInventive(analysis);
 
     // Step 3: 回读
     const persisted = await repos.readInventiveByCaseId("g2-battery");
     expect(persisted).toHaveLength(1);
-    expect(persisted[0]!.problem).toBe(analysis.problem);
+    expect(persisted[0]!.objectiveTechnicalProblem).toBe(analysis.objectiveTechnicalProblem);
   });
 });
 
@@ -407,24 +424,26 @@ describe("Agent Pipeline: OpinionAnalysis (Store)", () => {
     const mockResponse: OfficeActionAnalysis = {
       id: "opinion-1",
       caseId: CASE_ID,
+      documentId: "doc-oa",
       rejectionGrounds: [
         {
-          groundType: "novelty",
+          code: "NOV-1",
+          category: "novelty",
           claimNumbers: [1],
-          referenceIds: ["ref-1"],
-          reasoning: "权利要求1相对于CN111111111A不具备新颖性",
-          status: "pending",
+          summary: "权利要求1相对于CN111111111A不具备新颖性",
+          legalBasis: "专利法第22条第2款",
         },
       ],
       citedReferences: [
         {
-          referenceId: "ref-1",
-          documentId: "CN111111111A",
-          citationContexts: ["段落[0012]", "权利要求3"],
+          publicationNumber: "CN111111111A",
+          rejectionGroundCodes: ["NOV-1"],
+          featureMapping: "段落[0012]、权利要求3",
         },
       ],
+      legalCaution: "候选事实，不构成法律结论。",
+      status: "draft",
       createdAt: NOW,
-      updatedAt: NOW,
     };
 
     useOpinionStore.getState().setOfficeActionAnalysis(mockResponse);
@@ -433,7 +452,7 @@ describe("Agent Pipeline: OpinionAnalysis (Store)", () => {
     expect(state.officeActionAnalysis).toBeDefined();
     expect(state.officeActionAnalysis!.rejectionGrounds).toHaveLength(1);
     expect(state.officeActionAnalysis!.citedReferences).toHaveLength(1);
-    expect(state.officeActionAnalysis!.rejectionGrounds[0]!.groundType).toBe("novelty");
+    expect(state.officeActionAnalysis!.rejectionGrounds[0]!.category).toBe("novelty");
   });
 });
 
@@ -448,7 +467,7 @@ describe("Agent Pipeline: ArgumentAnalysis (Store)", () => {
 
   it("clearReexamData → 全部清空", () => {
     useOpinionStore.getState().setUnmappedGrounds(["test"]);
-    useDraftStore.getState().setReexamDraft(CASE_ID, "draft content");
+    useDraftStore.getState().setReexamDraft(CASE_ID, { claimNumber: 1, responseItems: [], overallAssessment: "draft content", legalCaution: "" });
 
     useOpinionStore.getState().clearReexamData();
     useDraftStore.getState().clearDraftData(CASE_ID);
@@ -461,21 +480,28 @@ describe("Agent Pipeline: ArgumentAnalysis (Store)", () => {
 
 describe("Agent Pipeline: ReexamDraft (Store)", () => {
   it("mock ReexamDraftResponse → setReexamDraft → 存储并回读", () => {
-    const draftText = "尊敬的审查员，本申请权利要求1相对于对比文件1具备新颖性...";
+    const draft: ReexamDraftResponse = {
+      claimNumber: 1,
+      responseItems: [],
+      overallAssessment: "尊敬的审查员，本申请权利要求1相对于对比文件1具备新颖性...",
+      legalCaution: "候选事实，不构成法律结论。",
+    };
 
-    useDraftStore.getState().setReexamDraft(CASE_ID, draftText);
+    useDraftStore.getState().setReexamDraft(CASE_ID, draft);
 
     const state = useDraftStore.getState();
-    expect(state.reexamDrafts[CASE_ID]).toBe(draftText);
+    expect(state.reexamDrafts[CASE_ID]).toBe(draft);
   });
 
   it("多case ReexamDraft → 互不干扰", () => {
-    useDraftStore.getState().setReexamDraft("case-1", "draft-1");
-    useDraftStore.getState().setReexamDraft("case-2", "draft-2");
+    const draft1: ReexamDraftResponse = { claimNumber: 1, responseItems: [], overallAssessment: "draft-1", legalCaution: "" };
+    const draft2: ReexamDraftResponse = { claimNumber: 1, responseItems: [], overallAssessment: "draft-2", legalCaution: "" };
+    useDraftStore.getState().setReexamDraft("case-1", draft1);
+    useDraftStore.getState().setReexamDraft("case-2", draft2);
 
     const state = useDraftStore.getState();
-    expect(state.reexamDrafts["case-1"]).toBe("draft-1");
-    expect(state.reexamDrafts["case-2"]).toBe("draft-2");
+    expect(state.reexamDrafts["case-1"]).toBe(draft1);
+    expect(state.reexamDrafts["case-2"]).toBe(draft2);
   });
 });
 
@@ -488,7 +514,8 @@ describe("Agent Pipeline: Translate (Store)", () => {
     });
 
     // fixture 返回的是 translatedText 字段
-    expect(resp.translation || resp.response || resp.translatedText).toBeTruthy();
+    const r = resp as Record<string, unknown>;
+    expect(r.translation || r.response || r.translatedText).toBeTruthy();
   });
 });
 
@@ -499,13 +526,13 @@ describe("Agent Pipeline: ClassifyDocuments (Store)", () => {
       id: "doc-classify-1",
       caseId: CASE_ID,
       fileName: "CN112345678A.pdf",
-      role: "unknown",
+      role: "application",
       fileType: "pdf",
-      fileSize: 1024,
       fileHash: "hash-1",
-      textContent: "一种散热装置...",
+      textStatus: "extracted",
+      extractedText: "一种散热装置...",
+      textIndex: { pages: [], paragraphs: [], lineMap: [] },
       createdAt: NOW,
-      updatedAt: NOW,
     };
     await repos.createDocument(doc);
 
@@ -530,13 +557,15 @@ describe("Cross-module Pipeline: Opinion → Argument (Serial)", () => {
     const mockOpinion: OfficeActionAnalysis = {
       id: "opinion-cross-1",
       caseId: CASE_ID,
+      documentId: "doc-oa",
       rejectionGrounds: [
-        { groundType: "novelty", claimNumbers: [1], referenceIds: ["ref-1"], reasoning: "...", status: "pending" },
-        { groundType: "inventive", claimNumbers: [1], referenceIds: ["ref-1"], reasoning: "...", status: "pending" },
+        { code: "NOV-1", category: "novelty", claimNumbers: [1], summary: "...", legalBasis: "专利法第22条第2款" },
+        { code: "INV-1", category: "inventive", claimNumbers: [1], summary: "...", legalBasis: "专利法第22条第3款" },
       ],
       citedReferences: [],
+      legalCaution: "",
+      status: "draft",
       createdAt: NOW,
-      updatedAt: NOW,
     };
     useOpinionStore.getState().setOfficeActionAnalysis(mockOpinion);
 
@@ -545,26 +574,26 @@ describe("Cross-module Pipeline: Opinion → Argument (Serial)", () => {
       {
         id: "mapping-1",
         caseId: CASE_ID,
-        groundType: "novelty",
-        claimNumbers: [1],
-        argumentText: "权利要求1相对于对比文件1具备新颖性",
+        rejectionGroundCode: "NOV-1",
+        applicantArgument: "权利要求1相对于对比文件1具备新颖性",
+        argumentSummary: "申请人意见",
+        confidence: "high",
         status: "draft",
         createdAt: NOW,
-        updatedAt: NOW,
       },
     ];
     useOpinionStore.getState().setArgumentMappings(mappings);
 
     // Step 3: 识别未映射的驳回理由
-    const mappedTypes = new Set(mappings.map((m) => m.groundType));
+    const mappedCodes = new Set(mappings.map((m) => m.rejectionGroundCode));
     const unmapped = mockOpinion.rejectionGrounds
-      .filter((g) => !mappedTypes.has(g.groundType))
-      .map((g) => g.groundType);
+      .filter((g) => !mappedCodes.has(g.code))
+      .map((g) => g.code);
     useOpinionStore.getState().setUnmappedGrounds(unmapped);
 
     const state = useOpinionStore.getState();
     expect(state.argumentMappings).toHaveLength(1);
-    expect(state.unmappedGrounds).toContain("inventive");
+    expect(state.unmappedGrounds).toContain("INV-1");
   });
 });
 
@@ -580,12 +609,11 @@ describe("References Full Chain (Store → DB)", () => {
       fileName: "CN112345678A.pdf",
       role: "reference",
       fileType: "pdf",
-      fileSize: 2048,
       fileHash: "hash-ref-1",
-      textContent: "一种散热装置...",
-      summary: "对比文件1摘要",
+      textStatus: "extracted",
+      extractedText: "一种散热装置...",
+      textIndex: { pages: [], paragraphs: [], lineMap: [] },
       createdAt: NOW,
-      updatedAt: NOW,
     };
     await repos.createDocument(ref);
 
@@ -602,18 +630,19 @@ describe("References Full Chain (Store → DB)", () => {
       fileName: "CN111111111A.pdf",
       role: "reference",
       fileType: "pdf",
-      fileSize: 1024,
       fileHash: "hash-ref-2",
+      textStatus: "extracted",
+      extractedText: "",
+      textIndex: { pages: [], paragraphs: [], lineMap: [] },
       createdAt: NOW,
-      updatedAt: NOW,
     };
     await repos.createDocument(ref);
 
-    const updated = { ...ref, summary: "更新后的摘要" };
+    const updated = { ...ref, extractedText: "更新后的摘要" };
     await repos.updateDocument(updated);
 
     const fetched = await repos.readDocumentById("ref-crud-2");
-    expect(fetched!.summary).toBe("更新后的摘要");
+    expect(fetched!.extractedText).toBe("更新后的摘要");
   });
 
   it("删除对比文件 → DB中不存在", async () => {
@@ -623,10 +652,11 @@ describe("References Full Chain (Store → DB)", () => {
       fileName: "CN222222222A.pdf",
       role: "reference",
       fileType: "pdf",
-      fileSize: 512,
       fileHash: "hash-ref-3",
+      textStatus: "extracted",
+      extractedText: "",
+      textIndex: { pages: [], paragraphs: [], lineMap: [] },
       createdAt: NOW,
-      updatedAt: NOW,
     };
     await repos.createDocument(ref);
     await repos.deleteDocument("ref-crud-3");
@@ -642,9 +672,9 @@ describe("References Full Chain (Store → DB)", () => {
     const { default: request } = await import("supertest");
     const agent = request(server);
 
-    await agent.post("/api/data/documents").send({ id: "ref-batch-1", caseId: testCaseId, fileName: "A.pdf", role: "reference", fileType: "pdf", fileSize: 100, fileHash: "h1", createdAt: NOW, updatedAt: NOW }).expect(200);
-    await agent.post("/api/data/documents").send({ id: "ref-batch-2", caseId: testCaseId, fileName: "B.pdf", role: "reference", fileType: "pdf", fileSize: 200, fileHash: "h2", createdAt: NOW, updatedAt: NOW }).expect(200);
-    await agent.post("/api/data/documents").send({ id: "ref-batch-3", caseId: testCaseId, fileName: "C.pdf", role: "reference", fileType: "pdf", fileSize: 300, fileHash: "h3", createdAt: NOW, updatedAt: NOW }).expect(200);
+    await agent.post("/api/data/documents").send({ id: "ref-batch-1", caseId: testCaseId, fileName: "A.pdf", role: "reference", fileType: "pdf", fileHash: "h1", textStatus: "extracted", extractedText: "", textIndex: { pages: [], paragraphs: [], lineMap: [] }, createdAt: NOW }).expect(200);
+    await agent.post("/api/data/documents").send({ id: "ref-batch-2", caseId: testCaseId, fileName: "B.pdf", role: "reference", fileType: "pdf", fileHash: "h2", textStatus: "extracted", extractedText: "", textIndex: { pages: [], paragraphs: [], lineMap: [] }, createdAt: NOW }).expect(200);
+    await agent.post("/api/data/documents").send({ id: "ref-batch-3", caseId: testCaseId, fileName: "C.pdf", role: "reference", fileType: "pdf", fileHash: "h3", textStatus: "extracted", extractedText: "", textIndex: { pages: [], paragraphs: [], lineMap: [] }, createdAt: NOW }).expect(200);
 
     const res = await agent.get("/api/data/documents").expect(200);
     const refDocs = res.body.records.filter((d: SourceDocument) => d.caseId === testCaseId && d.role === "reference");
@@ -660,10 +690,11 @@ describe("References Full Chain (Store → DB)", () => {
       fileName: "CN333333333A.pdf",
       role: "reference",
       fileType: "pdf",
-      fileSize: 1024,
       fileHash: "hash-cascade",
+      textStatus: "extracted",
+      extractedText: "",
+      textIndex: { pages: [], paragraphs: [], lineMap: [] },
       createdAt: NOW,
-      updatedAt: NOW,
     };
     await repos.createDocument(ref);
     await repos.deleteDocument("ref-cascade");

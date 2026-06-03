@@ -25,7 +25,9 @@ function makeDoc(overrides: Partial<SourceDocument> = {}): SourceDocument {
     role: "application",
     fileName: "test.pdf",
     fileType: "pdf",
+    textStatus: "extracted",
     extractedText: "test text",
+    textIndex: { pages: [], paragraphs: [], lineMap: [] },
     createdAt: "2024-01-01T00:00:00Z",
     ...overrides
   };
@@ -38,9 +40,12 @@ function makeRef(overrides: Partial<ReferenceDocument> = {}): ReferenceDocument 
     role: "reference",
     fileName: "reference.pdf",
     fileType: "pdf",
+    textStatus: "extracted",
     extractedText: "ref text",
+    textIndex: { pages: [], paragraphs: [], lineMap: [] },
     createdAt: "2024-01-01T00:00:00Z",
-    source: "user-upload",
+    publicationDateConfidence: "high",
+    timelineStatus: "available",
     ...overrides
   };
 }

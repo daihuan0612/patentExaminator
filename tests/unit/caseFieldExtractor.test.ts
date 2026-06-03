@@ -141,7 +141,8 @@ describe("caseFieldExtractor", () => {
       mockParseClaims.mockResolvedValue({
         claims: [
           { id: "c1", caseId: "case-6", claimNumber: 1, type: "independent", dependsOn: [], rawText: "传感器节点..." }
-        ]
+        ],
+        warnings: []
       });
 
       const result = await extractCaseFieldsFallback([{ fileName: "test.txt", text }], "case-6");
@@ -157,7 +158,7 @@ describe("caseFieldExtractor", () => {
 
     it("TC-FALLBACK-002: extract standalone CN number", async () => {
       const text = "本专利 CN202310004004A 涉及一种装置。";
-      mockParseClaims.mockResolvedValue({ claims: [] });
+      mockParseClaims.mockResolvedValue({ claims: [], warnings: [] });
 
       const result = await extractCaseFieldsFallback([{ fileName: "test.txt", text }], "case-7");
 
@@ -167,7 +168,7 @@ describe("caseFieldExtractor", () => {
 
     it("TC-FALLBACK-003: no extractable fields", async () => {
       const text = "这是一段没有结构化信息的普通文本。";
-      mockParseClaims.mockResolvedValue({ claims: [] });
+      mockParseClaims.mockResolvedValue({ claims: [], warnings: [] });
 
       const result = await extractCaseFieldsFallback([{ fileName: "test.txt", text }], "case-8");
 
@@ -196,7 +197,7 @@ describe("caseFieldExtractor", () => {
 
     it("TC-FALLBACK-005: date with different formats", async () => {
       const text = "申请日：2023年03月15日\n优先权日：2022.11.08";
-      mockParseClaims.mockResolvedValue({ claims: [] });
+      mockParseClaims.mockResolvedValue({ claims: [], warnings: [] });
 
       const result = await extractCaseFieldsFallback([{ fileName: "test.txt", text }], "case-10");
 
