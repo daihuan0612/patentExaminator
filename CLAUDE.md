@@ -65,9 +65,6 @@ npm run test:e2e:real
 # 运行数据库测试
 npm run test:db
 
-# 运行 AI Smoke 测试
-npm run test:ai-smoke
-
 # 运行所有验证
 npm run verify
 ```
@@ -96,14 +93,14 @@ npm run gate
 
 - 用户在 Settings 页面输入 API key → 存储到服务端 keyStore
 - AI 调用时从 keyStore 读取 → 发送给 AI Provider
-- **不要**在生产代码中用 `process.env.GEMINI_KEY` 读取 key
+- **不要**在生产代码中用 `process.env.*` 读取任何 API key（GEMINI_KEY、MiMo_KEY、Openrouter_KEY 等）
 
 ### 自动测试运行（E2E / Smoke Test）
 
 **仅限测试脚本**使用 `.env` 文件读取 API key。这是为了方便 CI 和本地开发者运行测试，与生产运行无关。
 
 ```env
-# 以下配置仅用于 tests/e2e*.mjs 和 tests/developer-ai-smoke.mjs
+# 以下配置仅用于 tests/e2e.mjs（自动测试）
 # 不影响生产 App 的 key 读取逻辑
 GEMINI_KEY=your_gemini_key
 MiMo_KEY=your_mimo_key

@@ -7,6 +7,7 @@
 
 import {
   postJSON,
+  getJSONWithParams,
   log,
   delay,
   isRetryableError,
@@ -25,6 +26,7 @@ import {
   validateTranslateOutput,
   validateExtractCaseFieldsOutput,
   validateClassifyDocumentsOutput,
+  validateSearchReferencesOutput,
   GEMINI_FALLBACK_MODELS,
   AI_RATE_LIMIT_DELAY,
   SEARCH_RATE_LIMIT_DELAY,
@@ -466,5 +468,80 @@ export async function testRealTokenUsageReturned() {
       hasUsage ? `input=${data.tokenUsage.input}, output=${data.tokenUsage.output}` : "missing tokenUsage");
   } else {
     log("Real TokenUsage returned", false, `request failed: ${data.error?.message}`);
+  }
+}
+
+// ── Real: Gemini Model List ─────────────────────────────────────────
+
+export async function testRealGeminiModelList() {
+  const GEMINI_KEY = getApiKey("gemini");
+  if (!GEMINI_KEY) {
+    log("Real GeminiModelList", true, "skipped (no GEMINI_KEY)");
+    return;
+  }
+
+  try {
+    const res = await getJSONWithParams("/providers/gemini/models", { apiKey: GEMINI_KEY });
+    const data = await res.json();
+
+    if (!res.ok) {
+      log("Real GeminiModelList", false, data.error || `HTTP ${res.status}`);
+      return;
+    }
+
+    const models = data.models || [];
+    const hasValidModels = models.length > 0;
+    log("Real GeminiModelList", hasValidModels,
+      hasValidModels
+        ? `found ${models.length} models: ${models.slice(0, 5).join(", ")}${models.length > 5 ? "..." : ""}`
+        : "no models returned");
+  } catch (err) {
+    log("Real GeminiModelList", false, err.message);
+  }
+}
+
+// ── Real: EPO Search Candidates ─────────────────────────────────────
+
+export async function testRealEpoSearchCandidates() {
+  const epoKey = getApiKey("epo");
+  const epoSecret = getApiKey("epoSecret");
+  const GEMINI_KEY = getApiKey("gemini");
+
+  if (!epoKey || !epoSecret) {
+    log("Real EPO Search", true, "skipped (no EPO_CONSUMER_KEY / EPO_CONSUMER_SECRET_KEY)");
+    return;
+  }
+  if (!GEMINI_KEY) {
+    log("Real EPO Search", true, "skipped (no GEMINI_KEY)");
+    return;
+  }
+
+  try {
+    const res = await postJSON("/search-references", {
+      caseId: "g1-led-epo",
+      claimText: SAMPLE_CLAIM_G1.slice(0, 300),
+      features: [{ featureCode: "A", description: "LED散热装置" }],
+      maxResults: 3,
+      searchProviderId: "epo",
+      searchApiKey: `${epoKey}:${epoSecret}`,
+      providerPreference: ["gemini"],
+      modelId: getModelId("gemini"),
+      llmApiKey: GEMINI_KEY,
+    });
+    const data = await res.json();
+
+    const ok = data.ok === true;
+    log("Real EPO Search ok", ok, ok ? "success" : data.error?.message || "failed");
+
+    if (ok) {
+      const hasCandidates = Array.isArray(data.candidates) && data.candidates.length > 0;
+      log("Real EPO Search candidates non-empty", hasCandidates,
+        `count=${data.candidates?.length || 0}`);
+
+      const validation = validateSearchReferencesOutput(data);
+      log("Real EPO Search schema valid", validation.valid, validation.errors.join("; "));
+    }
+  } catch (err) {
+    log("Real EPO Search", false, err.message);
   }
 }

@@ -32,10 +32,9 @@
     "test:db:scenario": "vitest run --config vitest.integration.config.ts tests/integration/dbScenario.test.ts",
     "test:db:all": "vitest run --config vitest.integration.config.ts tests/integration/dbLogicChain.test.ts tests/integration/dbScenario.test.ts",
     "test:evaluation": "vitest run -c vitest.evaluation.config.ts",
-    "test:ai-smoke": "node tests/developer-ai-smoke.mjs",
     "gate": "npm run typecheck && npm run lint",
     "verify": "npm run typecheck && npm run lint && npm test && npm run test:integration && npm run test:db:all && npm run test:e2e && npm run test:evaluation",
-    "verify:precommit": "npm run verify && npm run test:ai-smoke"
+    "verify:precommit": "npm run verify"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",

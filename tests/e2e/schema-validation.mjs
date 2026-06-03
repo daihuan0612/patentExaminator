@@ -183,8 +183,8 @@ export async function testResponseStructureValidation() {
 }
 
 export async function testMalformedResponseHandling() {
-  // 测试服务器对畸形请求的处理
-  const res = await postJSON("/ai/run", {
+  // 测试 1：valid fixture + extra fields → ok=true（验证多余字段被忽略）
+  const res1 = await postJSON("/ai/run", {
     agent: "claim-chart",
     providerPreference: ["gemini"],
     modelId: "mock",
@@ -192,13 +192,31 @@ export async function testMalformedResponseHandling() {
     sanitized: false,
     mock: true,
     metadata: { caseId: "g1-led", moduleScope: "claim-chart", tokenEstimate: 0 },
-    // 添加一些畸形字段
     invalidField: "should be ignored",
     anotherInvalid: 123,
   });
-  const data = await res.json();
-  log("Malformed Response Handling", data.ok === true,
-    `ok=${data.ok}, extra fields ignored`);
+  const data1 = await res1.json();
+  log("Malformed Response: extra fields ignored", data1.ok === true,
+    `ok=${data1.ok}`);
+
+  // 测试 2：unknown fixture → ok=false, error.code === "mock-fixture-not-found"
+  const res2 = await postJSON("/ai/run", {
+    agent: "claim-chart",
+    providerPreference: ["gemini"],
+    modelId: "mock",
+    prompt: "[Mock E2E test] claim-chart for case nonexistent-case-999",
+    sanitized: false,
+    mock: true,
+    metadata: { caseId: "nonexistent-case-999", moduleScope: "claim-chart", tokenEstimate: 0 },
+  });
+  const data2 = await res2.json();
+  log("Malformed Response: unknown fixture returns error", data2.ok === false,
+    `ok=${data2.ok}, code=${data2.error?.code}`);
+  if (!data2.ok) {
+    log("Malformed Response: error code is mock-fixture-not-found",
+      data2.error?.code === "mock-fixture-not-found",
+      `code=${data2.error?.code}`);
+  }
 }
 
 // ── Search References 验证 ──────────────────────────────────────────

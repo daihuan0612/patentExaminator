@@ -73,6 +73,8 @@ import {
   testRealTranslate_G1,
   testRealClassifyDocuments_G1,
   testRealTokenUsageReturned,
+  testRealGeminiModelList,
+  testRealEpoSearchCandidates,
   testSchemaClaimChart,
   testSchemaNovelty,
   testSchemaInventive,
@@ -269,6 +271,10 @@ async function main() {
       await maybe(testRealProviderConnectivity);
       await delay(2000);
 
+      console.log("\n--- Gemini Model List ---");
+      await maybe(testRealGeminiModelList);
+      await delay(2000);
+
       console.log("\n--- Real Agent Tests ---");
       await maybe(testRealClaimChart_G1);
       await delay(AI_RATE_LIMIT_DELAY);
@@ -298,6 +304,9 @@ async function main() {
       await delay(AI_RATE_LIMIT_DELAY);
       await maybe(testRealTokenUsageReturned);
       await delay(2000);
+
+      console.log("\n--- EPO Search ---");
+      await maybe(testRealEpoSearchCandidates);
 
     } else {
       // ========== Mock Mode Tests (Default) ==========
@@ -417,6 +426,9 @@ async function main() {
         await maybe(testRealProviderConnectivity);
         await delay(2000);
 
+        await maybe(testRealGeminiModelList);
+        await delay(2000);
+
         await maybe(testRealClaimChart_G1);
         await delay(AI_RATE_LIMIT_DELAY);
         await maybe(testRealNovelty_G1);
@@ -443,6 +455,8 @@ async function main() {
         await delay(AI_RATE_LIMIT_DELAY);
         await maybe(testRealClassifyDocuments_G1);
         await delay(AI_RATE_LIMIT_DELAY);
+
+        await maybe(testRealEpoSearchCandidates);
       } else {
         console.log("\n--- Real Mode (skipped, no GEMINI_KEY) ---");
         console.log("  Set GEMINI_KEY to run real AI tests, or use --real flag\n");
