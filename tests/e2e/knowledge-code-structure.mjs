@@ -11,11 +11,10 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { log, assert } from "../e2e-shared/index.mjs";
+import { log, assert, SAMPLES_KNOWLEDGE_DIR } from "../e2e-shared/index.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "../..");
-const SAMPLES_DIR = path.join(ROOT, "samples", "knowledge-base");
 const CLIENT_SRC = path.join(ROOT, "client", "src");
 const SERVER_SRC = path.join(ROOT, "server", "src");
 const SHARED_SRC = path.join(ROOT, "shared", "src");
@@ -46,7 +45,7 @@ export async function testSampleDataIntegrity() {
     "测试网页内容.txt",
   ];
   for (const file of expected) {
-    const filePath = path.join(SAMPLES_DIR, file);
+    const filePath = path.join(SAMPLES_KNOWLEDGE_DIR, file);
     assert(fileExists(filePath), `Missing: ${file}`);
     assert(fs.statSync(filePath).size > 0, `Empty: ${file}`);
   }
@@ -56,35 +55,35 @@ export async function testSampleDataIntegrity() {
 // ── T-RAG-002~008: 文件格式验证 ─────────────────────────────────────
 
 export async function testPdfValidity() {
-  const buf = fs.readFileSync(path.join(SAMPLES_DIR, "专利审查指南.pdf"));
+  const buf = fs.readFileSync(path.join(SAMPLES_KNOWLEDGE_DIR, "专利审查指南.pdf"));
   assert(buf[0] === 0x25 && buf[1] === 0x50, "Not valid PDF");
   assert(buf.length > 100_000, "PDF too small");
   log("T-RAG-002: PDF 文件有效性", true, `${(buf.length / 1024).toFixed(0)}KB`);
 }
 
 export async function testTxtContent() {
-  const txt = readFile(path.join(SAMPLES_DIR, "专利法_2020修正.txt"));
+  const txt = readFile(path.join(SAMPLES_KNOWLEDGE_DIR, "专利法_2020修正.txt"));
   assert(txt.includes("第一条"), "Missing '第一条'");
   assert(txt.includes("第二十二条"), "Missing '第二十二条'");
   log("T-RAG-003: TXT 内容验证", true);
 }
 
 export async function testMdStructure() {
-  const md = readFile(path.join(SAMPLES_DIR, "专利法条文速查.md"));
+  const md = readFile(path.join(SAMPLES_KNOWLEDGE_DIR, "专利法条文速查.md"));
   assert(md.startsWith("# 专利法条文速查"), "Missing H1");
   assert(md.includes("## 第一章"), "Missing H2");
   log("T-RAG-004: MD 结构验证", true);
 }
 
 export async function testJsonValidity() {
-  const data = JSON.parse(readFile(path.join(SAMPLES_DIR, "测试案例.json")));
+  const data = JSON.parse(readFile(path.join(SAMPLES_KNOWLEDGE_DIR, "测试案例.json")));
   assert(Array.isArray(data), "Not array");
   assert(data.length === 3, `Expected 3 items, got ${data.length}`);
   log("T-RAG-005: JSON 有效性", true, `${data.length} items`);
 }
 
 export async function testCsvContent() {
-  const lines = readFile(path.join(SAMPLES_DIR, "审查标准速查表.csv"))
+  const lines = readFile(path.join(SAMPLES_KNOWLEDGE_DIR, "审查标准速查表.csv"))
     .split("\n")
     .filter((l) => l.trim());
   assert(lines.length >= 7, `Expected >= 7 lines, got ${lines.length}`);
@@ -93,13 +92,13 @@ export async function testCsvContent() {
 }
 
 export async function testXlsxValidity() {
-  const buf = fs.readFileSync(path.join(SAMPLES_DIR, "审查标准速查表.xlsx"));
+  const buf = fs.readFileSync(path.join(SAMPLES_KNOWLEDGE_DIR, "审查标准速查表.xlsx"));
   assert(buf[0] === 0x50 && buf[1] === 0x4b, "Not valid XLSX (ZIP)");
   log("T-RAG-007: XLSX 有效性", true);
 }
 
 export async function testPngValidity() {
-  const buf = fs.readFileSync(path.join(SAMPLES_DIR, "三步法流程图.png"));
+  const buf = fs.readFileSync(path.join(SAMPLES_KNOWLEDGE_DIR, "三步法流程图.png"));
   assert(buf[0] === 0x89 && buf[1] === 0x50, "Not valid PNG");
   log("T-RAG-008: PNG 有效性", true);
 }

@@ -7,7 +7,6 @@
 
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
 import {
   postJSON,
   getJSON,
@@ -16,11 +15,8 @@ import {
   assert,
   getTestBase,
   getApiKey,
+  SAMPLES_KNOWLEDGE_DIR,
 } from "../e2e-shared/index.mjs";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const SAMPLES_DIR = path.resolve(__dirname, "../../samples/knowledge-base");
 
 // 构建 embedding/reranker 配置（当前用同一个 key，但结构独立以便将来扩展）
 function getKnowledgeUploadOptions() {
@@ -47,13 +43,13 @@ function getKnowledgeUploadOptions() {
 // ── 知识库测试 ──────────────────────────────────────────────────────
 
 export async function testKnowledgeUploadTxt() {
-  const filePath = path.join(SAMPLES_DIR, "专利法_2020修正.txt");
+  const filePath = path.join(SAMPLES_KNOWLEDGE_DIR, "专利法_2020修正.txt");
   const result = await uploadKnowledgeFile(filePath, getKnowledgeUploadOptions());
   log("Knowledge Upload TXT", result.ok, result.ok ? `file=${path.basename(filePath)}` : result.error);
 }
 
 export async function testKnowledgeUploadLargeFile() {
-  const filePath = path.join(SAMPLES_DIR, "专利审查指南.pdf");
+  const filePath = path.join(SAMPLES_KNOWLEDGE_DIR, "专利审查指南.pdf");
   if (!fs.existsSync(filePath)) {
     log("Knowledge Upload Large File", true, "skipped (file not found)");
     return;
@@ -63,25 +59,25 @@ export async function testKnowledgeUploadLargeFile() {
 }
 
 export async function testKnowledgeUploadMd() {
-  const filePath = path.join(SAMPLES_DIR, "专利法条文速查.md");
+  const filePath = path.join(SAMPLES_KNOWLEDGE_DIR, "专利法条文速查.md");
   const result = await uploadKnowledgeFile(filePath, getKnowledgeUploadOptions());
   log("Knowledge Upload MD", result.ok, result.ok ? `file=${path.basename(filePath)}` : result.error);
 }
 
 export async function testKnowledgeUploadJson() {
-  const filePath = path.join(SAMPLES_DIR, "测试案例.json");
+  const filePath = path.join(SAMPLES_KNOWLEDGE_DIR, "测试案例.json");
   const result = await uploadKnowledgeFile(filePath, getKnowledgeUploadOptions());
   log("Knowledge Upload JSON", result.ok, result.ok ? `file=${path.basename(filePath)}` : result.error);
 }
 
 export async function testKnowledgeUploadCsv() {
-  const filePath = path.join(SAMPLES_DIR, "审查标准速查表.csv");
+  const filePath = path.join(SAMPLES_KNOWLEDGE_DIR, "审查标准速查表.csv");
   const result = await uploadKnowledgeFile(filePath, getKnowledgeUploadOptions());
   log("Knowledge Upload CSV", result.ok, result.ok ? `file=${path.basename(filePath)}` : result.error);
 }
 
 export async function testKnowledgeDuplicateDetection() {
-  const filePath = path.join(SAMPLES_DIR, "专利法_2020修正.txt");
+  const filePath = path.join(SAMPLES_KNOWLEDGE_DIR, "专利法_2020修正.txt");
   const opts = getKnowledgeUploadOptions();
   // 上传两次，第二次应该检测到重复
   await uploadKnowledgeFile(filePath, opts);
@@ -150,7 +146,7 @@ export async function testKnowledgeUploadAndSearchChain() {
   const BASE = getTestBase();
   await fetch(`${BASE}/knowledge/clear`, { method: "DELETE" });
 
-  const filePath = path.join(SAMPLES_DIR, "专利法条文速查.md");
+  const filePath = path.join(SAMPLES_KNOWLEDGE_DIR, "专利法条文速查.md");
   const uploadResult = await uploadKnowledgeFile(filePath, getKnowledgeUploadOptions());
   log("Knowledge Upload→Search: upload", uploadResult.ok,
     uploadResult.ok ? `chunks=${uploadResult.data?.chunkCount}` : uploadResult.error);
@@ -193,7 +189,7 @@ export async function testKnowledgeMultiFileUploadAndSearch() {
   const files = ["专利法条文速查.md", "测试案例.json", "审查标准速查表.csv"];
   const opts = getKnowledgeUploadOptions();
   for (const f of files) {
-    const filePath = path.join(SAMPLES_DIR, f);
+    const filePath = path.join(SAMPLES_KNOWLEDGE_DIR, f);
     const result = await uploadKnowledgeFile(filePath, opts);
     log(`Knowledge MultiFile: upload ${f}`, result.ok);
     if (!result.ok) return;
@@ -249,7 +245,7 @@ export async function testKnowledgeRerankerIntegration() {
 
   // 先清空并上传一个文件
   await fetch(`${BASE}/knowledge/clear`, { method: "DELETE" });
-  const filePath = path.join(SAMPLES_DIR, "专利法条文速查.md");
+  const filePath = path.join(SAMPLES_KNOWLEDGE_DIR, "专利法条文速查.md");
   await uploadKnowledgeFile(filePath, getKnowledgeUploadOptions());
 
   // 测试无 reranker 的检索（应回退到向量搜索）

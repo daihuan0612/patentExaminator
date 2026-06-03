@@ -7,7 +7,22 @@
  * - Fallback 模型链条
  * - 可重试错误关键词
  * - 超时和延迟配置
+ * - 测试数据路径
  */
+
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, "../..");
+
+// ── 测试数据路径 ──────────────────────────────────────────────────
+
+/** 案件测试数据目录 */
+export const SAMPLES_CASE_DIR = path.join(ROOT, "samples", "led-heatsink-mini");
+
+/** 知识库测试数据目录 */
+export const SAMPLES_KNOWLEDGE_DIR = path.join(ROOT, "samples", "knowledge-base");
 
 // ── API Key 配置 ─────────────────────────────────────────────────────
 
@@ -155,6 +170,11 @@ export const FILE_TO_TEST_MAP = [
   // 搜索相关
   { pattern: /^server\/src\/lib\/search/, groups: ["mock", "real"] },
   { pattern: /^server\/src\/routes\/search/, groups: ["mock", "real"] },
+
+  // 数据库相关
+  { pattern: /^server\/src\/lib\/syncDb/, groups: ["db"] },
+  { pattern: /^server\/src\/lib\/knowledgeDb/, groups: ["db", "knowledge"] },
+  { pattern: /^tests\/integration\/db/, groups: ["db"] },
 
   // 前端 UI
   { pattern: /^client\/src/, groups: ["health"] },

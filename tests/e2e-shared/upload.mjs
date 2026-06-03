@@ -2,7 +2,7 @@
  * E2E 测试文件上传工具
  * ====================
  *
- * 统一的知识库文件上传逻辑，用于 knowledge-base-e2e.mjs 和 e2e-real.mjs。
+ * 统一的知识库文件上传逻辑，用于 tests/e2e/knowledge.mjs。
  */
 
 import fs from "fs";
@@ -72,14 +72,14 @@ export async function uploadKnowledgeFile(filePath, options = {}) {
  * 批量上传文件到知识库
  *
  * @param {string[]} filePaths - 文件路径数组
- * @param {string} [baseUrl] - 可选的服务器地址
+ * @param {object} [options] - 可选配置（同 uploadKnowledgeFile）
  * @returns {Promise<Array<{ok: boolean, data: object|null, error: string|null}>>}
  */
-export async function uploadMultipleFiles(filePaths, baseUrl) {
+export async function uploadMultipleFiles(filePaths, options = {}) {
   const results = [];
 
   for (const filePath of filePaths) {
-    const result = await uploadKnowledgeFile(filePath, baseUrl);
+    const result = await uploadKnowledgeFile(filePath, options);
     results.push(result);
   }
 
@@ -90,16 +90,16 @@ export async function uploadMultipleFiles(filePaths, baseUrl) {
  * 上传目录中的所有文件
  *
  * @param {string} dirPath - 目录路径
+ * @param {object} [options] - 可选配置（同 uploadKnowledgeFile）
  * @param {string[]} [extensions] - 可选的文件扩展名过滤
- * @param {string} [baseUrl] - 可选的服务器地址
  * @returns {Promise<Array<{ok: boolean, data: object|null, error: string|null}>>}
  */
-export async function uploadDirectory(dirPath, extensions, baseUrl) {
+export async function uploadDirectory(dirPath, options = {}, extensions) {
   const files = fs.readdirSync(dirPath);
   const filteredFiles = extensions
     ? files.filter((f) => extensions.some((ext) => f.endsWith(ext)))
     : files;
 
   const filePaths = filteredFiles.map((f) => path.join(dirPath, f));
-  return uploadMultipleFiles(filePaths, baseUrl);
+  return uploadMultipleFiles(filePaths, options);
 }

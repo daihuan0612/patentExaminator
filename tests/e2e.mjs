@@ -28,6 +28,7 @@ import { execSync } from "child_process";
 import {
   loadEnvFile,
   getApiKey,
+  getTestBase,
   maskKey,
   delay,
   AI_RATE_LIMIT_DELAY,
@@ -303,7 +304,12 @@ async function main() {
   }
 
   // --only / --auto filter
-  // group 参数用于 --auto 模式，标识该测试属于哪个组
+  // currentGroup 由 setGroup() 设置，用于 --auto 模式
+  let currentGroup = "";
+  function setGroup(group) {
+    currentGroup = group;
+  }
+
   function maybe(fn, ...fnArgs) {
     // --only 模式：按函数名过滤
     if (onlyPattern) {
@@ -312,22 +318,9 @@ async function main() {
       console.log(`  ⏭ skipped ${fn.name}`);
       return undefined;
     }
-    // --auto 模式：检查函数是否属于匹配的测试组
+    // --auto 模式：检查当前组是否在匹配的测试组中
     if (doAuto && autoGroups) {
-      const name = fn.name.toLowerCase();
-      const isInGroup = autoGroups.some((g) => {
-        // 简单的名称匹配：检查函数名是否包含组名关键词
-        if (g === "knowledge") return name.includes("knowledge") && !name.includes("integrity") && !name.includes("pdf") && !name.includes("txt") && !name.includes("md") && !name.includes("json") && !name.includes("csv") && !name.includes("xlsx") && !name.includes("png") && !name.includes("embedder") && !name.includes("retriever") && !name.includes("promptinjector") && !name.includes("typedefinitions") && !name.includes("indexeddb") && !name.includes("agentintegration") && !name.includes("settingsui") && !name.includes("knowledgerepo") && !name.includes("normalizer") && !name.includes("filehash") && !name.includes("documentcategory");
-        if (g === "knowledgeIntegration") return name.includes("uploadandsearch") || name.includes("searchresultmetadata") || name.includes("multifile") || name.includes("providertest") || name.includes("reranker");
-        if (g === "knowledgeCodeStructure") return name.includes("integrity") || name.includes("pdfvalidity") || name.includes("txtcontent") || name.includes("mdstructure") || name.includes("jsonvalidity") || name.includes("csvcontent") || name.includes("xlsxvalidity") || name.includes("pngvalidity") || name.includes("embedder") || name.includes("retriever") || name.includes("promptinjector") || name.includes("typedefinitions") || name.includes("indexeddb") || name.includes("agentintegration") || name.includes("settingsui") || name.includes("knowledgerepo") || name.includes("normalizer") || name.includes("filehash") || name.includes("documentcategory");
-        if (g === "mock") return name.includes("mock") || name.includes("reexam") || name.includes("pipeline");
-        if (g === "real") return name.includes("real");
-        if (g === "schema") return name.includes("schema") || name.includes("malformed") || name.includes("invalid") || name.includes("missing") || name.includes("empty") || name.includes("fixture") || name.includes("structure");
-        if (g === "pipeline") return name.includes("pipeline");
-        if (g === "health") return name.includes("health");
-        return false;
-      });
-      if (isInGroup) return fn(...fnArgs);
+      if (autoGroups.includes(currentGroup)) return fn(...fnArgs);
       console.log(`  ⏭ skipped ${fn.name}`);
       return undefined;
     }
@@ -351,6 +344,7 @@ async function main() {
         process.exit(1);
       }
 
+      setGroup("real");
       console.log("--- Provider Connectivity ---");
       await maybe(testRealProviderConnectivity);
       await delay(2000);
@@ -396,10 +390,12 @@ async function main() {
       // ========== Mock Mode Tests (Default) ==========
 
       // Health check first
+      setGroup("health");
       console.log("--- Health Check ---");
       await maybe(testHealthCheck);
 
       // Mock foundational tests
+      setGroup("mock");
       console.log("\n--- Mock Basic ---");
       await maybe(testMockModeEnabled);
 
@@ -445,8 +441,9 @@ async function main() {
       await maybe(testReexamFullPipelineDataFlow_G1);
 
       // Knowledge Base (先清空确保干净环境)
+      setGroup("knowledge");
       console.log("\n--- Knowledge Base ---");
-      const BASE = process.env.TEST_BASE || "http://localhost:3000/api";
+      const BASE = getTestBase();
       await fetch(`${BASE}/knowledge/clear`, { method: "DELETE" }).catch(() => {});
       await maybe(testKnowledgeUploadTxt);
       await maybe(testKnowledgeUploadLargeFile);
@@ -461,6 +458,7 @@ async function main() {
       await maybe(testKnowledgeClearAll);
 
       // Knowledge Integration Tests
+      setGroup("knowledge");
       console.log("\n--- Knowledge Integration ---");
       await maybe(testKnowledgeUploadAndSearchChain);
       await maybe(testKnowledgeSearchResultMetadata);
@@ -469,6 +467,7 @@ async function main() {
       await maybe(testKnowledgeRerankerIntegration);
 
       // Knowledge Code Structure (不需要服务器)
+      setGroup("knowledgeCodeStructure");
       console.log("\n--- Knowledge Code Structure ---");
       await maybe(testSampleDataIntegrity);
       await maybe(testPdfValidity);
@@ -491,6 +490,7 @@ async function main() {
       await maybe(testDocumentCategoryField);
 
       // Schema
+      setGroup("schema");
       console.log("\n--- Schema Validation ---");
       await maybe(testSchemaClaimChart);
       await maybe(testSchemaNovelty);
@@ -500,6 +500,7 @@ async function main() {
       await maybe(testSchemaReexamDraft);
 
       // Error handling
+      setGroup("schema");
       console.log("\n--- Error Handling ---");
       await maybe(testInvalidAgent);
       await maybe(testMissingRequiredFields);
@@ -507,17 +508,20 @@ async function main() {
       await maybe(testMockFixtureNotFound);
 
       // Response Structure Validation
+      setGroup("schema");
       console.log("\n--- Response Structure Validation ---");
       await maybe(testResponseStructureValidation);
       await maybe(testMalformedResponseHandling);
 
       // Full pipeline
+      setGroup("pipeline");
       console.log("\n--- Full Pipeline ---");
       await maybe(testFullPipelineMock_G1);
       await maybe(testFullPipelineMock_G2);
       await maybe(testFullPipelineMock_Reexam_G1);
 
       // DB Logic-Chain tests (Store → Repo → IndexedDB, no UI)
+      setGroup("db");
       console.log("\n--- DB Logic-Chain ---");
       await maybe(runDbLogicChainTests);
 
@@ -527,6 +531,7 @@ async function main() {
 
       // Real mode tests (optional, auto-skip if no key)
       if (GEMINI_KEY) {
+        setGroup("real");
         console.log("\n--- Real Mode (GEMINI_KEY detected) ---");
         console.log(`  MiMo_KEY: ${maskKey(MIMO_KEY)}`);
         console.log(`  GEMINI_KEY: ${maskKey(GEMINI_KEY)}`);
