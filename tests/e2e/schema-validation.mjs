@@ -1,6 +1,6 @@
 /**
- * Schema 验证测试
- * ===============
+ * Schema 验证测试（表驱动）
+ * ========================
  *
  * 测试 AI 输出的 Schema 验证逻辑。
  */
@@ -17,94 +17,40 @@ import {
   validateReexamDraftOutput,
 } from "../e2e-shared/index.mjs";
 
-// ── Schema 验证测试 ─────────────────────────────────────────────────
+// ── Schema 验证测试（表驱动）─────────────────────────────────────────
 
-export async function testSchemaClaimChart() {
-  const res = await postJSON("/ai/run", buildMockRequest({ agent: "claim-chart", caseId: "g1-led" }));
+async function runSchemaTest(label, agent, caseId, moduleScope, validator, extra) {
+  const res = await postJSON("/ai/run", buildMockRequest({ agent, caseId, moduleScope, ...extra }));
   const data = await res.json();
   if (data.ok && data.outputJson) {
-    const result = validateClaimChartOutput(data.outputJson);
-    log("Schema ClaimChart", result.valid, result.errors.join("; "));
+    const result = validator(data.outputJson);
+    log(`Schema ${label}`, result.valid, result.errors.join("; "));
   } else {
-    log("Schema ClaimChart", false, "no outputJson");
+    log(`Schema ${label}`, false, "no outputJson");
   }
 }
 
-export async function testSchemaNovelty() {
-  const res = await postJSON("/ai/run", buildMockRequest({
-    agent: "novelty",
-    caseId: "g1-led",
-    moduleScope: "novelty",
-    extra: { expectedSchemaName: "novelty", referenceId: "g1-ref-d1" },
-  }));
-  const data = await res.json();
-  if (data.ok && data.outputJson) {
-    const result = validateNoveltyOutput(data.outputJson);
-    log("Schema Novelty", result.valid, result.errors.join("; "));
-  } else {
-    log("Schema Novelty", false, "no outputJson");
-  }
+const SCHEMA_TESTS = [
+  { label: "ClaimChart", agent: "claim-chart", caseId: "g1-led", moduleScope: "claim-chart", validator: validateClaimChartOutput },
+  { label: "Novelty", agent: "novelty", caseId: "g1-led", moduleScope: "novelty", validator: validateNoveltyOutput, extra: { extra: { expectedSchemaName: "novelty", referenceId: "g1-ref-d1" } } },
+  { label: "Inventive", agent: "inventive", caseId: "g2-battery", moduleScope: "inventive", validator: validateInventiveOutput },
+  { label: "OpinionAnalysis", agent: "opinion-analysis", caseId: "g1-led", moduleScope: "opinion-analysis", validator: validateOpinionAnalysisOutput },
+  { label: "ArgumentMapping", agent: "argument-analysis", caseId: "g1-led", moduleScope: "argument-mapping", validator: validateArgumentMappingOutput },
+  { label: "ReexamDraft", agent: "reexam-draft", caseId: "g1-led", moduleScope: "draft", validator: validateReexamDraftOutput },
+];
+
+for (const t of SCHEMA_TESTS) {
+  const fn = async () => runSchemaTest(t.label, t.agent, t.caseId, t.moduleScope, t.validator, t.extra);
+  Object.defineProperty(fn, "name", { value: `testSchema${t.label}` });
+  globalThis[`testSchema${t.label}`] = fn;
 }
 
-export async function testSchemaInventive() {
-  const res = await postJSON("/ai/run", buildMockRequest({
-    agent: "inventive",
-    caseId: "g2-battery",
-    moduleScope: "inventive",
-  }));
-  const data = await res.json();
-  if (data.ok && data.outputJson) {
-    const result = validateInventiveOutput(data.outputJson);
-    log("Schema Inventive", result.valid, result.errors.join("; "));
-  } else {
-    log("Schema Inventive", false, "no outputJson");
-  }
-}
-
-export async function testSchemaOpinionAnalysis() {
-  const res = await postJSON("/ai/run", buildMockRequest({
-    agent: "opinion-analysis",
-    caseId: "g1-led",
-    moduleScope: "opinion-analysis",
-  }));
-  const data = await res.json();
-  if (data.ok && data.outputJson) {
-    const result = validateOpinionAnalysisOutput(data.outputJson);
-    log("Schema OpinionAnalysis", result.valid, result.errors.join("; "));
-  } else {
-    log("Schema OpinionAnalysis", false, "no outputJson");
-  }
-}
-
-export async function testSchemaArgumentMapping() {
-  const res = await postJSON("/ai/run", buildMockRequest({
-    agent: "argument-analysis",
-    caseId: "g1-led",
-    moduleScope: "argument-mapping",
-  }));
-  const data = await res.json();
-  if (data.ok && data.outputJson) {
-    const result = validateArgumentMappingOutput(data.outputJson);
-    log("Schema ArgumentMapping", result.valid, result.errors.join("; "));
-  } else {
-    log("Schema ArgumentMapping", false, "no outputJson");
-  }
-}
-
-export async function testSchemaReexamDraft() {
-  const res = await postJSON("/ai/run", buildMockRequest({
-    agent: "reexam-draft",
-    caseId: "g1-led",
-    moduleScope: "draft",
-  }));
-  const data = await res.json();
-  if (data.ok && data.outputJson) {
-    const result = validateReexamDraftOutput(data.outputJson);
-    log("Schema ReexamDraft", result.valid, result.errors.join("; "));
-  } else {
-    log("Schema ReexamDraft", false, "no outputJson");
-  }
-}
+export const testSchemaClaimChart = globalThis.testSchemaClaimChart;
+export const testSchemaNovelty = globalThis.testSchemaNovelty;
+export const testSchemaInventive = globalThis.testSchemaInventive;
+export const testSchemaOpinionAnalysis = globalThis.testSchemaOpinionAnalysis;
+export const testSchemaArgumentMapping = globalThis.testSchemaArgumentMapping;
+export const testSchemaReexamDraft = globalThis.testSchemaReexamDraft;
 
 // ── 错误处理测试 ────────────────────────────────────────────────────
 
