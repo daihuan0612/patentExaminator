@@ -217,7 +217,7 @@ export function NoveltyComparisonTable({ comparisonId }: NoveltyComparisonTableP
             })}
           </div>
           <p className="help-text" style={{ fontSize: "0.85em", color: "#666", marginTop: 8 }}>
-            从特征的公开状态为"未找到"推导得出。用户可通过编辑每个特征的公开状态来修改。
+            从特征的公开状态为&ldquo;未找到&rdquo;推导得出。用户可通过编辑每个特征的公开状态来修改。
           </p>
         </div>
       )}

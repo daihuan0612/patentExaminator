@@ -77,7 +77,7 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
         log("Failed to restore search session:", e);
       }
     })();
-  }, [caseId, setSearchTerms, setProviderResults, setSearchSessionId, setSearchStep]);
+  }, [caseId, setSearchTerms, setProviderResults, setSearchSessionId, setSearchStep, updateWorkflowState]);
 
   // Step 1: 提取检索词
   const handleExtractTerms = useCallback(async () => {
@@ -234,7 +234,7 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
       abortControllersRef.current.delete("searchWithTerms");
     }
   }, [searchTerms, caseId, claimText, features, settings, searchSessionId, references.length,
-      setIsSearching, setSearchStep, setCandidates, setProviderResults, setSearchSessionId]);
+      setIsSearching, setSearchStep, setCandidates, setProviderResults, setSearchSessionId, updateWorkflowState]);
 
   // 回到编辑模式
   const handleBackToEdit = useCallback(() => {

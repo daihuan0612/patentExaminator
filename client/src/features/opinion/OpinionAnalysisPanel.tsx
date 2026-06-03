@@ -160,7 +160,7 @@ export function OpinionAnalysisPanel({
 
       {!documentId && (
         <p className="placeholder-hint">
-          请先在案件导入页上传审查意见通知书（文件类型选择"审查意见通知书"）。
+          请先在案件导入页上传审查意见通知书（文件类型选择&ldquo;审查意见通知书&rdquo;）。
         </p>
       )}
 
