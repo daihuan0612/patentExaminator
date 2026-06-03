@@ -61,7 +61,7 @@ const DEFAULT_VALUES: CaseFormValues = {
 
 export function CaseSetupPage() {
   const { caseId } = useParams<{ caseId: string }>();
-  const { currentCase, setCurrentCase } = useCaseStore();
+  const { currentCase, setCurrentCase, updateWorkflowState } = useCaseStore();
   const { documents, addDocument, setDocuments } = useDocumentsStore();
   const { claimNodes, setClaimNodes } = useClaimsStore();
   const { references } = useReferencesStore();
@@ -260,6 +260,7 @@ export function CaseSetupPage() {
           // B-024: 如果 PDF 没有文本层，调用 OCR 管线
           if (textLayerStatus === "absent" && !text) {
             setFileStatuses((prev) => ({ ...prev, [file.name]: "OCR 识别中..." }));
+            updateWorkflowState("ocr-running");
             try {
               const ocrResult = await runOcr(file, "chi_sim+eng", (progress: OcrProgress) => {
                 if (isMountedRef.current) {
@@ -271,10 +272,12 @@ export function CaseSetupPage() {
               text = ocrResult.text;
               textStatus = text ? "extracted" : "empty";
               textLayerStatus = "ocr";
+              updateWorkflowState("ocr-review");
               log(`OCR completed for ${file.name}: ${ocrResult.confidence}% confidence, ${text.length} chars`);
             } catch (ocrErr) {
               log(`OCR failed for ${file.name}: ${ocrErr}`);
               textStatus = "empty";
+              updateWorkflowState("ocr-failed");
             }
           }
         } else if (ext === ".docx") {
@@ -402,6 +405,7 @@ export function CaseSetupPage() {
           // B-024: 如果 PDF 没有文本层，调用 OCR 管线
           if (textLayerStatus === "absent" && !text) {
             setFileStatuses((prev) => ({ ...prev, [file.name]: "OCR 识别中..." }));
+            updateWorkflowState("ocr-running");
             try {
               const ocrResult = await runOcr(file, "chi_sim+eng", (progress: OcrProgress) => {
                 if (isMountedRef.current) {
@@ -413,10 +417,12 @@ export function CaseSetupPage() {
               text = ocrResult.text;
               textStatus = text ? "extracted" : "empty";
               textLayerStatus = "ocr";
+              updateWorkflowState("ocr-review");
               log(`OCR completed for ${file.name}: ${ocrResult.confidence}% confidence, ${text.length} chars`);
             } catch (ocrErr) {
               log(`OCR failed for ${file.name}: ${ocrErr}`);
               textStatus = "empty";
+              updateWorkflowState("ocr-failed");
             }
           }
         } else if (ext === ".docx") {

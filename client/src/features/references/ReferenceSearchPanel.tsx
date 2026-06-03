@@ -30,7 +30,7 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
     addSearchTerm, updateSearchTerm, removeSearchTerm
   } = useReferencesStore();
   const { references } = useReferencesStore();
-  const { currentCase } = useCaseStore();
+  const { currentCase, updateWorkflowState } = useCaseStore();
   const { settings } = useSettingsStore();
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -71,6 +71,7 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
           setProviderResults(session.providerResults);
           setSearchSessionId(session.id);
           setSearchStep("done");
+      updateWorkflowState("references-ready");
         }
       } catch (e) {
         log("Failed to restore search session:", e);
@@ -206,6 +207,7 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
       }
       setCandidates(merged);
       setSearchStep("done");
+      updateWorkflowState("references-ready");
 
       // 持久化到 IndexedDB
       const sessionData = {
@@ -368,6 +370,7 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
               onClick={() => {
                 if (searchSessionId) {
                   setSearchStep("done");
+      updateWorkflowState("references-ready");
                 } else {
                   setSearchStep("idle");
                   setSearchTerms([]);
