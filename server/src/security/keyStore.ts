@@ -18,10 +18,6 @@ export function removeApiKey(providerId: string): boolean {
   return keyStore.delete(providerId);
 }
 
-export function listProviders(): string[] {
-  return Array.from(keyStore.keys());
-}
-
 export function clearAll(): void {
   keyStore.clear();
 }
