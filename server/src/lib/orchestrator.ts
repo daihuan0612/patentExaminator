@@ -9,6 +9,7 @@
  */
 import { logger } from "./logger.js";
 import type { ChatRequest } from "../providers/ProviderAdapter.js";
+import { sanitizeText } from "../security/sanitize.js";
 
 function truncate(text: string, maxLen: number): string {
   return text.length > maxLen ? text.slice(0, maxLen) : text;
@@ -46,8 +47,8 @@ export interface AgentRunResponse {
 
 function buildClaimChartPrompt(request: Record<string, unknown>): string {
   const claimNumber = request.claimNumber as number ?? 1;
-  const claimText = request.claimText as string ?? "";
-  const specificationText = request.specificationText as string ?? "";
+  const claimText = sanitizeText(request.claimText as string ?? "");
+  const specificationText = sanitizeText(request.specificationText as string ?? "");
   const specExcerpt = specificationText.length > 8000 ? specificationText.slice(0, 8000) : specificationText;
 
   return [
@@ -95,7 +96,7 @@ function buildClaimChartPrompt(request: Record<string, unknown>): string {
 
 function buildNoveltyPrompt(request: Record<string, unknown>): string {
   const features = request.features as Array<{ featureCode: string; description: string }> ?? [];
-  const referenceText = request.referenceText as string ?? "";
+  const referenceText = sanitizeText(request.referenceText as string ?? "");
   const referenceId = request.referenceId as string ?? "";
   const claimNumber = request.claimNumber as number ?? 1;
   const caseId = request.caseId as string ?? "";
@@ -114,7 +115,7 @@ function buildNoveltyPrompt(request: Record<string, unknown>): string {
     `案件 ID: ${caseId}`,
     `权利要求号: ${claimNumber}`,
     `技术特征:`,
-    ...features.map((f) => `  ${f.featureCode}: ${f.description}`),
+    ...features.map((f) => `  ${f.featureCode}: ${sanitizeText(f.description)}`),
     ``,
     `对比文件 ID: ${referenceId}`,
     `对比文件内容:`,
@@ -142,8 +143,8 @@ function buildInventivePrompt(request: Record<string, unknown>): string {
   const caseId = request.caseId as string ?? "";
   const claimNumber = request.claimNumber as number ?? 1;
   const closestPriorArtId = request.closestPriorArtId as string | null ?? null;
-  const applicantArguments = request.applicantArguments as string | undefined;
-  const amendedClaimText = request.amendedClaimText as string | undefined;
+  const applicantArguments = request.applicantArguments ? sanitizeText(request.applicantArguments as string) : undefined;
+  const amendedClaimText = request.amendedClaimText ? sanitizeText(request.amendedClaimText as string) : undefined;
 
   const parts = [
     `你是一名专利复审辅助系统，负责在复审阶段进行创造性三步法分析。`,
@@ -158,10 +159,10 @@ function buildInventivePrompt(request: Record<string, unknown>): string {
     `案件 ID: ${caseId}`,
     `权利要求号: ${claimNumber}`,
     `技术特征:`,
-    ...features.map((f) => `  ${f.featureCode}: ${f.description}`),
+    ...features.map((f) => `  ${f.featureCode}: ${sanitizeText(f.description)}`),
     ``,
     `可用对比文件:`,
-    ...availableReferences.map((r) => `  ${r.label} (${r.referenceId}): ${truncate(r.excerpt, 500)}`),
+    ...availableReferences.map((r) => `  ${r.label} (${r.referenceId}): ${truncate(sanitizeText(r.excerpt), 500)}`),
     ``,
     `用户指定最接近现有技术: ${closestPriorArtId ?? "由 AI 推荐"}`
   ];
@@ -197,8 +198,8 @@ function buildInventivePrompt(request: Record<string, unknown>): string {
 }
 
 function buildDefectPrompt(request: Record<string, unknown>): string {
-  const claimText = request.claimText as string ?? "";
-  const specificationText = request.specificationText as string ?? "";
+  const claimText = sanitizeText(request.claimText as string ?? "");
+  const specificationText = sanitizeText(request.specificationText as string ?? "");
   const claimFeatures = request.claimFeatures as Array<{ featureCode: string; description: string }> ?? [];
   const caseId = request.caseId as string ?? "";
 
@@ -213,7 +214,7 @@ function buildDefectPrompt(request: Record<string, unknown>): string {
     truncate(specificationText, 8000),
     ``,
     `技术特征:`,
-    ...claimFeatures.map((f) => `  ${f.featureCode}: ${f.description}`),
+    ...claimFeatures.map((f) => `  ${f.featureCode}: ${sanitizeText(f.description)}`),
     ``,
     `请检测形式缺陷，严格按以下 JSON 格式输出：`,
     `{`,
@@ -229,7 +230,7 @@ function buildChatPrompt(request: Record<string, unknown>): string {
   const moduleScope = request.moduleScope as string ?? "";
   const contextSummary = request.contextSummary as string ?? "";
   const history = request.history as Array<{ role: string; content: string }> ?? [];
-  const userMessage = request.userMessage as string ?? "";
+  const userMessage = sanitizeText(request.userMessage as string ?? "");
 
   return [
     `案件 ID: ${caseId}`,
@@ -288,7 +289,7 @@ function buildInterpretPrompt(request: Record<string, unknown>): string {
   const caseId = request.caseId as string ?? "";
   const documentId = request.documentId as string ?? "unknown";
   const fileName = request.fileName as string ?? "未命名文件";
-  const documentText = request.documentText as string ?? "";
+  const documentText = sanitizeText(request.documentText as string ?? "");
   const relatedDocuments = request.relatedDocuments as Array<{ fileName: string; documentType: string }> ?? [];
   const relatedStr = relatedDocuments.length
     ? relatedDocuments.map((doc) => `- ${doc.fileName}（${doc.documentType}）`).join("\n")
@@ -317,7 +318,7 @@ function buildInterpretPrompt(request: Record<string, unknown>): string {
 function buildOpinionAnalysisPrompt(request: Record<string, unknown>): string {
   const caseId = request.caseId as string ?? "";
   const documentId = request.documentId as string ?? "";
-  const officeActionText = request.officeActionText as string ?? "";
+  const officeActionText = sanitizeText(request.officeActionText as string ?? "");
 
   return [
     `你是一位资深专利审查员，擅长分析审查意见通知书。`,
@@ -434,7 +435,26 @@ function buildSummaryPrompt(request: Record<string, unknown>): string {
 }
 
 function buildTranslatePrompt(request: Record<string, unknown>): string {
-  return truncate(request.documentText as string ?? "", 12000);
+  const documentText = sanitizeText(request.documentText as string ?? "");
+  const targetLang = request.targetLang as string ?? "中文";
+
+  return [
+    `你是一名专利文献翻译专家，负责将外文专利文档忠实翻译为${targetLang}。`,
+    ``,
+    `## 硬约束`,
+    `1. **忠实翻译**：严格忠实于原文，不添加、不删减、不改写技术内容。`,
+    `2. **保留结构**：保留原文的段落编号（如 [0001]、[0002]）、章节标题和列表结构。`,
+    `3. **术语一致性**：同一技术术语在全文中保持翻译一致。`,
+    `4. **不确定术语标注**：对不确定的术语翻译，在译文后用括号标注原文，如"导热界面层（thermal interface layer）"。`,
+    `5. **专利格式保留**：保留权利要求编号、附图标记（如 (1)、(2)）等专利特有格式。`,
+    ``,
+    `## 输入文档`,
+    ``,
+    truncate(documentText, 12000),
+    ``,
+    `## 输出`,
+    `直接输出${targetLang}翻译文本，保留原文的段落结构和编号。`
+  ].join("\n");
 }
 
 function buildExtractCaseFieldsPrompt(request: Record<string, unknown>): string {

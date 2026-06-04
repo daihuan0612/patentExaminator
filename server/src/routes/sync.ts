@@ -10,6 +10,7 @@ import {
   getSyncStatus,
 } from "../lib/syncDb.js";
 import { logger } from "../lib/logger.js";
+import { syncUploadInputSchema } from "../../../shared/src/schemas/api-input.schema.js";
 
 export const syncRouter = Router();
 
@@ -31,13 +32,14 @@ syncRouter.get("/sync/status", (_req, res) => {
 /** POST /api/sync/upload — 上传全部数据 */
 syncRouter.post("/sync/upload", express.json({ limit: "50mb" }), (req, res) => {
   try {
-    const { stores } = req.body as { stores: Record<string, Array<{ id: string; data: unknown }>> };
-    if (!stores || typeof stores !== "object") {
-      res.status(400).json({ ok: false, error: "Missing 'stores' field" });
+    const parsed = syncUploadInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ ok: false, error: parsed.error.issues.map(i => i.message).join("; ") });
       return;
     }
+    const { stores } = parsed.data;
 
-    const result = uploadAllData(stores);
+    const result = uploadAllData(stores as Record<string, Array<{ id: string; data: unknown }>>);
     res.json({ ok: true, ...result });
   } catch (err) {
     logger.error("Sync upload error: " + errMsg(err));

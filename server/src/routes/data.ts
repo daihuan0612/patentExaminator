@@ -8,6 +8,7 @@ import {
   getSyncDb,
 } from "../lib/syncDb.js";
 import { logger } from "../lib/logger.js";
+import { dataQueryInputSchema, dataCreateInputSchema } from "../../../shared/src/schemas/api-input.schema.js";
 
 export const dataRouter = Router();
 
@@ -45,12 +46,12 @@ dataRouter.get("/data/:store", (req, res) => {
 dataRouter.post("/data/:store/query", express.json(), (req, res) => {
   try {
     const { store } = req.params;
-    const { field, value } = req.body as { field: string; value: unknown };
-
-    if (!field) {
-      res.status(400).json({ ok: false, error: "Missing 'field'" });
+    const parsed = dataQueryInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ ok: false, error: parsed.error.issues.map(i => i.message).join("; ") });
       return;
     }
+    const { field, value } = parsed.data;
 
     const db = getSyncDb();
     const rows = db.prepare("SELECT record_id, data FROM sync_data WHERE store_name = ?").all(store) as Array<{
@@ -108,12 +109,12 @@ dataRouter.get("/data/:store/:id", (req, res) => {
 dataRouter.post("/data/:store", express.json(), (req, res) => {
   try {
     const { store } = req.params;
-    const { id, ...data } = req.body;
-
-    if (!id) {
-      res.status(400).json({ ok: false, error: "Missing 'id' field" });
+    const parsed = dataCreateInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ ok: false, error: parsed.error.issues.map(i => i.message).join("; ") });
       return;
     }
+    const { id, ...data } = parsed.data;
 
     const db = getSyncDb();
     db.prepare("INSERT OR REPLACE INTO sync_data (store_name, record_id, data, updated_at) VALUES (?, ?, ?, datetime('now'))")
@@ -131,6 +132,10 @@ dataRouter.put("/data/:store/:id", express.json(), (req, res) => {
   try {
     const { store, id } = req.params;
     const data = req.body;
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      res.status(400).json({ ok: false, error: "Body must be a JSON object" });
+      return;
+    }
 
     const db = getSyncDb();
     const result = db.prepare("UPDATE sync_data SET data = ?, updated_at = datetime('now') WHERE store_name = ? AND record_id = ?")

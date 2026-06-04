@@ -8,11 +8,18 @@ import { Router } from "express";
 import express from "express";
 import { runAgent } from "../lib/orchestrator.js";
 import { logger } from "../lib/logger.js";
+import { agentRunInputSchema } from "../../../shared/src/schemas/api-input.schema.js";
 
 export const agentRouter = Router();
 
 agentRouter.post("/agent/run", express.json({ limit: "10mb" }), async (req, res) => {
   try {
+    const parsed = agentRunInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ ok: false, error: { type: "validation", message: parsed.error.issues.map(i => i.message).join("; ") } });
+      return;
+    }
+
     const {
       agent,
       caseId,
@@ -27,26 +34,7 @@ agentRouter.post("/agent/run", express.json({ limit: "10mb" }), async (req, res)
       apiKey,
       mock,
       mockKey,
-    } = req.body as {
-      agent: string;
-      caseId: string;
-      request: Record<string, unknown>;
-      providerPreference?: string[];
-      modelId?: string;
-      modelFallbacks?: Record<string, string[]>;
-      enableModelFallback?: Record<string, boolean>;
-      providerBaseUrls?: Record<string, string>;
-      maxTokens?: number;
-      knowledgeEnabled?: boolean;
-      apiKey?: string;
-      mock?: boolean;
-      mockKey?: string;
-    };
-
-    if (!agent || !caseId) {
-      res.status(400).json({ ok: false, error: { type: "validation", message: "Missing agent or caseId" } });
-      return;
-    }
+    } = parsed.data;
 
     // B-038: Mock 模式 — 返回 fixture 数据，不调用真实 AI
     if (mock) {

@@ -25,7 +25,7 @@ export interface ProviderConnection {
   enableModelFallback?: boolean;
 }
 
-export type AgentKey = "interpret" | "claim-chart" | "novelty" | "inventive" | "summary" | "draft" | "chat" | "search-references" | "defects" | "extract-case-fields" | "opinion-analysis" | "argument-analysis" | "reexam-draft" | "classify-documents";
+export type AgentKey = "interpret" | "claim-chart" | "novelty" | "inventive" | "summary" | "draft" | "chat" | "search-references" | "defects" | "extract-case-fields" | "opinion-analysis" | "argument-analysis" | "reexam-draft" | "classify-documents" | "translate";
 
 export interface AgentAssignment {
   agent: AgentKey;

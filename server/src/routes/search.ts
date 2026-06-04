@@ -10,6 +10,8 @@ import { validateExternalUrl, validateProviderBaseUrls, BlockedUrlError } from "
 import type { SearchReferencesResponse, SearchReferencesCandidate, SearchSummary, ExtractSearchTermsResponse } from "@shared/types/api";
 import type { ChatRequest } from "../providers/ProviderAdapter.js";
 
+const FETCH_TIMEOUT_MS = 30_000;
+
 export const searchRouter = Router();
 
 function extractFallbackCandidates(rawText: string): SearchReferencesCandidate[] {
@@ -1013,7 +1015,8 @@ searchRouter.post("/verify-search-key", async (req, res) => {
       const response = await fetch("https://api.tavily.com/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ api_key: apiKey, query: "test", max_results: 1, include_answer: false })
+        body: JSON.stringify({ api_key: apiKey, query: "test", max_results: 1, include_answer: false }),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (response.ok) {
         res.json({ ok: true, providerId, message: "Tavily API Key 有效" });
@@ -1027,7 +1030,7 @@ searchRouter.post("/verify-search-key", async (req, res) => {
       url.searchParams.set("q", "test");
       url.searchParams.set("num", "1");
       url.searchParams.set("api_key", apiKey);
-      const response = await fetch(url.toString(), { headers: { "Accept": "application/json" } });
+      const response = await fetch(url.toString(), { headers: { "Accept": "application/json" }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
       if (response.ok) {
         res.json({ ok: true, providerId, message: "SerpAPI Key 有效" });
       } else {
@@ -1049,7 +1052,8 @@ searchRouter.post("/verify-search-key", async (req, res) => {
           "Authorization": `Basic ${credentials}`,
           "Content-Type": "application/x-www-form-urlencoded"
         },
-        body: "grant_type=client_credentials"
+        body: "grant_type=client_credentials",
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (response.ok) {
         res.json({ ok: true, providerId, message: "EPO OPS Consumer Key/Secret 有效" });
@@ -1062,7 +1066,8 @@ searchRouter.post("/verify-search-key", async (req, res) => {
       url.searchParams.set("q", "test");
       url.searchParams.set("max_results", "1");
       const response = await fetch(url.toString(), {
-        headers: { "Authorization": `Bearer ${apiKey}`, "Accept": "application/json" }
+        headers: { "Authorization": `Bearer ${apiKey}`, "Accept": "application/json" },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (response.ok) {
         res.json({ ok: true, providerId, message: "自定义搜索 API Key 有效" });

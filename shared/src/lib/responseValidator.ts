@@ -4,7 +4,6 @@ import {
   noveltySchema,
   inventiveSchema,
   summarySchema,
-  draftSchema,
   opinionAnalysisSchema,
   argumentMappingSchema,
   reexamDraftSchema,
@@ -12,6 +11,7 @@ import {
   defectSchema,
 } from "../index.js";
 import { searchReferencesFilterSchema } from "../schemas/searchReferences.schema.js";
+import { extractCaseFieldsSchema } from "../schemas/extractCaseFields.schema.js";
 
 export interface ValidationResult {
   valid: boolean;
@@ -25,16 +25,16 @@ const STRUCTURED_AGENT_SCHEMAS: Record<string, ZodSchema> = {
   novelty: noveltySchema,
   inventive: inventiveSchema,
   summary: summarySchema,
-  draft: draftSchema,
   "opinion-analysis": opinionAnalysisSchema,
   "argument-analysis": argumentMappingSchema,
   "reexam-draft": reexamDraftSchema,
   "classify-documents": classifyDocumentsOutputSchema,
   "search-references": searchReferencesFilterSchema,
   "defects": defectSchema,
+  "extract-case-fields": extractCaseFieldsSchema,
 };
 
-const TEXT_AGENTS = new Set(["chat", "interpret", "translate", "extract-case-fields"]);
+const TEXT_AGENTS = new Set(["chat", "interpret", "translate"]);
 
 export function isStructuredAgent(agent: string): boolean {
   return agent in STRUCTURED_AGENT_SCHEMAS;
