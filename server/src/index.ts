@@ -46,7 +46,8 @@ app.use((_req, res, next) => {
   next();
 });
 
-// Simple rate limiter for expensive API endpoints (no external deps)
+// Rate limiter — applied once globally so each request is counted exactly once.
+// Previously attached per-Router which caused triple-counting (BUG-098 regression).
 const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
 const RATE_LIMIT_MAX = process.env.NODE_ENV === "production" ? 200 : 1000;
@@ -83,15 +84,16 @@ function requireLocalhost(req: express.Request, res: express.Response, next: exp
 
 // API routes
 app.use("/api", healthRouter);
-app.use("/api", rateLimiter, aiRouter);
+app.use("/api", rateLimiter);
+app.use("/api", aiRouter);
 app.use("/api", requireLocalhost, settingsRouter);
-app.use("/api", rateLimiter, searchRouter);
+app.use("/api", searchRouter);
 app.use("/api", requireLocalhost, syncRouter);
 app.use("/api", requireLocalhost, knowledgeRouter);
 app.use("/api", requireLocalhost, dataRouter);
 app.use("/api", requireLocalhost, ocrRouter);
 app.use("/api", requireLocalhost, documentsRouter);
-app.use("/api", rateLimiter, agentRouter);
+app.use("/api", agentRouter);
 
 // Serve client static files if dist exists
 const clientDist = path.resolve(__dirname, "../../client/dist");
