@@ -70,3 +70,27 @@ export const dataCreateInputSchema = z.object({
 export const settingsProviderInputSchema = z.object({
   apiKey: z.string().min(1, "apiKey is required"),
 });
+
+// ── POST /api/documents/extract-html ─────────────────────────
+export const documentsExtractHtmlInputSchema = z.object({
+  html: z.string().min(1, "html is required"),
+});
+
+// ── POST /api/documents/parse-claims ─────────────────────────
+export const documentsParseClaimsInputSchema = z.object({
+  text: z.string().min(1, "text is required"),
+  caseId: z.string().min(1, "caseId is required"),
+});
+
+// ── POST /api/documents/match-citation ───────────────────────
+export const documentsMatchCitationInputSchema = z.object({
+  citation: z.unknown(),
+  textIndex: z.unknown(),
+}).refine(v => v.citation != null && v.textIndex != null, {
+  message: "citation and textIndex are required",
+});
+
+// ── POST /api/documents/build-text-index ─────────────────────
+export const documentsBuildTextIndexInputSchema = z.object({
+  text: z.string(),
+});

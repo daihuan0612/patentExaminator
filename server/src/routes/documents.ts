@@ -6,6 +6,12 @@ import { Router } from "express";
 import express from "express";
 import multer from "multer";
 import { logger } from "../lib/logger.js";
+import {
+  documentsExtractHtmlInputSchema,
+  documentsParseClaimsInputSchema,
+  documentsMatchCitationInputSchema,
+  documentsBuildTextIndexInputSchema,
+} from "@shared/schemas/api-input.schema.js";
 
 export const documentsRouter = Router();
 
@@ -106,11 +112,12 @@ documentsRouter.post("/documents/extract-docx", upload.single("file"), async (re
 /** POST /api/documents/extract-html — 提取 HTML 文本 */
 documentsRouter.post("/documents/extract-html", express.json(), async (req, res) => {
   try {
-    const { html } = req.body as { html: string };
-    if (!html) {
-      res.status(400).json({ ok: false, error: "Missing html field" });
+    const parsed = documentsExtractHtmlInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ ok: false, error: parsed.error.issues.map(i => i.message).join("; ") });
       return;
     }
+    const { html } = parsed.data;
 
     logger.info(`HTML extraction request: ${html.length} chars`);
 
@@ -143,11 +150,12 @@ documentsRouter.post("/documents/extract-html", express.json(), async (req, res)
 /** POST /api/documents/parse-claims — 解析权利要求 */
 documentsRouter.post("/documents/parse-claims", express.json(), async (req, res) => {
   try {
-    const { text, caseId } = req.body as { text: string; caseId: string };
-    if (!text || !caseId) {
-      res.status(400).json({ ok: false, error: "Missing text or caseId" });
+    const parsed = documentsParseClaimsInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ ok: false, error: parsed.error.issues.map(i => i.message).join("; ") });
       return;
     }
+    const { text, caseId } = parsed.data;
 
     logger.info(`Parse claims request: caseId=${caseId}, text=${text.length} chars`);
 
@@ -169,11 +177,12 @@ documentsRouter.post("/documents/parse-claims", express.json(), async (req, res)
 /** POST /api/documents/match-citation — 引用匹配 */
 documentsRouter.post("/documents/match-citation", express.json(), async (req, res) => {
   try {
-    const { citation, textIndex } = req.body as { citation: unknown; textIndex: unknown };
-    if (!citation || !textIndex) {
-      res.status(400).json({ ok: false, error: "Missing citation or textIndex" });
+    const parsed = documentsMatchCitationInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ ok: false, error: parsed.error.issues.map(i => i.message).join("; ") });
       return;
     }
+    const { citation, textIndex } = parsed.data;
 
     logger.info(`Match citation request`);
 
@@ -195,11 +204,12 @@ documentsRouter.post("/documents/match-citation", express.json(), async (req, re
 /** POST /api/documents/build-text-index — 构建文本索引 */
 documentsRouter.post("/documents/build-text-index", express.json(), async (req, res) => {
   try {
-    const { text } = req.body as { text: string };
-    if (text === undefined || text === null) {
-      res.status(400).json({ ok: false, error: "Missing text" });
+    const parsed = documentsBuildTextIndexInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ ok: false, error: parsed.error.issues.map(i => i.message).join("; ") });
       return;
     }
+    const { text } = parsed.data;
 
     logger.info(`Build text index request: ${text.length} chars`);
 
