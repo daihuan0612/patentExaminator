@@ -7,7 +7,7 @@ export const documentRoleSchema = z.enum([
   "reference",
 ]);
 
-export const confidenceSchema = z.enum(["high", "medium", "low"]);
+const confidenceSchema = z.enum(["high", "medium", "low"]);
 
 export const documentClassificationSchema = z.object({
   fileIndex: z.number().int().nonnegative(),
