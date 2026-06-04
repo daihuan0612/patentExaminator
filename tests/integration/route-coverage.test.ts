@@ -6,7 +6,7 @@
  *
  * Strategy: create Express app per test group, mock external deps, use supertest.
  */
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, beforeAll, vi } from "vitest";
 import express from "express";
 import request from "supertest";
 
@@ -25,6 +25,10 @@ vi.mock("@server/providers/registry.js", () => ({
 vi.mock("@server/lib/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
 }));
+
+// B-042: 注入内存数据库，隔离生产库（必须在 import server routes 之前）
+import { resetSyncDbForTesting } from "@server/lib/syncDb.js";
+beforeAll(() => { resetSyncDbForTesting(":memory:"); });
 
 // ── Data routes ───────────────────────────────────────────────
 

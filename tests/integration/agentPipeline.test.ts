@@ -29,6 +29,10 @@ let server: Server;
 let baseUrl: string;
 
 beforeAll(async () => {
+  // B-042: 注入内存数据库，隔离生产库（必须在 import server routes 之前）
+  const { resetSyncDbForTesting } = await import("@server/lib/syncDb.js");
+  resetSyncDbForTesting(":memory:");
+
   // 动态导入服务器路由
   const { healthRouter } = await import("@server/routes/health.js");
   const { aiRouter } = await import("@server/routes/ai.js");
@@ -115,9 +119,9 @@ beforeEach(async () => {
   useDraftStore.setState({ reexamDrafts: {}, summaries: {} });
   useInterpretStore.setState({ interpretSummaries: {} });
 
-  // 清理数据库
+  // 清理数据库（store 名称需与 repos.ts 中的名称一致）
   const stores = [
-    "cases", "documents", "claimNodes", "claimFeatures",
+    "cases", "documents", "claimNodes", "claimCharts",
     "novelty", "inventive", "defects", "chatSessions", "chatMessages",
     "opinionAnalyses", "argumentMappings", "reexamDrafts", "summaries",
     "interpretSummaries", "feedback", "settings", "ocrCache", "textIndex"
@@ -154,10 +158,11 @@ describe("Agent Pipeline: ClaimChart (Mock)", () => {
     expect(resp.legalCaution).toBeTruthy();
     expect(resp.pendingSearchQuestions).toBeDefined();
 
-    // Mock fixture 不含 id/source 字段（真实模式由 orchestrator 后处理添加），手动补全
+    // Mock fixture 不含 id/source/caseId 字段（真实模式由 orchestrator 后处理添加），手动补全
     const featuresWithId = resp.features.map((f, i) => ({
       ...f,
       id: `${CASE_ID}-chart-1-${f.featureCode ?? i}`,
+      caseId: CASE_ID,
     }));
     await Promise.all(featuresWithId.map((f) => repos.createClaimFeature(f)));
 

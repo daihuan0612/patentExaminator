@@ -143,8 +143,9 @@ export function closeSyncDb(): void {
 /**
  * 重置数据库连接（仅测试用）
  * B-042: 测试数据库隔离机制 — 允许测试注入自定义数据库路径
+ * 使用方式：在测试 beforeAll 中调用 resetSyncDbForTesting(":memory:") 注入内存数据库
  */
-function _resetSyncDbForTesting(customPath?: string): void {
+export function resetSyncDbForTesting(customPath?: string): void {
   if (db) {
     db.close();
     db = null;
