@@ -5,10 +5,10 @@ import { AiGatewayError, AiErrorType } from "@shared/types/api";
 import {
   buildCombinedSummarySections,
   buildExpandedStateStorageKey,
-  formatAiErrorMessage,
   readExpandedState,
   writeExpandedState
 } from "@client/features/interpret/InterpretPanel";
+import { formatAiErrorMessage } from "@client/lib/errorDisplay";
 
 vi.mock("@client/lib/repos", () => ({
   saveInterpretSummaries: vi.fn().mockResolvedValue(undefined),

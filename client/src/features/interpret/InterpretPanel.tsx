@@ -102,8 +102,6 @@ export function writeExpandedState(caseId: string, state: ExpandedStateMap) {
   }
 }
 
-export { formatAiErrorMessage } from "../../lib/errorDisplay";
-
 export function buildCombinedSummarySections(
   groupedDocuments: Array<{ role: InterpretDocumentRole; title: string; documents: InterpretableDocument[] }>,
   cardStates: Record<string, DocumentCardState>
