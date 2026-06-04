@@ -27,7 +27,7 @@ import { crossEncoderRerank } from "../lib/reranker.js";
 import { invalidateBM25Index } from "../lib/hybridSearch.js";
 import { expandQueryFull } from "../lib/queryExpand.js";
 import { validateExternalUrl, BlockedUrlError } from "../lib/urlValidation.js";
-import { knowledgeSearchInputSchema, knowledgeProviderTestInputSchema, knowledgeImportUrlInputSchema } from "../../../shared/src/schemas/api-input.schema.js";
+import { knowledgeSearchInputSchema, knowledgeProviderTestInputSchema, knowledgeImportUrlInputSchema, embeddingConfigSchema, recordIdSchema } from "../../../shared/src/schemas/api-input.schema.js";
 
 const FETCH_TIMEOUT_MS = 30_000;
 
@@ -333,10 +333,11 @@ knowledgeRouter.post("/knowledge/upload", upload.single("file"), async (req, res
     if (embeddingConfigStr) {
       try {
         const raw = JSON.parse(embeddingConfigStr) as Record<string, unknown>;
-        if (typeof raw.baseUrl === "string" && typeof raw.apiKey === "string" && typeof raw.modelId === "string") {
-          setRemoteEmbedder({ baseUrl: raw.baseUrl, apiKey: raw.apiKey, modelId: raw.modelId });
+        const configParsed = embeddingConfigSchema.safeParse(raw);
+        if (configParsed.success) {
+          setRemoteEmbedder(configParsed.data);
         } else {
-          logger.warn("embeddingConfig missing required fields (baseUrl, apiKey, modelId)");
+          logger.warn(`embeddingConfig validation failed: ${configParsed.error.issues.map(i => i.message).join("; ")}`);
         }
       } catch (e) {
         logger.warn(`Failed to parse embeddingConfig: ${e}`);
@@ -667,7 +668,12 @@ knowledgeRouter.get("/knowledge/sources", (_req, res) => {
 /** DELETE /api/knowledge/sources/:id — 删除来源 */
 knowledgeRouter.delete("/knowledge/sources/:id", (req, res) => {
   try {
-    deleteSource(req.params.id);
+    const idParsed = recordIdSchema.safeParse(req.params.id);
+    if (!idParsed.success) {
+      res.status(400).json({ ok: false, error: idParsed.error.issues.map(i => i.message).join("; ") });
+      return;
+    }
+    deleteSource(idParsed.data);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ ok: false, error: errMsg(err) });

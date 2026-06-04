@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { setApiKey } from "../security/keyStore.js";
 import { registry } from "../providers/registry.js";
-import { settingsProviderInputSchema, settingsModelsQuerySchema } from "../../../shared/src/schemas/api-input.schema.js";
+import { settingsProviderInputSchema, settingsModelsQuerySchema, storeNameSchema } from "../../../shared/src/schemas/api-input.schema.js";
 import { validateExternalUrl, BlockedUrlError } from "../lib/urlValidation.js";
 
 export const settingsRouter = Router();
@@ -10,11 +10,12 @@ export const settingsRouter = Router();
 
 // Set provider API key
 settingsRouter.put("/settings/providers/:providerId", (req, res) => {
-  const { providerId } = req.params;
-  if (!providerId) {
-    res.status(400).json({ error: "providerId is required" });
+  const idParsed = storeNameSchema.safeParse(req.params.providerId);
+  if (!idParsed.success) {
+    res.status(400).json({ error: idParsed.error.issues.map(i => i.message).join("; ") });
     return;
   }
+  const providerId = idParsed.data;
   const parsed = settingsProviderInputSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues.map(i => i.message).join("; ") });
@@ -31,12 +32,12 @@ settingsRouter.put("/settings/providers/:providerId", (req, res) => {
 
 // List available models for a provider
 settingsRouter.get("/providers/:providerId/models", async (req, res) => {
-  const { providerId } = req.params;
-
-  if (!providerId) {
-    res.status(400).json({ error: "providerId is required" });
+  const idParsed = storeNameSchema.safeParse(req.params.providerId);
+  if (!idParsed.success) {
+    res.status(400).json({ error: idParsed.error.issues.map(i => i.message).join("; ") });
     return;
   }
+  const providerId = idParsed.data;
 
   const parsed = settingsModelsQuerySchema.safeParse(req.query);
   if (!parsed.success) {

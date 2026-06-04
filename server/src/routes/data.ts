@@ -8,7 +8,7 @@ import {
   getSyncDb,
 } from "../lib/syncDb.js";
 import { logger } from "../lib/logger.js";
-import { dataQueryInputSchema, dataCreateInputSchema } from "../../../shared/src/schemas/api-input.schema.js";
+import { dataQueryInputSchema, dataCreateInputSchema, storeNameSchema, recordIdSchema, dataUpdateInputSchema } from "../../../shared/src/schemas/api-input.schema.js";
 
 export const dataRouter = Router();
 
@@ -19,7 +19,12 @@ function errMsg(err: unknown): string {
 /** GET /api/data/:store — 获取指定 store 的所有记录 */
 dataRouter.get("/data/:store", (req, res) => {
   try {
-    const { store } = req.params;
+    const storeParsed = storeNameSchema.safeParse(req.params.store);
+    if (!storeParsed.success) {
+      res.status(400).json({ ok: false, error: storeParsed.error.issues.map(i => i.message).join("; ") });
+      return;
+    }
+    const store = storeParsed.data;
     const db = getSyncDb();
     const rows = db.prepare("SELECT record_id, data FROM sync_data WHERE store_name = ?").all(store) as Array<{
       record_id: string;
@@ -45,7 +50,12 @@ dataRouter.get("/data/:store", (req, res) => {
 /** POST /api/data/:store/query — 按字段过滤记录（内存过滤，适合小数据集） */
 dataRouter.post("/data/:store/query", express.json(), (req, res) => {
   try {
-    const { store } = req.params;
+    const storeParsed = storeNameSchema.safeParse(req.params.store);
+    if (!storeParsed.success) {
+      res.status(400).json({ ok: false, error: storeParsed.error.issues.map(i => i.message).join("; ") });
+      return;
+    }
+    const store = storeParsed.data;
     const parsed = dataQueryInputSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ ok: false, error: parsed.error.issues.map(i => i.message).join("; ") });
@@ -79,7 +89,15 @@ dataRouter.post("/data/:store/query", express.json(), (req, res) => {
 /** GET /api/data/:store/:id — 获取指定记录 */
 dataRouter.get("/data/:store/:id", (req, res) => {
   try {
-    const { store, id } = req.params;
+    const storeParsed = storeNameSchema.safeParse(req.params.store);
+    const idParsed = recordIdSchema.safeParse(req.params.id);
+    if (!storeParsed.success || !idParsed.success) {
+      const issues = [...(storeParsed.success ? [] : storeParsed.error.issues), ...(idParsed.success ? [] : idParsed.error.issues)];
+      res.status(400).json({ ok: false, error: issues.map(i => i.message).join("; ") });
+      return;
+    }
+    const store = storeParsed.data;
+    const id = idParsed.data;
     const db = getSyncDb();
     const row = db.prepare("SELECT data FROM sync_data WHERE store_name = ? AND record_id = ?").get(store, id) as {
       data: string;
@@ -108,7 +126,12 @@ dataRouter.get("/data/:store/:id", (req, res) => {
 /** POST /api/data/:store — 创建记录 */
 dataRouter.post("/data/:store", express.json(), (req, res) => {
   try {
-    const { store } = req.params;
+    const storeParsed = storeNameSchema.safeParse(req.params.store);
+    if (!storeParsed.success) {
+      res.status(400).json({ ok: false, error: storeParsed.error.issues.map(i => i.message).join("; ") });
+      return;
+    }
+    const store = storeParsed.data;
     const parsed = dataCreateInputSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ ok: false, error: parsed.error.issues.map(i => i.message).join("; ") });
@@ -130,12 +153,17 @@ dataRouter.post("/data/:store", express.json(), (req, res) => {
 /** PUT /api/data/:store/:id — 更新记录 */
 dataRouter.put("/data/:store/:id", express.json(), (req, res) => {
   try {
-    const { store, id } = req.params;
-    const data = req.body;
-    if (!data || typeof data !== "object" || Array.isArray(data)) {
-      res.status(400).json({ ok: false, error: "Body must be a JSON object" });
+    const storeParsed = storeNameSchema.safeParse(req.params.store);
+    const idParsed = recordIdSchema.safeParse(req.params.id);
+    const bodyParsed = dataUpdateInputSchema.safeParse(req.body);
+    if (!storeParsed.success || !idParsed.success || !bodyParsed.success) {
+      const issues = [...(storeParsed.success ? [] : storeParsed.error.issues), ...(idParsed.success ? [] : idParsed.error.issues), ...(bodyParsed.success ? [] : bodyParsed.error.issues)];
+      res.status(400).json({ ok: false, error: issues.map(i => i.message).join("; ") });
       return;
     }
+    const store = storeParsed.data;
+    const id = idParsed.data;
+    const data = bodyParsed.data;
 
     const db = getSyncDb();
     const result = db.prepare("UPDATE sync_data SET data = ?, updated_at = datetime('now') WHERE store_name = ? AND record_id = ?")
@@ -156,7 +184,15 @@ dataRouter.put("/data/:store/:id", express.json(), (req, res) => {
 /** DELETE /api/data/:store/:id — 删除记录 */
 dataRouter.delete("/data/:store/:id", (req, res) => {
   try {
-    const { store, id } = req.params;
+    const storeParsed = storeNameSchema.safeParse(req.params.store);
+    const idParsed = recordIdSchema.safeParse(req.params.id);
+    if (!storeParsed.success || !idParsed.success) {
+      const issues = [...(storeParsed.success ? [] : storeParsed.error.issues), ...(idParsed.success ? [] : idParsed.error.issues)];
+      res.status(400).json({ ok: false, error: issues.map(i => i.message).join("; ") });
+      return;
+    }
+    const store = storeParsed.data;
+    const id = idParsed.data;
 
     const db = getSyncDb();
     const result = db.prepare("DELETE FROM sync_data WHERE store_name = ? AND record_id = ?")
@@ -177,7 +213,12 @@ dataRouter.delete("/data/:store/:id", (req, res) => {
 /** DELETE /api/data/:store — 删除指定 store 的所有记录 */
 dataRouter.delete("/data/:store", (req, res) => {
   try {
-    const { store } = req.params;
+    const storeParsed = storeNameSchema.safeParse(req.params.store);
+    if (!storeParsed.success) {
+      res.status(400).json({ ok: false, error: storeParsed.error.issues.map(i => i.message).join("; ") });
+      return;
+    }
+    const store = storeParsed.data;
 
     const db = getSyncDb();
     const result = db.prepare("DELETE FROM sync_data WHERE store_name = ?")

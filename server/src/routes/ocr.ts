@@ -6,6 +6,7 @@ import { Router } from "express";
 import multer from "multer";
 import { createWorker } from "tesseract.js";
 import { logger } from "../lib/logger.js";
+import { ocrLangSchema } from "../../../shared/src/schemas/api-input.schema.js";
 
 export const ocrRouter = Router();
 
@@ -22,7 +23,12 @@ ocrRouter.post("/ocr", upload.single("file"), async (req, res) => {
       return;
     }
 
-    const lang = (req.body.lang as string) ?? "chi_sim+eng";
+    const langParsed = ocrLangSchema.safeParse(req.body.lang);
+    if (!langParsed.success) {
+      res.status(400).json({ ok: false, error: langParsed.error.issues.map(i => i.message).join("; ") });
+      return;
+    }
+    const lang = langParsed.data;
     const file = req.file;
 
     logger.info(`OCR request: ${file.originalname} (${file.size} bytes, lang: ${lang})`);

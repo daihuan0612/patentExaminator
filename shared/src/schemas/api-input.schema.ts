@@ -100,3 +100,23 @@ export const documentsMatchCitationInputSchema = z.object({
 export const documentsBuildTextIndexInputSchema = z.object({
   text: z.string(),
 });
+
+// ── BUG-101: 通用 params 校验 ────────────────────────────────
+export const storeNameSchema = z.string().min(1, "store name is required").max(128);
+export const recordIdSchema = z.string().min(1, "record id is required").max(512);
+
+// ── PUT /api/data/:store/:id (body) ──────────────────────────
+export const dataUpdateInputSchema = z.object({}).passthrough().refine(
+  (v) => typeof v === "object" && v !== null && !Array.isArray(v),
+  { message: "Body must be a JSON object" }
+);
+
+// ── POST /api/ocr (body.lang) ────────────────────────────────
+export const ocrLangSchema = z.enum(["chi_sim+eng", "eng", "chi_sim", "chi_tra"]).optional().default("chi_sim+eng");
+
+// ── Knowledge embedding config ───────────────────────────────
+export const embeddingConfigSchema = z.object({
+  baseUrl: z.string().url(),
+  apiKey: z.string().min(1),
+  modelId: z.string().min(1),
+});
