@@ -25,8 +25,9 @@ const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: "10mb" }));
 
-// CORS — BUG-086: 可配置 origin，默认允许所有
-const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "*";
+// CORS — BUG-086: 可配置 origin，生产环境默认仅允许同源
+const isProduction = process.env.NODE_ENV === "production";
+const CORS_ORIGIN = process.env.CORS_ORIGIN ?? (isProduction ? "http://localhost:3000" : "*");
 app.use((_req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", CORS_ORIGIN);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
