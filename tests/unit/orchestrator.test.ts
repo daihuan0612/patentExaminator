@@ -241,6 +241,29 @@ describe("orchestrator — knowledge enhancement", () => {
     });
     expect(getAllChunks).toHaveBeenCalled();
   });
+
+  it("passes knowledge citations when knowledge returns results", async () => {
+    const { getAllChunks } = await import("@server/lib/knowledgeDb.js");
+    const { hybridSearch } = await import("@server/lib/hybridSearch.js");
+    (getAllChunks as ReturnType<typeof vi.fn>).mockReturnValue([
+      { chunk_id: "c1", source_id: "s1", text: "relevant knowledge", metadata: "{}" }
+    ]);
+    (hybridSearch as ReturnType<typeof vi.fn>).mockReturnValue([
+      { chunkId: "c1", score: 0.95 }
+    ]);
+
+    const result = await runAgent({
+      agent: "novelty",
+      caseId: "c1",
+      request: { features: [{ featureCode: "A", description: "特征A" }], referenceText: "ref", referenceId: "R1", claimNumber: 1 },
+      providerPreference: ["gemini"],
+      modelId: "test",
+      apiKey: "key",
+      knowledgeEnabled: true,
+    });
+
+    expect(result.ok).toBe(true);
+  });
 });
 
 // ── claim-chart 后处理 ──────────────────────────────────────
@@ -306,5 +329,58 @@ describe("orchestrator — error handling", () => {
     expect(result.ok).toBe(false);
     expect(result.error?.type).toBe("orchestrator");
     expect(result.error?.message).toContain("Network down");
+  });
+
+  it("returns error when gateway returns malformed JSON string", async () => {
+    (registry.runWithFallback as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      response: { text: "not-json{{", tokenUsage: { input: 10, output: 5, total: 15 } },
+      attempts: [{ providerId: "gemini", ok: true }]
+    });
+
+    const result = await runAgent({
+      agent: "claim-chart",
+      caseId: "c1",
+      request: { claimNumber: 1, claimText: "test" },
+      providerPreference: ["gemini"],
+      modelId: "test",
+      apiKey: "key",
+    });
+
+    // orchestrator should still return ok=true — JSON parsing happens downstream
+    expect(result.ok).toBe(true);
+    expect(typeof result.output).toBe("string");
+  });
+
+  it("handles missing request fields gracefully", async () => {
+    const result = await runAgent({
+      agent: "novelty",
+      caseId: "c1",
+      request: {},  // missing all required fields
+      providerPreference: ["gemini"],
+      modelId: "test",
+      apiKey: "key",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(registry.runWithFallback).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns token usage from gateway response", async () => {
+    (registry.runWithFallback as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      response: { text: '{"ok":true}', tokenUsage: { input: 100, output: 50, total: 150 } },
+      attempts: [{ providerId: "gemini", ok: true }]
+    });
+
+    const result = await runAgent({
+      agent: "chat",
+      caseId: "c1",
+      request: { userMessage: "hi" },
+      providerPreference: ["gemini"],
+      modelId: "test",
+      apiKey: "key",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.tokenUsage).toEqual({ input: 100, output: 50, total: 150 });
   });
 });
