@@ -91,3 +91,8 @@ export {
   assert,
   printSkipped,
 } from "./test-runner.mjs";
+
+// 服务器生命周期模块（B-042: E2E 数据库隔离）
+export {
+  startIsolatedServer,
+} from "./server-lifecycle.mjs";

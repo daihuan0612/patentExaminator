@@ -40,7 +40,8 @@ siliconflow_Key=your_siliconflow_key
 ### E2E 测试（tests/e2e.mjs）
 
 - **命令**：`npm run test:e2e`（Mock 模式）或 `npm run test:e2e:real`（Real 模式）
-- **前提**：服务器已在 localhost:3000 运行
+- **前提**：无需手动启动服务器——E2E 测试自动启动隔离的 server 子进程（随机高端口），使用临时数据库，测试结束后自动清理
+- **向后兼容**：`npm run test:e2e:legacy` 连接已有 `localhost:3000` 服务器
 - **需要的 API Key**：
   - LLM API（fallback 顺序）：`MiMo_KEY` → `GEMINI_KEY` → `Openrouter_KEY`
   - 搜索 API：`TAVILY_API_KEY`、`SerpAPI_KEY`、`EPO_CONSUMER_KEY` + `EPO_CONSUMER_SECRET_KEY`
@@ -118,18 +119,20 @@ tests/
     ├── schema-validators.mjs  # 所有 validate*Output 函数
     ├── upload.mjs       # uploadKnowledgeFile
     ├── sample-data.mjs  # SAMPLE_* 常量、buildMockRequest
-    └── test-runner.mjs  # log/assert/runTest
+    ├── test-runner.mjs  # log/assert/runTest
+    └── server-lifecycle.mjs  # B-042: 隔离服务器生命周期管理
 ```
 
 ### 运行特定测试
 
 ```bash
-node tests/e2e.mjs                    # 全量 Mock
+node tests/e2e.mjs                    # 全量 Mock（自动启动隔离服务器）
 node tests/e2e.mjs --only mock        # 所有 Mock 测试
 node tests/e2e.mjs --only claimchart  # Claim Chart 相关
 node tests/e2e.mjs --only real        # Real 模式（需 key）
 node tests/e2e.mjs --only malformed   # 错误处理
 node tests/e2e.mjs --check            # 带 lint+typecheck 门禁
+node tests/e2e.mjs --use-existing-server  # 连接已有 localhost:3000（向后兼容）
 ```
 
 ---

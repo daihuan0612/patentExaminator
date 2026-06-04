@@ -39,6 +39,7 @@ import {
   allPassed,
   log,
 } from "./e2e-shared/index.mjs";
+import { startIsolatedServer } from "./e2e-shared/server-lifecycle.mjs";
 
 // 导入所有测试函数
 import {
@@ -270,6 +271,7 @@ async function main() {
   const onlyReal = args.includes("--real");
   const doCheck = args.includes("--check");
   const doAuto = args.includes("--auto");
+  const useExistingServer = args.includes("--use-existing-server");
   const onlyIdx = args.indexOf("--only");
   const onlyPattern = onlyIdx !== -1 ? (args[onlyIdx + 1] || "").toLowerCase() : "";
 
@@ -293,20 +295,36 @@ async function main() {
     }
   }
 
-  // ── Server Health Check ──
-  const BASE = getTestBase();
-  try {
-    const healthRes = await fetch(`${BASE}/health`, { signal: AbortSignal.timeout(5000) });
-    if (!healthRes.ok) {
-      console.error(`ERROR: Server at ${BASE} returned ${healthRes.status}`);
+  // ── Server Lifecycle (B-042: 数据库隔离) ──
+  let serverCleanup = null;
+
+  if (useExistingServer) {
+    // 向后兼容：连接已有服务器
+    const BASE = getTestBase();
+    try {
+      const healthRes = await fetch(`${BASE}/health`, { signal: AbortSignal.timeout(5000) });
+      if (!healthRes.ok) {
+        console.error(`ERROR: Server at ${BASE} returned ${healthRes.status}`);
+        console.error("  Please start the server first: npm run dev:server\n");
+        process.exit(1);
+      }
+      console.log(`Server (existing): ${BASE} ✓\n`);
+    } catch {
+      console.error(`ERROR: Cannot connect to server at ${BASE}`);
       console.error("  Please start the server first: npm run dev:server\n");
       process.exit(1);
     }
-    console.log(`Server: ${BASE} ✓\n`);
-  } catch {
-    console.error(`ERROR: Cannot connect to server at ${BASE}`);
-    console.error("  Please start the server first: npm run dev:server\n");
-    process.exit(1);
+  } else {
+    // 默认：启动隔离服务器（不访问 data/patent-examiner.db）
+    try {
+      const { baseUrl, cleanup } = await startIsolatedServer();
+      serverCleanup = cleanup;
+      process.env.TEST_BASE = baseUrl;
+      console.log(`Server (isolated): ${baseUrl} ✓\n`);
+    } catch (err) {
+      console.error(`ERROR: Failed to start isolated server: ${err.message}\n`);
+      process.exit(1);
+    }
   }
 
   if (onlyReal) {
@@ -569,6 +587,11 @@ async function main() {
     console.error("\nFATAL:", err.message);
     // FATAL 错误必须以非零退出码退出
     process.exit(1);
+  } finally {
+    // B-042: 清理隔离服务器
+    if (serverCleanup) {
+      await serverCleanup();
+    }
   }
 
   // ── Summary ──
