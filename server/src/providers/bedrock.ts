@@ -39,7 +39,8 @@ export class BedrockAdapter implements ProviderAdapter {
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json"
-      }
+      },
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!res.ok) {

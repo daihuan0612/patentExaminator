@@ -83,7 +83,7 @@ async function extractExcel(buffer: Buffer): Promise<ExtractionResult> {
 }
 
 export async function extractFromUrl(url: string): Promise<ExtractionResult> {
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
   if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
   const html = await response.text();
   // Simple HTML to text

@@ -55,12 +55,23 @@ function rateLimiter(req: express.Request, res: express.Response, next: express.
   next();
 }
 
+// Localhost-only middleware for sensitive routes (BUG-049)
+function requireLocalhost(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const ip = req.ip ?? req.socket.remoteAddress ?? "";
+  const isLocal = ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1" || ip === "localhost";
+  if (!isLocal) {
+    res.status(403).json({ ok: false, error: "Forbidden: settings API only accessible from localhost" });
+    return;
+  }
+  next();
+}
+
 // API routes
 app.use("/api", healthRouter);
 app.use("/api", rateLimiter, aiRouter);
-app.use("/api", settingsRouter);
+app.use("/api", requireLocalhost, settingsRouter);
 app.use("/api", rateLimiter, searchRouter);
-app.use("/api", syncRouter);
+app.use("/api", requireLocalhost, syncRouter);
 app.use("/api", knowledgeRouter);
 app.use("/api", dataRouter);
 app.use("/api", ocrRouter);

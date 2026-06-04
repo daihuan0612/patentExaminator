@@ -79,7 +79,8 @@ export class GeminiAdapter implements ProviderAdapter {
   async listModels(apiKey: string): Promise<string[]> {
     const url = `${GEMINI_BASE_URL}/models`;
     const res = await fetch(url, {
-      headers: { "x-goog-api-key": apiKey }
+      headers: { "x-goog-api-key": apiKey },
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!res.ok) {

@@ -71,7 +71,8 @@ async function getEpoAccessToken(consumerKey: string, consumerSecret: string): P
       "Authorization": `Basic ${credentials}`,
       "Content-Type": "application/x-www-form-urlencoded"
     },
-    body: "grant_type=client_credentials"
+    body: "grant_type=client_credentials",
+    signal: AbortSignal.timeout(30_000)
   });
 
   if (!res.ok) {
@@ -244,7 +245,8 @@ export async function searchEpo(
     headers: {
       "Authorization": `Bearer ${accessToken}`,
       "Accept": "application/json"
-    }
+    },
+    signal: AbortSignal.timeout(30_000)
   });
 
   if (res.status === 429) {

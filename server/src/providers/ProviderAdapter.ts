@@ -79,7 +79,8 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
       try {
         const res = await fetch(url, {
           method: "GET",
-          headers: { Authorization: `Bearer ${apiKey}` }
+          headers: { Authorization: `Bearer ${apiKey}` },
+          signal: AbortSignal.timeout(30_000),
         });
         if (!res.ok) {
           const body = await res.text().catch(() => "");
