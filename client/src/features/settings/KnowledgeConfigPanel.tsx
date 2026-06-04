@@ -546,7 +546,7 @@ function KnowledgeProviderCard({ preset, existing, onUpdate }: KnowledgeProvider
       apiKeyRef: apiKey,
       modelId,
       availableModels: existing?.availableModels ?? [],
-      enabled: isEnabled,
+      enabled: !!apiKey,  // 保存有效 key 时自动启用，清空 key 时自动禁用
     });
   };
 
