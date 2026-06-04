@@ -11,7 +11,7 @@ export const defectItemSchema = z.object({
 
 export const defectSchema = z.object({
   defects: z.array(defectItemSchema),
-  warnings: z.array(z.string()),
+  warnings: z.array(z.string()).default([]),
   legalCaution: z.string(),
 });
 
