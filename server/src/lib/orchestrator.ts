@@ -226,7 +226,7 @@ function buildNoveltyPrompt(request: NoveltyRequest): string {
     `  ],`,
     `  "differenceFeatureCodes": ["B", "C"],`,
     `  "pendingSearchQuestions": ["待检索问题"],`,
-    `  "legalCaution": "以上为候选事实整理，不构成法律结论。"`,
+    `  "legalCaution": "以上为候选事实整理，不构成新颖性法律结论。"`,
     `}`
   ];
   return parts.join("\n");
