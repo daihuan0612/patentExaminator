@@ -46,16 +46,16 @@ describe("knowledgeDb — Sources", () => {
     addSource(testSource);
     const sources = getAllSources();
     expect(sources).toHaveLength(1);
-    expect(sources[0].id).toBe("src-1");
-    expect(sources[0].name).toBe("test.pdf");
-    expect(sources[0].mediaType).toBe("application/pdf");
+    expect(sources[0]!.id).toBe("src-1");
+    expect(sources[0]!.name).toBe("test.pdf");
+    expect(sources[0]!.mediaType).toBe("application/pdf");
   });
 
   it("addSource with optional fields", () => {
     addSource({ ...testSource, fileHash: "abc123", sourceUrl: "https://example.com" });
     const sources = getAllSources();
-    expect(sources[0].fileHash).toBe("abc123");
-    expect(sources[0].sourceUrl).toBe("https://example.com");
+    expect(sources[0]!.fileHash).toBe("abc123");
+    expect(sources[0]!.sourceUrl).toBe("https://example.com");
   });
 
   it("addSource replaces on duplicate id (INSERT OR REPLACE)", () => {
@@ -63,7 +63,7 @@ describe("knowledgeDb — Sources", () => {
     addSource({ ...testSource, name: "updated.pdf" });
     const sources = getAllSources();
     expect(sources).toHaveLength(1);
-    expect(sources[0].name).toBe("updated.pdf");
+    expect(sources[0]!.name).toBe("updated.pdf");
   });
 
   it("deleteSource removes source and its chunks", () => {
@@ -99,7 +99,7 @@ describe("knowledgeDb — Chunks", () => {
     addChunks(testChunks);
     const chunks = getAllChunks();
     expect(chunks).toHaveLength(3);
-    expect(chunks[0].text).toBe("First chunk text");
+    expect(chunks[0]!.text).toBe("First chunk text");
   });
 
   it("getUnembeddedChunks returns only unembedded", () => {
@@ -111,7 +111,7 @@ describe("knowledgeDb — Chunks", () => {
   });
 
   it("markChunkEmbedded updates embedded flag", () => {
-    addChunks([testChunks[0]]);
+    addChunks([testChunks[0]!]);
     markChunkEmbedded("c1");
     const unembedded = getUnembeddedChunks();
     expect(unembedded).toHaveLength(0);
@@ -131,9 +131,9 @@ describe("knowledgeDb — Vectors", () => {
     addVectors([{ chunkId: "c1", vector: [0.1, 0.2, 0.3], modelId: "test-model" }]);
     const vectors = getAllVectors();
     expect(vectors).toHaveLength(1);
-    expect(vectors[0].chunkId).toBe("c1");
-    expect(vectors[0].vector).toEqual([0.1, 0.2, 0.3]);
-    expect(vectors[0].modelId).toBe("test-model");
+    expect(vectors[0]!.chunkId).toBe("c1");
+    expect(vectors[0]!.vector).toEqual([0.1, 0.2, 0.3]);
+    expect(vectors[0]!.modelId).toBe("test-model");
   });
 
   it("addVectors replaces on duplicate chunkId", () => {
@@ -141,7 +141,7 @@ describe("knowledgeDb — Vectors", () => {
     addVectors([{ chunkId: "c1", vector: [0.9], modelId: "m2" }]);
     const vectors = getAllVectors();
     expect(vectors).toHaveLength(1);
-    expect(vectors[0].vector).toEqual([0.9]);
+    expect(vectors[0]!.vector).toEqual([0.9]);
   });
 });
 

@@ -362,7 +362,7 @@ describe("repos.ts — Domain Functions", () => {
   // ── Novelty CRUD ────────────────────────────────────────────────────
 
   describe("Novelty CRUD", () => {
-    const mockNovelty = { id: "nov-1", caseId: "case-1", featureCode: "A" } as NoveltyComparison;
+    const mockNovelty = { id: "nov-1", caseId: "case-1", featureCode: "A" } as unknown as NoveltyComparison;
 
     it("createNovelty calls POST", async () => {
       await createNovelty(mockNovelty);
@@ -687,7 +687,7 @@ describe("repos.ts — Domain Functions", () => {
     it("saveInterpretSummaries creates with metadata", async () => {
       await saveInterpretSummaries("case-1", { doc1: "summary" });
       expect(mockFetch).toHaveBeenCalledWith(`${API_BASE}/interpretSummaries`, expect.objectContaining({ method: "POST" }));
-      const body = JSON.parse(mockFetch.mock.calls[mockFetch.mock.calls.length - 1][1].body);
+      const body = JSON.parse(mockFetch.mock.calls[mockFetch.mock.calls.length - 1]![1]!.body as string);
       expect(body.caseId).toBe("case-1");
       expect(body.summaries).toEqual({ doc1: "summary" });
     });
@@ -724,7 +724,7 @@ describe("repos.ts — Domain Functions", () => {
   describe("Run Marker Repo", () => {
     it("saveRunMarker creates composite id", async () => {
       await saveRunMarker("case-1", "novelty");
-      const body = JSON.parse(mockFetch.mock.calls[mockFetch.mock.calls.length - 1][1].body);
+      const body = JSON.parse(mockFetch.mock.calls[mockFetch.mock.calls.length - 1]![1]!.body as string);
       expect(body.id).toBe("case-1::novelty");
       expect(body.caseId).toBe("case-1");
       expect(body.module).toBe("novelty");
@@ -742,9 +742,9 @@ describe("repos.ts — Domain Functions", () => {
   // ── Search Session Repo ─────────────────────────────────────────────
 
   describe("Search Session Repo", () => {
-    const mockSearchSession: SearchSession = {
+    const mockSearchSession = {
       id: "ss-1", caseId: "case-1", query: "test", updatedAt: "2023-06-01T00:00:00Z"
-    } as SearchSession;
+    } as unknown as SearchSession;
 
     it("createSearchSession calls POST", async () => {
       await createSearchSession(mockSearchSession);
@@ -754,7 +754,7 @@ describe("repos.ts — Domain Functions", () => {
     it("updateSearchSession calls PUT with updatedAt", async () => {
       await updateSearchSession(mockSearchSession);
       expect(mockFetch).toHaveBeenCalledWith(`${API_BASE}/searchSessions/ss-1`, expect.objectContaining({ method: "PUT" }));
-      const body = JSON.parse(mockFetch.mock.calls[mockFetch.mock.calls.length - 1][1].body);
+      const body = JSON.parse(mockFetch.mock.calls[mockFetch.mock.calls.length - 1]![1]!.body as string);
       expect(body).toHaveProperty("updatedAt");
     });
 

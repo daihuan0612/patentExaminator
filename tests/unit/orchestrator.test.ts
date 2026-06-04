@@ -98,8 +98,8 @@ describe("orchestrator — prompt building", () => {
       apiKey: "key",
     });
 
-    const call = (registry.runWithFallback as ReturnType<typeof vi.fn>).mock.calls[0];
-    const prompt = call[1].messages[0].content as string;
+    const call = (registry.runWithFallback as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const prompt = call[1]!.messages[0]!.content as string;
     expect(prompt).toContain("权利要求 1");
     expect(prompt).toContain("一种装置，包括A和B");
     expect(prompt).toContain("featureCode");
@@ -121,7 +121,7 @@ describe("orchestrator — prompt building", () => {
       apiKey: "key",
     });
 
-    const prompt = (registry.runWithFallback as ReturnType<typeof vi.fn>).mock.calls[0][1].messages[0].content as string;
+    const prompt = (registry.runWithFallback as ReturnType<typeof vi.fn>).mock.calls[0]![1]!.messages[0]!.content as string;
     expect(prompt).toContain("特征A");
     expect(prompt).toContain("REF-001");
     expect(prompt).toContain("disclosureStatus");
@@ -142,7 +142,7 @@ describe("orchestrator — prompt building", () => {
       apiKey: "key",
     });
 
-    const prompt = (registry.runWithFallback as ReturnType<typeof vi.fn>).mock.calls[0][1].messages[0].content as string;
+    const prompt = (registry.runWithFallback as ReturnType<typeof vi.fn>).mock.calls[0]![1]!.messages[0]!.content as string;
     expect(prompt).toContain("你好");
     expect(prompt).toContain("之前的问题");
     expect(prompt).toContain("novelty");
@@ -163,7 +163,7 @@ describe("orchestrator — prompt building", () => {
         modelId: "test",
         apiKey: "key",
       });
-      const prompt = (registry.runWithFallback as ReturnType<typeof vi.fn>).mock.calls[0][1].messages[0].content as string;
+      const prompt = (registry.runWithFallback as ReturnType<typeof vi.fn>).mock.calls[0]![1]!.messages[0]!.content as string;
       expect(prompt).toContain("test.pdf");
     }
   });
@@ -183,7 +183,7 @@ describe("orchestrator — prompt building", () => {
       apiKey: "key",
     });
 
-    const prompt = (registry.runWithFallback as ReturnType<typeof vi.fn>).mock.calls[0][1].messages[0].content as string;
+    const prompt = (registry.runWithFallback as ReturnType<typeof vi.fn>).mock.calls[0]![1]!.messages[0]!.content as string;
     expect(prompt).toContain("基线数据");
     expect(prompt).toContain("确认特征");
     expect(prompt).toContain("新颖性对照");
@@ -200,7 +200,7 @@ describe("orchestrator — prompt building", () => {
       apiKey: "key",
     });
 
-    const prompt = (registry.runWithFallback as ReturnType<typeof vi.fn>).mock.calls[0][1].messages[0].content as string;
+    const prompt = (registry.runWithFallback as ReturnType<typeof vi.fn>).mock.calls[0]![1]!.messages[0]!.content as string;
     expect(prompt).toContain("中文");
     expect(prompt).toContain("Hello world");
   });
@@ -278,9 +278,9 @@ describe("orchestrator — claim-chart post-processing", () => {
     expect(result.ok).toBe(true);
     const output = result.output as Record<string, unknown>;
     const features = output.features as Array<Record<string, unknown>>;
-    expect(features[0].id).toBe("case-1-chart-1-A");
-    expect(features[0].source).toBe("ai");
-    expect(features[1].id).toBe("case-1-chart-1-B");
+    expect(features[0]!.id).toBe("case-1-chart-1-A");
+    expect(features[0]!.source).toBe("ai");
+    expect(features[1]!.id).toBe("case-1-chart-1-B");
   });
 });
 

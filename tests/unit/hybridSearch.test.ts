@@ -92,7 +92,7 @@ describe("hybridSearch", () => {
 
     const result = hybridSearch("learning patent", vectorScores, 10);
     for (let i = 1; i < result.length; i++) {
-      expect(result[i - 1].score).toBeGreaterThanOrEqual(result[i].score);
+      expect(result[i - 1]!.score).toBeGreaterThanOrEqual(result[i]!.score);
     }
   });
 });
