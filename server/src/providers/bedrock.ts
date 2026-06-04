@@ -117,8 +117,8 @@ export class BedrockAdapter implements ProviderAdapter {
       // Re-throw with status if it's a fetch error
       if (error instanceof Error && !(error as Error & { status?: number }).status) {
         const statusMatch = error.message.match(/HTTP\s*(\d+)/);
-        if (statusMatch) {
-          (error as Error & { status: number }).status = parseInt(statusMatch[1]!, 10);
+        if (statusMatch?.[1]) {
+          (error as Error & { status: number }).status = parseInt(statusMatch[1], 10);
         }
       }
       throw error;

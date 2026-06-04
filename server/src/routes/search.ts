@@ -155,8 +155,10 @@ searchRouter.post("/search-references", async (req, res) => {
       `请严格输出 JSON 格式 {"queries":["查询1","查询2",...]}，不要输出其他内容：`
     );
 
-    const firstProvider = availableProviders[0]!;
-    const apiKey = providerKeys.get(firstProvider)!;
+    const firstProvider = availableProviders[0];
+    if (!firstProvider) throw new Error("No LLM providers available");
+    const apiKey = providerKeys.get(firstProvider);
+    if (!apiKey) throw new Error(`No API key for provider ${firstProvider}`);
 
     const extractReq: ChatRequest = {
       modelId: request.modelId,
@@ -281,9 +283,10 @@ searchRouter.post("/search-references", async (req, res) => {
               const parsed = extracted.parsed as { translations?: string[] };
               if (parsed.translations && parsed.translations.length === chineseQueries.length) {
                 // Replace Chinese queries with English translations
+                const translations = parsed.translations;
                 let transIdx = 0;
-                searchQueries = searchQueries.map(q => 
-                  /[\u4e00-\u9fff]/.test(q) ? parsed.translations![transIdx++]! : q
+                searchQueries = searchQueries.map(q =>
+                  /[\u4e00-\u9fff]/.test(q) ? (translations[transIdx++] ?? q) : q
                 );
                 logger.info("Translated Chinese queries for EPO", { translated: searchQueries });
               }
@@ -613,8 +616,10 @@ searchRouter.post("/extract-search-terms", async (req, res) => {
       `请严格输出 JSON 格式 {"queries":["查询1","查询2",...]}，不要输出其他内容：`
     );
 
-    const firstProvider = availableProviders[0]!;
-    const apiKey = providerKeys.get(firstProvider)!;
+    const firstProvider = availableProviders[0];
+    if (!firstProvider) throw new Error("No LLM providers available");
+    const apiKey = providerKeys.get(firstProvider);
+    if (!apiKey) throw new Error(`No API key for provider ${firstProvider}`);
 
     const extractReq: ChatRequest = {
       modelId: request.modelId,
@@ -827,8 +832,10 @@ searchRouter.post("/search-with-terms", async (req, res) => {
     if (searchProviderId === "epo") {
       const chineseQueries = searchQueries.filter(q => /[一-鿿]/.test(q));
       if (chineseQueries.length > 0) {
-        const firstProvider = availableProviders[0]!;
-        const apiKey = providerKeys.get(firstProvider)!;
+        const firstProvider = availableProviders[0];
+        if (!firstProvider) throw new Error("No LLM providers available");
+        const apiKey = providerKeys.get(firstProvider);
+        if (!apiKey) throw new Error(`No API key for provider ${firstProvider}`);
         const translatePrompt = sanitizeText(
           `你是专利检索专家。请将以下中文检索词翻译为英文，用于在 EPO 专利数据库中检索。\n\n` +
           `中文检索词:\n${chineseQueries.map((q, i) => `${i + 1}. ${q}`).join("\n")}\n\n` +
@@ -853,9 +860,10 @@ searchRouter.post("/search-with-terms", async (req, res) => {
             if (extracted) {
               const parsed = extracted.parsed as { translations?: string[] };
               if (parsed.translations && parsed.translations.length === chineseQueries.length) {
+                const translations = parsed.translations;
                 let transIdx = 0;
                 searchQueries = searchQueries.map(q =>
-                  /[一-鿿]/.test(q) ? parsed.translations![transIdx++]! : q
+                  /[一-鿿]/.test(q) ? (translations[transIdx++] ?? q) : q
                 );
               }
             }
@@ -921,8 +929,10 @@ searchRouter.post("/search-with-terms", async (req, res) => {
       `输出 JSON 数组格式。`
     );
 
-    const firstProvider = availableProviders[0]!;
-    const apiKey = providerKeys.get(firstProvider)!;
+    const firstProvider = availableProviders[0];
+    if (!firstProvider) throw new Error("No LLM providers available");
+    const apiKey = providerKeys.get(firstProvider);
+    if (!apiKey) throw new Error(`No API key for provider ${firstProvider}`);
     const filterReq: ChatRequest = {
       modelId: request.modelId,
       messages: [{ role: "user", content: filterPrompt }],

@@ -19,14 +19,16 @@ function findBalancedJson(text: string): string | null {
   const startIdx = text.search(/[{[[]/);
   if (startIdx === -1) return null;
 
-  const open = text[startIdx]!;
+  const open = text[startIdx];
+  if (!open) return null;
   const close = open === "{" ? "}" : "]";
   let depth = 0;
   let inString = false;
   let escape = false;
 
   for (let i = startIdx; i < text.length; i++) {
-    const ch = text[i]!;
+    const ch = text[i];
+    if (ch === undefined) continue;
 
     if (escape) {
       escape = false;

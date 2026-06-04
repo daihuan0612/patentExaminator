@@ -163,8 +163,9 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
       const okResponses: SearchReferencesResponse[] = [];
 
       for (let i = 0; i < responses.length; i++) {
-        const r = responses[i]!;
-        const sp = enabledSearchProviders[i]!;
+        const r = responses[i];
+        const sp = enabledSearchProviders[i];
+        if (!r || !sp) continue;
         if (r.ok) {
           okResponses.push(r);
           // 从 searchSummary.providerResults 取，或自行构建

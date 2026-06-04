@@ -81,7 +81,9 @@ aiRouter.post("/ai/run", async (req, res) => {
 
       const emb = await getEmbedder();
       if (!emb) { logger.warn("Knowledge enabled but no embedder configured"); return; }
-      const queryVector = (await emb.embed([prompt]))[0]!;
+      const qVec = (await emb.embed([prompt]))[0];
+      if (!qVec) { logger.warn("Failed to embed query"); return; }
+      const queryVector = qVec;
       const allChunks = getAllChunks();
       const allVectors = getAllVectors();
 
@@ -96,9 +98,9 @@ aiRouter.post("/ai/run", async (req, res) => {
 
         let dot = 0, normA = 0, normB = 0;
         for (let i = 0; i < queryVector.length; i++) {
-          dot += queryVector[i]! * vec.vector[i]!;
-          normA += queryVector[i]! * queryVector[i]!;
-          normB += vec.vector[i]! * vec.vector[i]!;
+          dot += (queryVector[i] ?? 0) * (vec.vector[i] ?? 0);
+          normA += (queryVector[i] ?? 0) * (queryVector[i] ?? 0);
+          normB += (vec.vector[i] ?? 0) * (vec.vector[i] ?? 0);
         }
         const score = dot / (Math.sqrt(normA) * Math.sqrt(normB));
         if (score >= 0.3) {
@@ -108,13 +110,14 @@ aiRouter.post("/ai/run", async (req, res) => {
 
       scores.sort((a, b) => b.score - a.score);
       const topResults = scores.slice(0, 5).map((s) => {
-        const chunk = chunkMap.get(s.chunkId)!;
+        const chunk = chunkMap.get(s.chunkId);
+        if (!chunk) return null;
         return {
           text: chunk.text,
           metadata: (() => { try { return JSON.parse(chunk.metadata) as Record<string, unknown>; } catch { return {}; } })(),
           score: s.score,
         };
-      });
+      }).filter((r): r is NonNullable<typeof r> => r !== null);
 
       if (topResults.length > 0) {
         const citationBlock = topResults.map((r) => {
@@ -177,8 +180,22 @@ ${citationBlock}
 
   try {
     // Use first available provider's key for the request
-    const firstProvider = availableProviders[0]!;
-    const apiKey = providerKeys.get(firstProvider)!;
+    const firstProvider = availableProviders[0];
+    if (!firstProvider) {
+      res.status(400).json({
+        ok: false as const,
+        error: { code: "no-api-keys", message: "No API keys configured for requested providers", retryable: false }
+      } satisfies AiRunResponse);
+      return;
+    }
+    const apiKey = providerKeys.get(firstProvider);
+    if (!apiKey) {
+      res.status(400).json({
+        ok: false as const,
+        error: { code: "no-api-keys", message: `No API key for provider ${firstProvider}`, retryable: false }
+      } satisfies AiRunResponse);
+      return;
+    }
 
     // Abort on client disconnect (listen on TCP socket, NOT req.on("close") which fires on body consumption)
     const controller = new AbortController();

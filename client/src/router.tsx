@@ -115,7 +115,7 @@ export function NoveltyWrapper() {
   useEffect(() => {
     const ids = comparisonIds ? comparisonIds.split(",") : [];
     if (ids.length > 0 && !ids.includes(selectedComparisonId)) {
-      setSelectedComparisonId(ids[ids.length - 1]!);
+      setSelectedComparisonId(ids[ids.length - 1] ?? "");
     }
     if (ids.length === 0 && selectedComparisonId !== "") {
       setSelectedComparisonId("");
@@ -438,16 +438,17 @@ export function OpinionComparisonWrapper() {
   // Load opinion data from IndexedDB on mount
   useEffect(() => {
     if (!caseId) return;
-    
+    const id = caseId;
+
     async function loadOpinionData() {
       try {
         // Only load from IndexedDB if not already in memory store
-        const storedAnalysis = await readOpinionAnalysis(caseId!);
+        const storedAnalysis = await readOpinionAnalysis(id);
         if (storedAnalysis && !officeActionAnalysis) {
           setOfficeActionAnalysis(storedAnalysis);
         }
 
-        const storedMappings = await readArgumentMappings(caseId!);
+        const storedMappings = await readArgumentMappings(id);
         if (storedMappings.length > 0 && argumentMappings.length === 0) {
           setArgumentMappings(storedMappings);
         }

@@ -56,7 +56,9 @@ function reciprocalRankFusion(
 
   for (const ranking of rankings) {
     for (let rank = 0; rank < ranking.length; rank++) {
-      const { id } = ranking[rank]!;
+      const entry = ranking[rank];
+      if (!entry) continue;
+      const { id } = entry;
       const rrfScore = 1 / (k + rank + 1);
       scoreMap.set(id, (scoreMap.get(id) ?? 0) + rrfScore);
     }

@@ -56,8 +56,10 @@ function _splitClaims(region: string): Array<{ claimNumber: number; rawText: str
 
   let match: RegExpExecArray | null;
   while ((match = CLAIM_HEAD.exec(region)) !== null) {
+    const numStr = match[1];
+    if (!numStr) continue;
     matches.push({
-      claimNumber: parseInt(match[1]!, 10),
+      claimNumber: parseInt(numStr, 10),
       index: match.index,
       endIndex: match.index + match[0].length
     });
@@ -67,7 +69,8 @@ function _splitClaims(region: string): Array<{ claimNumber: number; rawText: str
 
   const claims: Array<{ claimNumber: number; rawText: string }> = [];
   for (let i = 0; i < matches.length; i++) {
-    const current = matches[i]!;
+    const current = matches[i];
+    if (!current) continue;
     const next = matches[i + 1];
     const rawText = region.slice(current.endIndex, next ? next.index : region.length).trim();
     claims.push({ claimNumber: current.claimNumber, rawText });
@@ -106,7 +109,9 @@ function _extractDependencies(rawText: string): number[] {
   for (const pattern of patterns) {
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(rawText)) !== null) {
-      const n1 = parseInt(match[1]!, 10);
+      const n1Str = match[1];
+      if (!n1Str) continue;
+      const n1 = parseInt(n1Str, 10);
       deps.push(n1);
       if (match[2]) {
         const n2 = parseInt(match[2], 10);
@@ -132,8 +137,10 @@ function _validateClaims(claims: ClaimNode[], warnings: string[]): void {
   // Check numbering continuity
   const numbers = claims.map((c) => c.claimNumber).sort((a, b) => a - b);
   for (let i = 1; i < numbers.length; i++) {
-    if (numbers[i]! - numbers[i - 1]! > 1) {
-      warnings.push(`gap-in-claim-numbers: ${numbers[i - 1]}-${numbers[i]}`);
+    const curr = numbers[i];
+    const prev = numbers[i - 1];
+    if (curr != null && prev != null && curr - prev > 1) {
+      warnings.push(`gap-in-claim-numbers: ${prev}-${curr}`);
     }
   }
 

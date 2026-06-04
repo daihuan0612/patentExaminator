@@ -64,7 +64,8 @@ function extractLines(text: string): TextLine[] {
   const textLines = text.split("\n");
 
   for (let i = 0; i < textLines.length; i++) {
-    const line = textLines[i]!;
+    const line = textLines[i];
+    if (line === undefined) continue;
     const startOffset = offset;
     const endOffset = offset + line.length;
     lines.push({ line: i + 1, startOffset, endOffset });

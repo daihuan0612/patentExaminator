@@ -6,7 +6,7 @@ import "./styles/reset.css";
 import "./styles/tokens.css";
 import "./styles/app.css";
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
+ReactDOM.createRoot(document.getElementById("root") ?? document.body).render(
   <React.StrictMode>
     <ErrorBoundary>
       <App />

@@ -212,8 +212,8 @@ export function ProvidersConfigPanel() {
 
     const providersMap = new Map(settings.providers.map((p) => [p.providerId, p]));
     const reordered = newOrder
-      .filter((id) => providersMap.has(id))
-      .map((id) => providersMap.get(id)!);
+      .map((id) => providersMap.get(id))
+      .filter((p): p is NonNullable<typeof p> => p != null);
     for (const [id, p] of providersMap) {
       if (!newOrder.includes(id)) {
         reordered.push(p);
@@ -248,7 +248,7 @@ export function ProvidersConfigPanel() {
       if (models.length > 0) {
         const defaultId = models.includes(provider.defaultModelId)
           ? provider.defaultModelId
-          : models[0]!;
+          : models[0] ?? "";
         const fallbacks = [defaultId, ...models.filter((m) => m !== defaultId)];
         updateProvider(id, { modelIds: models, defaultModelId: defaultId, modelFallbacks: fallbacks });
       }

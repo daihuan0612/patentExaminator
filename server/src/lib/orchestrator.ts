@@ -286,7 +286,9 @@ const INTERPRET_TEMPLATES: Record<string, { title: string; instructions: string[
 
 function buildInterpretPrompt(request: Record<string, unknown>): string {
   const documentType = request.documentType as string ?? "application";
-  const template = INTERPRET_TEMPLATES[documentType] ?? INTERPRET_TEMPLATES.application!;
+  const fallback = INTERPRET_TEMPLATES["application"];
+  if (!fallback) throw new Error("Missing INTERPRET_TEMPLATES.application");
+  const template = INTERPRET_TEMPLATES[documentType] ?? fallback;
   const caseId = request.caseId as string ?? "";
   const documentId = request.documentId as string ?? "unknown";
   const fileName = request.fileName as string ?? "未命名文件";

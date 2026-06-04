@@ -139,7 +139,7 @@ export function OnboardingGuide({ onClose }: OnboardingGuideProps) {
   const [copied, setCopied] = useState<string | null>(null);
 
   const steps = mode === "quick" ? QUICK_STEPS : GUIDE_STEPS;
-  const step = steps[current]!;
+  const step = steps[current] ?? steps[0]!;
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text).then(() => {

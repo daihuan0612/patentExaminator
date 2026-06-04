@@ -70,7 +70,8 @@ async function extractExcel(buffer: Buffer): Promise<ExtractionResult> {
     const XLSX = await import("xlsx");
     const workbook = XLSX.read(buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0] ?? "";
-    const sheet = workbook.Sheets[sheetName]!;
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) return { text: buffer.toString("utf-8"), mediaType: "table" };
     const data = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
     const text = data.map((row) =>
       (Array.isArray(row) ? row : [row]).map((c) => String(c ?? "")).join(" | ")

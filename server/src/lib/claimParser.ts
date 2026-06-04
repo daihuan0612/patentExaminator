@@ -78,8 +78,9 @@ function splitClaims(region: string): Array<{ claimNumber: number; rawText: stri
 
   let match: RegExpExecArray | null;
   while ((match = CLAIM_HEAD.exec(region)) !== null) {
+    if (!match[1]) continue;
     matches.push({
-      claimNumber: parseInt(match[1]!, 10),
+      claimNumber: parseInt(match[1], 10),
       index: match.index,
       endIndex: match.index + match[0].length
     });
@@ -89,7 +90,8 @@ function splitClaims(region: string): Array<{ claimNumber: number; rawText: stri
 
   const claims: Array<{ claimNumber: number; rawText: string }> = [];
   for (let i = 0; i < matches.length; i++) {
-    const current = matches[i]!;
+    const current = matches[i];
+    if (!current) continue;
     const next = matches[i + 1];
     const rawText = region.slice(current.endIndex, next ? next.index : region.length).trim();
     claims.push({ claimNumber: current.claimNumber, rawText });
@@ -128,7 +130,8 @@ function extractDependencies(rawText: string): number[] {
   for (const pattern of patterns) {
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(rawText)) !== null) {
-      const n1 = parseInt(match[1]!, 10);
+      if (!match[1]) continue;
+      const n1 = parseInt(match[1], 10);
       deps.push(n1);
       if (match[2]) {
         const n2 = parseInt(match[2], 10);

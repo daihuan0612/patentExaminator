@@ -296,10 +296,13 @@ function addOverlap(
 ): Array<{ text: string; metadata: Record<string, unknown> }> {
   if (chunks.length <= 1 || overlapSize <= 0) return chunks;
 
-  const result = [chunks[0]!];
+  const first = chunks[0];
+  if (!first) return chunks;
+  const result = [first];
   for (let i = 1; i < chunks.length; i++) {
-    const prev = chunks[i - 1]!;
-    const curr = chunks[i]!;
+    const prev = chunks[i - 1];
+    const curr = chunks[i];
+    if (!prev || !curr) continue;
     const overlap = prev.text.slice(-overlapSize);
     result.push({ ...curr, text: overlap + curr.text });
   }
@@ -471,11 +474,11 @@ knowledgeRouter.post("/knowledge/upload", upload.single("file"), async (req, res
         const batch = sortedChunks.slice(i, i + BATCH_SIZE);
         const texts = batch.map((c) => c.text);
         const vectors = await emb.embed(texts);
-        const vectorRecords = batch.map((c, j) => ({
-          chunkId: c.id,
-          vector: vectors[j]!,
-          modelId: emb.modelId,
-        }));
+        const vectorRecords = batch.map((c, j) => {
+          const vec = vectors[j];
+          if (!vec) throw new Error(`Missing vector for chunk ${c.id} at index ${j}`);
+          return { chunkId: c.id, vector: vec, modelId: emb.modelId };
+        });
         addVectors(vectorRecords);
         for (const chunk of batch) {
           markChunkEmbedded(chunk.id);
@@ -632,11 +635,11 @@ knowledgeRouter.post("/knowledge/import-url", express.json(), async (req, res) =
         const batch = sortedChunks.slice(i, i + BATCH_SIZE);
         const texts = batch.map((c) => c.text);
         const vectors = await emb.embed(texts);
-        const vectorRecords = batch.map((c, j) => ({
-          chunkId: c.id,
-          vector: vectors[j]!,
-          modelId: emb.modelId,
-        }));
+        const vectorRecords = batch.map((c, j) => {
+          const vec = vectors[j];
+          if (!vec) throw new Error(`Missing vector for chunk ${c.id} at index ${j}`);
+          return { chunkId: c.id, vector: vec, modelId: emb.modelId };
+        });
         addVectors(vectorRecords);
         for (const chunk of batch) {
           markChunkEmbedded(chunk.id);
@@ -722,16 +725,18 @@ knowledgeRouter.post("/knowledge/search", express.json(), async (req, res) => {
 
     if (emb) {
       try {
-        const queryVector = (await emb.embed([expandedQuery]))[0]!;
+        const qVec = (await emb.embed([expandedQuery]))[0];
+        if (!qVec) throw new Error("Failed to embed query");
+        const queryVector = qVec;
         for (const [chunkId, vec] of vectorMap) {
           const chunk = chunkMap.get(chunkId);
           if (!chunk) continue;
 
           let dot = 0, normA = 0, normB = 0;
           for (let i = 0; i < queryVector.length; i++) {
-            dot += queryVector[i]! * vec.vector[i]!;
-            normA += queryVector[i]! * queryVector[i]!;
-            normB += vec.vector[i]! * vec.vector[i]!;
+            dot += (queryVector[i] ?? 0) * (vec.vector[i] ?? 0);
+            normA += (queryVector[i] ?? 0) * (queryVector[i] ?? 0);
+            normB += (vec.vector[i] ?? 0) * (vec.vector[i] ?? 0);
           }
           const score = dot / (Math.sqrt(normA) * Math.sqrt(normB));
           if (score >= 0.3) {
@@ -759,14 +764,15 @@ knowledgeRouter.post("/knowledge/search", express.json(), async (req, res) => {
     const topCandidates = validHybridScores.slice(0, topK * 3);
     // 构建 localRerank 需要的格式
     const candidatesForRerank = topCandidates.map((s) => {
-      const chunk = chunkMap.get(s.chunkId)!;
+      const chunk = chunkMap.get(s.chunkId);
+      if (!chunk) return null;
       return {
         chunkId: s.chunkId,
         text: chunk.text,
         metadata: (() => { try { return JSON.parse(chunk.metadata) as Record<string, unknown>; } catch { return {}; } })(),
         score: s.score,
       };
-    });
+    }).filter((c): c is NonNullable<typeof c> => c !== null);
 
     if (reranker?.baseUrl && reranker?.apiKey && reranker?.modelId) {
       // 远程 Re-ranker
@@ -834,14 +840,15 @@ knowledgeRouter.post("/knowledge/search", express.json(), async (req, res) => {
     }
 
     const topResults = rerankedScores.slice(0, topK).map((s) => {
-      const chunk = chunkMap.get(s.chunkId)!;
+      const chunk = chunkMap.get(s.chunkId);
+      if (!chunk) return null;
       return {
         chunkId: s.chunkId,
         text: chunk.text,
         metadata: (() => { try { return JSON.parse(chunk.metadata); } catch { return {}; } })(),
         score: s.score,
       };
-    });
+    }).filter((c): c is NonNullable<typeof c> => c !== null);
 
     res.json({ ok: true, results: topResults });
   } catch (err) {
