@@ -132,8 +132,8 @@ export function CaseSetupPage() {
           });
         }
         setDocuments(docs);
-      } catch {
-        /* IndexedDB unavailable */
+      } catch (e) {
+        log("Failed to load case data from IndexedDB:", e);
       }
     })();
     return () => { cancelled = true; };
