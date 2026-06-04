@@ -72,10 +72,10 @@ app.use("/api", rateLimiter, aiRouter);
 app.use("/api", requireLocalhost, settingsRouter);
 app.use("/api", rateLimiter, searchRouter);
 app.use("/api", requireLocalhost, syncRouter);
-app.use("/api", knowledgeRouter);
-app.use("/api", dataRouter);
-app.use("/api", ocrRouter);
-app.use("/api", documentsRouter);
+app.use("/api", requireLocalhost, knowledgeRouter);
+app.use("/api", requireLocalhost, dataRouter);
+app.use("/api", requireLocalhost, ocrRouter);
+app.use("/api", requireLocalhost, documentsRouter);
 app.use("/api", rateLimiter, agentRouter);
 
 // Serve client static files if dist exists
