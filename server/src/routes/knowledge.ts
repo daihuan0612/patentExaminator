@@ -426,15 +426,17 @@ knowledgeRouter.post("/knowledge/upload", upload.single("file"), async (req, res
       let skippedCount = 0;
 
       for (let i = 0; i < chunks.length; i++) {
-        const hash = chunkHashes[i]!;
+        const hash = chunkHashes[i];
+        const chunk = chunks[i];
+        if (!hash || !chunk) continue;
         const existing = existingEmbeddings.get(hash);
         if (existing) {
           // 断点续传：复用已有 embedding
-          addVectors([{ chunkId: chunks[i]!.id, vector: existing.vector, modelId: emb.modelId }]);
-          markChunkEmbedded(chunks[i]!.id);
+          addVectors([{ chunkId: chunk.id, vector: existing.vector, modelId: emb.modelId }]);
+          markChunkEmbedded(chunk.id);
           skippedCount++;
         } else {
-          chunksToEmbed.push(chunks[i]!);
+          chunksToEmbed.push(chunk);
         }
       }
 
@@ -590,14 +592,16 @@ knowledgeRouter.post("/knowledge/import-url", express.json(), async (req, res) =
       let skippedCount = 0;
 
       for (let i = 0; i < chunks.length; i++) {
-        const hash = chunkHashes[i]!;
+        const hash = chunkHashes[i];
+        const chunk = chunks[i];
+        if (!hash || !chunk) continue;
         const existing = existingEmbeddings.get(hash);
         if (existing) {
-          addVectors([{ chunkId: chunks[i]!.id, vector: existing.vector, modelId: emb.modelId }]);
-          markChunkEmbedded(chunks[i]!.id);
+          addVectors([{ chunkId: chunk.id, vector: existing.vector, modelId: emb.modelId }]);
+          markChunkEmbedded(chunk.id);
           skippedCount++;
         } else {
-          chunksToEmbed.push(chunks[i]!);
+          chunksToEmbed.push(chunk);
         }
       }
 
@@ -790,10 +794,16 @@ knowledgeRouter.post("/knowledge/search", express.json(), async (req, res) => {
             results: Array<{ index: number; relevance_score: number }>;
           };
 
-          rerankedScores = rerankData.results.map((r) => ({
-            chunkId: topCandidates[r.index]!.chunkId,
-            score: r.relevance_score,
-          }));
+          rerankedScores = rerankData.results
+            .filter((r) => r.index >= 0 && r.index < topCandidates.length)
+            .map((r) => {
+              const candidate = topCandidates[r.index];
+              return {
+                chunkId: candidate?.chunkId ?? "",
+                score: r.relevance_score,
+              };
+            })
+            .filter((r) => r.chunkId !== "");
 
           logger.info(`Remote re-ranker applied: ${rerankedScores.length} results`);
         } else {
