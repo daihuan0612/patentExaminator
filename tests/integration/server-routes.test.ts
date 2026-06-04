@@ -72,7 +72,7 @@ describe("Settings routes", () => {
       .put("/api/settings/providers/kimi")
       .send({});
     expect(res.status).toBe(400);
-    expect(res.body).toHaveProperty("error", "apiKey is required");
+    expect(res.body).toHaveProperty("error", "Required");
   });
 });
 
