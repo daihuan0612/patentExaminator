@@ -44,18 +44,22 @@ export async function query<T>(store: string, field: string, value: unknown): Pr
   return data.records;
 }
 
-export async function getById<T>(store: string, id: string): Promise<T | null> {
-  const res = await fetch(`${API_BASE}/${store}/${id}`);
+export async function getById<T>(store: string, id: string, caller?: string): Promise<T | null> {
+  const headers: Record<string, string> = {};
+  if (caller) headers["X-Caller"] = caller;
+  const res = await fetch(`${API_BASE}/${store}/${id}`, { headers });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Failed to get ${store}/${id}: ${res.status}`);
   const data = await res.json() as { ok: boolean; record: T };
   return data.record;
 }
 
-export async function create<T extends { id: string }>(store: string, record: T): Promise<void> {
+export async function create<T extends { id: string }>(store: string, record: T, caller?: string): Promise<void> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (caller) headers["X-Caller"] = caller;
   const res = await fetch(`${API_BASE}/${store}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(record),
   });
   if (!res.ok) throw new Error(`Failed to create ${store}: ${res.status}`);

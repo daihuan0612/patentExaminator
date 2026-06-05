@@ -10,6 +10,20 @@ import { idbWriteGuard } from "../../../lib/idbWriteGuard";
 
 const log = createLogger("SettingsSlice");
 
+/** 从调用栈提取简短 caller 标识 */
+function getCaller(skipFrames = 2): string {
+  try {
+    const stack = new Error().stack?.split("\n").slice(skipFrames) ?? [];
+    for (const frame of stack) {
+      const m = frame.match(/at (\S+)/);
+      if (m && m[1] && !m[1].includes("writeSettings") && !m[1].includes("getCaller")) {
+        return m[1].replace(/^Object\./, "").replace(/\.<anonymous>$/, "");
+      }
+    }
+  } catch { /* ignore */ }
+  return "unknown";
+}
+
 // ── Settings persistence (inlined from settingsRepo) ──
 
 const SETTINGS_ID = "app";
@@ -41,9 +55,9 @@ const REPO_DEFAULT_SETTINGS: AppSettings = {
   enableProviderFallback: true
 };
 
-async function readSettings(): Promise<AppSettings> {
+async function readSettings(caller: string): Promise<AppSettings> {
   try {
-    const stored = await getById<AppSettings & { id: string }>("settings", SETTINGS_ID);
+    const stored = await getById<AppSettings & { id: string }>("settings", SETTINGS_ID, caller);
     if (stored) {
       return {
         ...stored,
@@ -64,8 +78,8 @@ async function readSettings(): Promise<AppSettings> {
   return REPO_DEFAULT_SETTINGS;
 }
 
-function writeSettings(settings: AppSettings): void {
-  dbCreate("settings", { ...settings, id: SETTINGS_ID }).catch((e) => {
+function writeSettings(settings: AppSettings, caller: string): void {
+  dbCreate("settings", { ...settings, id: SETTINGS_ID }, caller).catch((e) => {
     log("Server write failed:", e);
     idbWriteGuard("settings")(e);
   });
@@ -145,8 +159,9 @@ export const createSettingsSlice = (
 
   setSettings: (settings) => {
     if (!_get().isInitialized) return;
+    const caller = getCaller(3);
     set(() => ({ settings }));
-    writeSettings(settings);
+    writeSettings(settings, `setSettings:${caller}`);
     if (settings.mode === "real") {
       syncProviderKeys(settings).then((result) => {
         if (!result.success) {
@@ -157,9 +172,10 @@ export const createSettingsSlice = (
     }
   },
   updateMode: (mode) => {
+    const caller = getCaller(3);
     set((prev) => {
       const next = { ...prev.settings, mode };
-      writeSettings(next);
+      writeSettings(next, `updateMode:${caller}`);
       if (mode === "real") {
         syncProviderKeys(next).then((result) => {
           if (!result.success) {
@@ -177,7 +193,7 @@ export const createSettingsSlice = (
       const messages = prev.settings.providerErrorMessages ?? [];
       const entry: ProviderErrorMessage = { ...error, id };
       const updated = { ...prev.settings, providerErrorMessages: [entry, ...messages].slice(0, 50) };
-      writeSettings(updated);
+      writeSettings(updated, "addProviderError");
       return { settings: updated };
     });
   },
@@ -185,7 +201,7 @@ export const createSettingsSlice = (
     if (!_get().isInitialized) return;
     set((prev) => {
       const next = { ...prev.settings, knowledge: config };
-      writeSettings(next);
+      writeSettings(next, "updateKnowledgeConfig");
       return { settings: next };
     });
   },
@@ -194,7 +210,7 @@ export const createSettingsSlice = (
   },
   loadFromDb: async () => {
     try {
-      const saved = await readSettings();
+      const saved = await readSettings("loadFromDb");
       set(() => ({ settings: saved, isInitialized: true }));
       // Sync API keys to server so AI calls work in real mode
       if (saved.mode === "real") {

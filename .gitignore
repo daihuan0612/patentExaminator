@@ -14,6 +14,9 @@ blob-report/
 *.swp
 *.swo
 
+# Audit logs
+server/data/settings-audit.log
+
 # OS
 .DS_Store
 Thumbs.db

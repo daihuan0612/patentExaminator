@@ -108,7 +108,7 @@ describe("repos.ts — Core CRUD", () => {
 
       const result = await getById("cases", "1");
       expect(result).toEqual(record);
-      expect(mockFetch).toHaveBeenCalledWith(`${API_BASE}/cases/1`);
+      expect(mockFetch).toHaveBeenCalledWith(`${API_BASE}/cases/1`, { headers: {} });
     });
 
     it("returns null on 404", async () => {
