@@ -629,3 +629,41 @@ describe("agentRunInputSchema", () => {
     expect(result.success).toBe(false);
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════
+// §六.4 Agent 枚举同步测试 (FEAT-043)
+// ══════════════════════════════════════════════════════════════════════
+
+describe("§六.4 Agent 枚举同步 (FEAT-043)", () => {
+  it("agentRunInputSchema 的 agent 枚举与 aiRunRequestSchema 完全一致", async () => {
+    const { aiRunRequestSchema } = await import("@server/lib/schemas.js");
+
+    const inputAgentEnum = agentRunInputSchema.shape.agent;
+    const inputValues = (inputAgentEnum as unknown as { _def: { values: string[] } })._def.values;
+
+    const serverAgentEnum = aiRunRequestSchema.shape.agent;
+    const serverValues = (serverAgentEnum as unknown as { _def: { values: string[] } })._def.values;
+
+    expect([...inputValues].sort()).toEqual([...serverValues].sort());
+  });
+
+  it("agentRunInputSchema 枚举不包含已废弃的 agent", () => {
+    const inputAgentEnum = agentRunInputSchema.shape.agent;
+    const inputValues = (inputAgentEnum as unknown as { _def: { values: string[] } })._def.values;
+
+    expect(inputValues).not.toContain("draft");
+    expect(inputValues).not.toContain("search-references");
+  });
+
+  it("agentRunInputSchema 枚举包含所有 13 个有效 agent", () => {
+    const inputAgentEnum = agentRunInputSchema.shape.agent;
+    const inputValues = (inputAgentEnum as unknown as { _def: { values: string[] } })._def.values;
+
+    const expected = [
+      "interpret", "claim-chart", "novelty", "inventive", "summary", "chat",
+      "defects", "extract-case-fields", "opinion-analysis",
+      "argument-analysis", "reexam-draft", "translate", "classify-documents"
+    ];
+    expect([...inputValues].sort()).toEqual([...expected].sort());
+  });
+});

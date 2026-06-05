@@ -631,7 +631,7 @@ async function enhanceWithKnowledge(
     logger.info(`[RAG] [Step 1] Query expansion: "${query}" → "${expandedQuery}"`);
 
     // Step 2: Embedding Search
-    let vectorScores: Array<{ chunkId: string; score: number }> = [];
+    const vectorScores: Array<{ chunkId: string; score: number }> = [];
     if (embeddingConfig) {
       try {
         const { createRemoteEmbedder } = await import("../routes/knowledge.js");

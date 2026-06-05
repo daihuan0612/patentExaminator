@@ -31,7 +31,7 @@
     "test:e2e:legacy": "node tests/e2e.mjs --use-existing-server",
     "test:db": "vitest run --config vitest.integration.config.ts tests/integration/dbLogicChain.test.ts",
     "test:db:scenario": "vitest run --config vitest.integration.config.ts tests/integration/dbScenario.test.ts",
-    "test:db:all": "vitest run --config vitest.integration.config.ts tests/integration/dbLogicChain.test.ts tests/integration/dbScenario.test.ts",
+    "test:db:all": "vitest run --config vitest.integration.config.ts tests/integration/dbLogicChain.test.ts tests/integration/dbScenario.test.ts tests/integration/persistence.test.ts tests/integration/dbIsolation.test.ts",
     "test:evaluation": "vitest run -c vitest.evaluation.config.ts",
     "gate": "npm run typecheck && npm run lint",
     "verify": "npm run typecheck && npm run lint && npm test && npm run test:integration && npm run test:db:all && npm run test:e2e && npm run test:evaluation",
