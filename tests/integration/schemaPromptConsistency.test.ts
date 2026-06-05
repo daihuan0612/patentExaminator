@@ -122,18 +122,25 @@ describe("BUG-124: defect warnings .default([])", () => {
 // ══════════════════════════════════════════════════════════════════════
 
 describe("BUG-129: agent 枚举同步", () => {
-  it("agentRunInputSchema 的 agent 枚举与 aiRunRequestSchema 完全一致", () => {
+  it("agentRunInputSchema 的 agent 枚举与 AGENT_VALUES 完全一致", () => {
     // 从 agentRunInputSchema 提取枚举值
     const inputAgentEnum = agentRunInputSchema.shape.agent;
     const inputValues = (inputAgentEnum as unknown as { _def: { values: string[] } })._def.values;
 
-    // 从 aiRunRequestSchema 提取枚举值
+    // 从 AGENT_VALUES 常量提取枚举值（schemas.ts 使用 agentEnum = z.enum(AGENT_VALUES)）
     const schemasSource = readSchemas();
-    // 解析 aiRunRequestSchema 的 agent enum
-    const enumMatch = schemasSource.match(/agent:\s*z\.enum\(\[([\s\S]*?)\]\)/);
-    expect(enumMatch).not.toBeNull();
-    if (enumMatch) {
-      const serverValues = enumMatch[1]!
+    // 检查 schemas.ts 使用 agentEnum（来自 shared）
+    expect(schemasSource).toContain("agent: agentEnum");
+
+    // 直接从 shared 的 AGENT_VALUES 验证一致性
+    const sharedSource = fs.readFileSync(
+      path.resolve(process.cwd(), "shared/src/schemas/api-input.schema.ts"),
+      "utf-8"
+    );
+    const agentValuesMatch = sharedSource.match(/export const AGENT_VALUES\s*=\s*\[([\s\S]*?)\]/);
+    expect(agentValuesMatch).not.toBeNull();
+    if (agentValuesMatch) {
+      const serverValues = agentValuesMatch[1]!
         .split(",")
         .map((s) => s.trim().replace(/"/g, "").replace(/'/g, ""))
         .filter(Boolean);

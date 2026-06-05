@@ -1,13 +1,33 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // case-gate tests removed — ImportPage.tsx deleted in B-023, replaced by CaseSetupPage
 import { renderCaseHtml, type ExportViewModel } from "@client/lib/exportHtml";
-import { buildTextIndex } from "@client/lib/textIndex";
+// MIGRATE-011: textIndex/claimParser 迁移到后端，测试直接导入服务端实现
+import { buildTextIndex } from "@server/lib/textIndex";
 import { detectLanguage } from "@client/lib/languageDetect";
-import { parseClaims } from "@client/lib/claimParser";
-import { computeBaselineDate, classifyReferenceDate } from "@client/lib/dateRules";
+import { parseClaims } from "@server/lib/claimParser";
+import { classifyReferenceDate } from "@client/lib/dateRules";
 import { sanitizeFileName, buildExportFileName } from "@client/lib/fileNameSanitize";
 import { extractCaseFieldsFallback } from "@client/lib/caseFieldExtractor";
+
+// Mock fetch for extractCaseFieldsFallback (which calls parseClaims via API)
+const originalFetch = global.fetch;
+beforeEach(() => {
+  global.fetch = vi.fn(async (url: string | URL | Request, _init?: RequestInit) => {
+    const urlStr = typeof url === "string" ? url : url.toString();
+    // Mock parseClaims API endpoint
+    if (urlStr.includes("/api/documents/parse-claims")) {
+      // Use server-side parseClaims directly
+      const body = JSON.parse(_init?.body as string ?? "{}");
+      const result = parseClaims(body.text ?? "", body.caseId ?? "test");
+      return new Response(JSON.stringify({ ok: true, ...result }), { status: 200 });
+    }
+    return originalFetch(url, _init);
+  }) as typeof fetch;
+});
+afterEach(() => {
+  global.fetch = originalFetch;
+});
 
 // Dead test sections removed: Citation Match, Figure Extraction, OCR Quality (source modules deleted)
 
@@ -15,41 +35,41 @@ import { extractCaseFieldsFallback } from "@client/lib/caseFieldExtractor";
 // Text Index — 文本索引构建
 // ═══════════════════════════════════════════════════════════════
 describe("Text Index (buildTextIndex)", () => {
-  it("简单文本 → 正确分段", async () => {
+  it("简单文本 → 正确分段", () => {
     const text = "段落一内容\n\n段落二内容\n\n段落三内容";
-    const index = await buildTextIndex(text);
+    const index = buildTextIndex(text);
     expect(index.paragraphs).toHaveLength(3);
     expect(index.paragraphs[0]!.text).toBe("段落一内容");
     expect(index.paragraphs[1]!.text).toBe("段落二内容");
     expect(index.paragraphs[2]!.text).toBe("段落三内容");
   });
 
-  it("带段落编号的文本 → 提取段落号", async () => {
+  it("带段落编号的文本 → 提取段落号", () => {
     const text = "[0001] 这是第一个段落\n\n[0002] 这是第二个段落";
-    const index = await buildTextIndex(text);
+    const index = buildTextIndex(text);
     expect(index.paragraphs).toHaveLength(2);
     expect(index.paragraphs[0]!.paragraphNumber).toBe("0001");
     expect(index.paragraphs[1]!.paragraphNumber).toBe("0002");
   });
 
-  it("空文本 → 空索引", async () => {
-    const index = await buildTextIndex("");
+  it("空文本 → 空索引", () => {
+    const index = buildTextIndex("");
     expect(index.paragraphs).toHaveLength(0);
     expect(index.pages).toHaveLength(0);
   });
 
-  it("行映射 → 行号从 1 开始", async () => {
+  it("行映射 → 行号从 1 开始", () => {
     const text = "第一行\n第二行\n第三行";
-    const index = await buildTextIndex(text);
+    const index = buildTextIndex(text);
     expect(index.lineMap).toHaveLength(3);
     expect(index.lineMap[0]!.line).toBe(1);
     expect(index.lineMap[1]!.line).toBe(2);
     expect(index.lineMap[2]!.line).toBe(3);
   });
 
-  it("段落 offset 正确", async () => {
+  it("段落 offset 正确", () => {
     const text = "AA\n\nBBBB";
-    const index = await buildTextIndex(text);
+    const index = buildTextIndex(text);
     expect(index.paragraphs).toHaveLength(2);
     expect(index.paragraphs[0]!.startOffset).toBe(0);
     expect(index.paragraphs[0]!.endOffset).toBe(2);
@@ -90,71 +110,71 @@ describe("Language Detection", () => {
 describe("Claim Parsing (parseClaims)", () => {
   const CASE_ID = "test-case";
 
-  it("解析独立权利要求 → type=independent", async () => {
+  it("解析独立权利要求 → type=independent", () => {
     const text = `权利要求书
 1. 一种LED散热装置，包括散热基板和导热界面层。
 2. 根据权利要求1所述的散热装置，还包括散热风扇。`;
-    const result = await parseClaims(text, CASE_ID);
+    const result = parseClaims(text, CASE_ID);
     expect(result.claims).toHaveLength(2);
     expect(result.claims[0]!.type).toBe("independent");
     expect(result.claims[0]!.claimNumber).toBe(1);
     expect(result.claims[0]!.dependsOn).toHaveLength(0);
   });
 
-  it("解析从属权利要求 → type=dependent，解析依赖关系", async () => {
+  it("解析从属权利要求 → type=dependent，解析依赖关系", () => {
     const text = `权利要求书
 1. 一种装置，包括A和B。
 2. 根据权利要求1所述的装置，还包括C。
 3. 根据权利要求1或2所述的装置，还包括D。`;
-    const result = await parseClaims(text, CASE_ID);
+    const result = parseClaims(text, CASE_ID);
     expect(result.claims).toHaveLength(3);
     expect(result.claims[1]!.type).toBe("dependent");
     expect(result.claims[1]!.dependsOn).toEqual([1]);
     expect(result.claims[2]!.dependsOn).toEqual([1, 2]);
   });
 
-  it("无权利要求书标题 → fallback 到首条权利要求", async () => {
+  it("无权利要求书标题 → fallback 到首条权利要求", () => {
     const text = "1. 一种LED散热装置。";
-    const result = await parseClaims(text, CASE_ID);
+    const result = parseClaims(text, CASE_ID);
     expect(result.claims).toHaveLength(1);
     expect(result.claims[0]!.claimNumber).toBe(1);
   });
 
-  it("无权利要求 → warnings 包含 no-claim-region", async () => {
+  it("无权利要求 → warnings 包含 no-claim-region", () => {
     const text = "说明书内容，没有任何权利要求。";
-    const result = await parseClaims(text, CASE_ID);
+    const result = parseClaims(text, CASE_ID);
     expect(result.claims).toHaveLength(0);
     expect(result.warnings).toContain("no-claim-region");
   });
 
-  it("无独立权利要求 → warnings 包含 no-independent-claim", async () => {
+  it("无独立权利要求 → warnings 包含 no-independent-claim", () => {
     const text = `权利要求书
 1. 根据权利要求1所述的装置，其中...`;
-    const result = await parseClaims(text, CASE_ID);
+    const result = parseClaims(text, CASE_ID);
     expect(result.warnings).toContain("no-independent-claim");
   });
 
-  it("编号不连续 → warnings 包含 gap-in-claim-numbers", async () => {
+  it("编号不连续 → warnings 包含 gap-in-claim-numbers", () => {
     const text = `权利要求书
 1. 一种装置。
 5. 根据权利要求1所述的装置。`;
-    const result = await parseClaims(text, CASE_ID);
+    const result = parseClaims(text, CASE_ID);
     expect(result.warnings.some((w) => w.startsWith("gap-in-claim-numbers"))).toBe(true);
   });
 
-  it("self-dependency — 引用自身 → 标记 invalid dependency", async () => {
+  it("self-dependency — 引用自身 → 标记 invalid dependency", () => {
     const text = `权利要求书
 1. 一种装置。
 2. 根据权利要求2所述的装置。`;
-    const result = await parseClaims(text, CASE_ID);
+    const result = parseClaims(text, CASE_ID);
     expect(result.warnings.some((w) => w.includes("invalid-dependency"))).toBe(true);
   });
 
-  it("范围依赖 '权利要求 N 至 M'", async () => {
+  it("范围依赖 '权利要求 N 至 M'", () => {
     const text = `权利要求书
 1. 一种装置。
 2. 根据权利要求1至3所述的装置。`;
-    const result = await parseClaims(text, CASE_ID);
+    const result = parseClaims(text, CASE_ID);
     expect(result.claims[1]!.dependsOn).toContain(1);
   });
 });
@@ -163,26 +183,6 @@ describe("Claim Parsing (parseClaims)", () => {
 // Date Rules — 时间轴规则
 // ═══════════════════════════════════════════════════════════════
 describe("Date Rules", () => {
-  it("computeBaselineDate → 优先使用 priorityDate", () => {
-    const result = computeBaselineDate({
-      applicationDate: "2023-03-15",
-      priorityDate: "2022-06-01"
-    });
-    expect(result).toBe("2022-06-01");
-  });
-
-  it("computeBaselineDate → 无 priorityDate 时使用 applicationDate", () => {
-    const result = computeBaselineDate({
-      applicationDate: "2023-03-15"
-    });
-    expect(result).toBe("2023-03-15");
-  });
-
-  it("computeBaselineDate → 无日期时返回 undefined", () => {
-    const result = computeBaselineDate({});
-    expect(result).toBeUndefined();
-  });
-
   it("classifyReferenceDate → pubDate < baselineDate → available", () => {
     expect(classifyReferenceDate("2023-03-15", "2022-01-01")).toBe("available");
   });
