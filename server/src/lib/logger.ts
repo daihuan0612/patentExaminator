@@ -13,8 +13,18 @@ function shouldLog(level: LogLevel): boolean {
   return LEVEL_PRIORITY[level] >= LEVEL_PRIORITY[currentLevel];
 }
 
+function pad2(n: number): string { return n < 10 ? `0${n}` : String(n); }
+
 function formatMessage(level: LogLevel, message: string, meta?: Record<string, unknown>): string {
-  const timestamp = new Date().toISOString();
+  const now = new Date();
+  const y = now.getFullYear();
+  const mo = pad2(now.getMonth() + 1);
+  const d = pad2(now.getDate());
+  const h = pad2(now.getHours());
+  const mi = pad2(now.getMinutes());
+  const s = pad2(now.getSeconds());
+  const ms = String(now.getMilliseconds()).padStart(3, "0");
+  const timestamp = `${y}-${mo}-${d}T${h}:${mi}:${s}.${ms}`;
   const metaStr = meta ? ` ${JSON.stringify(meta)}` : "";
   return `[${timestamp}] ${level.toUpperCase()} ${message}${metaStr}`;
 }
