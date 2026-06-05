@@ -20,11 +20,14 @@ vi.mock("@server/security/keyStore.js", () => ({
 }));
 
 vi.mock("@server/lib/hybridSearch.js", () => ({
-  hybridSearch: vi.fn().mockReturnValue([])
+  hybridSearch: vi.fn().mockReturnValue([]),
+  mmrDiversityRank: vi.fn().mockReturnValue([])
 }));
 
 vi.mock("@server/lib/knowledgeDb.js", () => ({
-  getAllChunks: vi.fn().mockReturnValue([])
+  getAllChunks: vi.fn().mockReturnValue([]),
+  getAllVectors: vi.fn().mockReturnValue([]),
+  getChunksWithParent: vi.fn().mockReturnValue([])
 }));
 
 vi.mock("@server/lib/logger.js", () => ({
@@ -233,7 +236,7 @@ describe("orchestrator — knowledge enhancement", () => {
     await runAgent({
       agent: "novelty",
       caseId: "c1",
-      request: { features: [], referenceText: "", referenceId: "R1", claimNumber: 1 },
+      request: { features: [{ featureCode: "A", description: "特征A" }], referenceText: "", referenceId: "R1", claimNumber: 1 },
       providerPreference: ["gemini"],
       modelId: "test",
       apiKey: "key",

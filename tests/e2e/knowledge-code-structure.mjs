@@ -105,13 +105,18 @@ export async function testEmbedderCodeExists() {
 // ── T-RAG-011: 检索引擎代码验证 ────────────────────────────────────
 
 export async function testRetrieverCodeExists() {
-  const retrieverPath = path.join(CLIENT_SRC, "lib", "knowledge", "retriever.ts");
-  assert(fileExists(retrieverPath), "retriever.ts not found");
-  const code = readFile(retrieverPath);
-  assert(code.includes("retrieve"), "Missing retrieve function");
-  assert(code.includes("formatRetrievedChunks"), "Missing formatRetrievedChunks");
-  assert(code.includes("参考法规"), "Missing '参考法规' injection header");
-  log("T-RAG-011: 检索引擎代码", true);
+  // 检索逻辑已从客户端迁移到服务端 RAG pipeline（orchestrator.ts + hybridSearch.ts）
+  const orchestratorPath = path.join(SERVER_SRC, "lib", "orchestrator.ts");
+  assert(fileExists(orchestratorPath), "orchestrator.ts not found");
+  const orchCode = readFile(orchestratorPath);
+  assert(orchCode.includes("enhanceWithKnowledge"), "Missing enhanceWithKnowledge (RAG pipeline)");
+  assert(orchCode.includes("hybridSearch"), "Missing hybridSearch call in RAG pipeline");
+
+  const hybridPath = path.join(SERVER_SRC, "lib", "hybridSearch.ts");
+  assert(fileExists(hybridPath), "hybridSearch.ts not found");
+  const hybridCode = readFile(hybridPath);
+  assert(hybridCode.includes("hybridSearch"), "Missing hybridSearch function");
+  log("T-RAG-011: 检索引擎代码（服务端 RAG pipeline）", true);
 }
 
 // ── T-RAG-012: Prompt 注入代码验证 ─────────────────────────────────

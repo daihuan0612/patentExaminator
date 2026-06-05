@@ -138,7 +138,7 @@ describe("Agent routes — /api/agent", () => {
   it("POST /api/agent/run accepts valid input", async () => {
     const res = await request(app)
       .post("/api/agent/run")
-      .send({ agent: "chat", caseId: "test", request: { userMessage: "hi" } });
+      .send({ agent: "chat", caseId: "test", request: { userMessage: "hi" }, providerPreference: ["gemini"], apiKey: "test-key" });
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty("ok", true);
   });
