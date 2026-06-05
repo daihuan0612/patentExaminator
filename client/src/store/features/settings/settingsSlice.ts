@@ -13,50 +13,6 @@ const log = createLogger("SettingsSlice");
 // ── Settings persistence (inlined from settingsRepo) ──
 
 const SETTINGS_ID = "app";
-const LS_KEY = "patent-examiner-settings";
-const WRITE_DEBOUNCE_MS = 80;
-
-// Two-tier debounced DB write:
-//   1. First write ever → short debounce (30ms) for immediate feedback
-//   2. Subsequent writes → longer debounce (80ms) with "first-write-wins"
-//      to prevent stale effects from overwriting user changes.
-let _writeTimer: ReturnType<typeof setTimeout> | null = null;
-let _windowFirstValue: AppSettings | null = null;
-let _hasWrittenOnce = false;
-
-function debouncedWriteDb(settings: AppSettings): void {
-  if (!_hasWrittenOnce) {
-    // First write: short debounce for immediate feedback
-    _hasWrittenOnce = true;
-    if (_writeTimer) clearTimeout(_writeTimer);
-    _writeTimer = setTimeout(async () => {
-      try {
-        await dbCreate("settings", { ...settings, id: SETTINGS_ID });
-      } catch (e) {
-        log("Server write failed, settings saved to localStorage only:", e);
-        idbWriteGuard("settings")(e);
-      }
-    }, 30);
-    return;
-  }
-  // Subsequent writes: first-write-wins within debounce window
-  if (!_windowFirstValue) {
-    _windowFirstValue = settings;
-    _writeTimer = setTimeout(async () => {
-      if (!_windowFirstValue) return;
-      const toWrite = _windowFirstValue;
-      _windowFirstValue = null;
-      _writeTimer = null;
-      try {
-        await dbCreate("settings", { ...toWrite, id: SETTINGS_ID });
-      } catch (e) {
-        log("Server write failed, settings saved to localStorage only:", e);
-        idbWriteGuard("settings")(e);
-      }
-    }, WRITE_DEBOUNCE_MS);
-  }
-  // else: within existing window, skip (first value wins)
-}
 
 const REPO_DEFAULT_SETTINGS: AppSettings = {
   mode: "mock",
@@ -89,7 +45,7 @@ async function readSettings(): Promise<AppSettings> {
   try {
     const stored = await getById<AppSettings & { id: string }>("settings", SETTINGS_ID);
     if (stored) {
-      const result: AppSettings = {
+      return {
         ...stored,
         providers: stored.providers ?? REPO_DEFAULT_SETTINGS.providers,
         agents: stored.agents ?? REPO_DEFAULT_SETTINGS.agents,
@@ -101,26 +57,18 @@ async function readSettings(): Promise<AppSettings> {
         sanitizeRules: stored.sanitizeRules ?? [],
         ocrQualityThresholds: stored.ocrQualityThresholds ?? { good: 0.7, poor: 0.4 },
       };
-      try { localStorage.setItem(LS_KEY, JSON.stringify(result)); } catch { /* ignore */ }
-      return result;
     }
   } catch (e) {
-    log("Server read failed, trying localStorage:", e);
-  }
-  try {
-    const ls = localStorage.getItem(LS_KEY);
-    if (ls) return JSON.parse(ls) as AppSettings;
-  } catch (e) {
-    log("localStorage JSON.parse failed, using defaults:", e);
+    log("Server read failed:", e);
   }
   return REPO_DEFAULT_SETTINGS;
 }
 
 function writeSettings(settings: AppSettings): void {
-  // localStorage is synchronous — immediate for UI feedback
-  try { localStorage.setItem(LS_KEY, JSON.stringify(settings)); } catch { /* ignore */ }
-  // DB write is debounced with first-write-wins
-  debouncedWriteDb(settings);
+  dbCreate("settings", { ...settings, id: SETTINGS_ID }).catch((e) => {
+    log("Server write failed:", e);
+    idbWriteGuard("settings")(e);
+  });
 }
 
 interface SyncResult {

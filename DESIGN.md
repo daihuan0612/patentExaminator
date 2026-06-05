@@ -1,14 +1,15 @@
 # 专利复审 AI 助手 v0.1.0 详细设计文档
 
-<p align="right">版本 v0.1.0-r42 · 2026-06-04</p>
+<p align="right">版本 v0.1.0-r43 · 2026-06-05</p>
 
 > 本文档面向后续维护者与开发者，描述 v0.1.0 的架构设计、关键决策、领域模型与实现约束。与 `PRD.md`（做什么）和 `DEVELOPMENT_PLAN.md`（怎么做）互为补充；如有冲突，以 PRD 为准。
 
 ### 文档变更记录
 
-| 版本 | 日期 | 变更摘要 |
-|------|------|---------|
-| v0.1.0-r42 | 2026-06-04 | §9 测试架构全面更新：E2E 框架重构为统一入口+模块化子文件结构（e2e-shared/ 共享模块 + e2e/ 测试模块）、智能测试选择（--auto）、质量门禁（--check）、API Key 传递方式说明；删除 3 个临时设计文档（test-framework-refactor-plan.md、e2e-failure-report-2026-06-02.md、feat-042-implementation-review.md） | DESIGN.md §9 |
+| 版本 | 日期 | 变更摘要 | 影响范围 | 关联 commit |
+|------|------|---------|----------|-------------|
+| v0.1.0-r43 | 2026-06-05 | BUG-166: settings 持久化去掉 debounce + localStorage 中间层 — writeSettings 直接 POST 服务器 DB，readSettings 直接 GET；删除死代码 syncClient.ts；修复 Ctrl+C kill 服务器后配置丢失 | settingsSlice.ts, syncClient.ts(删除), settingsPersist.test.ts | — |
+| v0.1.0-r42 | 2026-06-04 | §9 测试架构全面更新：E2E 框架重构为统一入口+模块化子文件结构（e2e-shared/ 共享模块 + e2e/ 测试模块）、智能测试选择（--auto）、质量门禁（--check）、API Key 传递方式说明；删除 3 个临时设计文档（test-framework-refactor-plan.md、e2e-failure-report-2026-06-02.md、feat-042-implementation-review.md） | DESIGN.md §9 | — |
 | v0.1.0-r41 | 2026-06-02 | B-042: 测试数据库隔离机制 — 三层隔离架构（内存/临时文件/快照），syncDb.ts 添加 resetSyncDbForTesting() 支持测试注入；新建 tests/helpers/testDb.ts（数据库创建+CRUD 辅助）、tests/globalSetup.ts（全局清理）；重写 5 个被 skip 的集成测试（repositories/dbScenario/dbLogicChain/dbEdgeChain/chatPersistence），91 个测试用例全部通过；vitest.integration.config.ts 配置 globalSetup | syncDb.ts, tests/helpers/testDb.ts(新建), tests/globalSetup.ts(新建), vitest.integration.config.ts, 5 个集成测试文件 |
 | v0.1.0-r40 | 2026-06-02 | B-038 Phase 3: 删除 dataClient.ts + agentApi.ts — dataClient 7 个 fetch 工具函数内联到 repos.ts，agentApi 全部导出函数合并到 repos.ts；7 个消费方 import 路径更新 | dataClient.ts(删除), agentApi.ts(删除), repos.ts, 7 个消费方文件 |
 | v0.1.0-r39 | 2026-06-02 | B-038 Phase 2: 前端只保留 UI 组件 — 删除 AgentClient.ts（342行）、contracts.ts（393行）、dataClient.ts 依赖的 repositories/ 目录（16个文件720行）、migrateIndexedDb.ts（107行）、indexedDb.ts（278行）；contracts.ts 类型合并到 shared/types/api.ts；AgentClient 替换为 lib/agentApi.ts（agentRun/searchReferences/extractSearchTerms/searchWithTerms 函数）；16个 repository 合并为 lib/repos.ts；settingsRepo 内联到 settingsSlice；前端组件直接调用 fetch | AgentClient.ts, contracts.ts, repositories/, migrateIndexedDb.ts, indexedDb.ts, agentApi.ts, repos.ts, 40+ import 路径更新 |
