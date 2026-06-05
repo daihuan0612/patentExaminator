@@ -116,35 +116,6 @@ function extractArticleRefs(text: string): string[] {
 
 // ── 法律文本切分器 ──────────────────────────────────────
 
-/** 中文数字转阿拉伯数字（用于比较） */
-function chineseToArabic(chinese: string): number {
-  const map: Record<string, number> = {
-    "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
-    "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
-    "百": 100, "千": 1000, "零": 0,
-  };
-
-  // 先尝试直接解析阿拉伯数字
-  const directNum = parseInt(chinese, 10);
-  if (!isNaN(directNum)) return directNum;
-
-  let result = 0;
-  let current = 0;
-  for (const char of chinese) {
-    const val = map[char];
-    if (val === undefined) continue;
-    if (val === 10 || val === 100 || val === 1000) {
-      if (current === 0) current = 1;
-      result += current * val;
-      current = 0;
-    } else {
-      current = val;
-    }
-  }
-  result += current;
-  return result || 0;
-}
-
 /** 提取条号文本（如"第六十五条"） */
 function extractArticleNumber(text: string): string {
   const match = text.match(/第[一二三四五六七八九十百千零\d]+条/);

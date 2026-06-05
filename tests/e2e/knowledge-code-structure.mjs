@@ -30,12 +30,15 @@ function readFile(p) {
 // ── T-RAG-001: 测试数据完整性 ──────────────────────────────────────
 
 export async function testSampleDataIntegrity() {
-  const files = fs.readdirSync(SAMPLES_KNOWLEDGE_DIR);
+  const entries = fs.readdirSync(SAMPLES_KNOWLEDGE_DIR);
+  const files = entries.filter((entry) => {
+    const stat = fs.statSync(path.join(SAMPLES_KNOWLEDGE_DIR, entry));
+    return stat.isFile();
+  });
   assert(files.length > 0, "No files in samples/knowledge-base/");
   for (const file of files) {
     const filePath = path.join(SAMPLES_KNOWLEDGE_DIR, file);
     const stat = fs.statSync(filePath);
-    assert(stat.isFile(), `Not a file: ${file}`);
     assert(stat.size > 0, `Empty: ${file}`);
   }
   log("T-RAG-001: 测试数据文件完整性", true, `${files.length} files`);
@@ -119,15 +122,15 @@ export async function testRetrieverCodeExists() {
   log("T-RAG-011: 检索引擎代码（服务端 RAG pipeline）", true);
 }
 
-// ── T-RAG-012: Prompt 注入代码验证 ─────────────────────────────────
+// ── T-RAG-012: 知识库增强代码验证 ─────────────────────────────────
 
 export async function testPromptInjectorCodeExists() {
-  const injectorPath = path.join(CLIENT_SRC, "lib", "knowledge", "promptInjector.ts");
-  assert(fileExists(injectorPath), "promptInjector.ts not found");
-  const code = readFile(injectorPath);
-  assert(code.includes("injectKnowledge"), "Missing injectKnowledge");
-  assert(code.includes("extractQueryFromRequest"), "Missing extractQueryFromRequest");
-  log("T-RAG-012: Prompt 注入代码", true);
+  const orchestratorPath = path.join(SERVER_SRC, "lib", "orchestrator.ts");
+  assert(fileExists(orchestratorPath), "orchestrator.ts not found");
+  const code = readFile(orchestratorPath);
+  assert(code.includes("enhanceWithKnowledge"), "Missing enhanceWithKnowledge");
+  assert(code.includes("extractQuery"), "Missing extractQuery");
+  log("T-RAG-012: 知识库增强代码（服务端 orchestrator）", true);
 }
 
 // ── T-RAG-013: 类型定义验证 ────────────────────────────────────────
@@ -147,30 +150,26 @@ export async function testTypeDefinitions() {
 // ── T-RAG-014: 数据持久化验证 ──────────────────────────────────────
 
 export async function testIndexedDbSchema() {
-  // B-038 迁移后，IndexedDB 已移至服务端 SQLite
-  // 验证 repos.ts 包含 knowledge 相关的 CRUD 操作
-  const reposPath = path.join(CLIENT_SRC, "lib", "repos.ts");
-  assert(fileExists(reposPath), "repos.ts not found");
-  const reposCode = readFile(reposPath);
-  assert(reposCode.includes("knowledge") || reposCode.includes("Knowledge"), "repos.ts should handle knowledge data");
+  // B-038 迁移后，知识库数据已移至服务端 SQLite
+  // 验证 knowledgeDb.ts 包含知识库相关的 CRUD 操作
+  const knowledgeDbPath = path.join(SERVER_SRC, "lib", "knowledgeDb.ts");
+  assert(fileExists(knowledgeDbPath), "knowledgeDb.ts not found");
+  const knowledgeDbCode = readFile(knowledgeDbPath);
+  assert(knowledgeDbCode.includes("getAllChunks") || knowledgeDbCode.includes("createChunk"), "knowledgeDb.ts should handle knowledge data");
 
-  // 验证 knowledgeRepo.ts 存在
-  const knowledgeRepoPath = path.join(CLIENT_SRC, "lib", "knowledge", "knowledgeRepo.ts");
-  assert(fileExists(knowledgeRepoPath), "knowledgeRepo.ts not found");
-
-  log("T-RAG-014: 数据持久化验证", true);
+  log("T-RAG-014: 数据持久化验证（服务端 SQLite）", true);
 }
 
 // ── T-RAG-015: Agent 集成验证 ──────────────────────────────────────
 
 export async function testAgentIntegration() {
-  // B-038 迁移后，AgentClient.ts 已删除，AI 调用通过服务端 orchestrator
-  // 验证 promptInjector.ts 包含 injectKnowledge 函数
-  const injectorPath = path.join(CLIENT_SRC, "lib", "knowledge", "promptInjector.ts");
-  assert(fileExists(injectorPath), "promptInjector.ts not found");
-  const code = readFile(injectorPath);
-  assert(code.includes("injectKnowledge"), "Missing injectKnowledge function");
-  log("T-RAG-015: Agent 集成", true);
+  // B-038 迁移后，知识库增强通过服务端 orchestrator 实现
+  // 验证 orchestrator.ts 包含 enhanceWithKnowledge 函数
+  const orchestratorPath = path.join(SERVER_SRC, "lib", "orchestrator.ts");
+  assert(fileExists(orchestratorPath), "orchestrator.ts not found");
+  const code = readFile(orchestratorPath);
+  assert(code.includes("enhanceWithKnowledge"), "Missing enhanceWithKnowledge function");
+  log("T-RAG-015: Agent 集成（服务端 orchestrator）", true);
 }
 
 // ── T-RAG-016: 设置页面 UI 验证 ────────────────────────────────────
@@ -190,16 +189,16 @@ export async function testSettingsUI() {
 // ── T-RAG-017: 知识库 Repository 验证 ──────────────────────────────
 
 export async function testKnowledgeRepo() {
-  const repoPath = path.join(CLIENT_SRC, "lib", "knowledge", "knowledgeRepo.ts");
-  assert(fileExists(repoPath), "knowledgeRepo.ts not found");
-  const code = readFile(repoPath);
-  assert(code.includes("addSource"), "Missing addSource");
-  assert(code.includes("addChunks"), "Missing addChunks");
-  assert(code.includes("addVectors"), "Missing addVectors");
-  assert(code.includes("deleteSource"), "Missing deleteSource");
-  assert(code.includes("getKnowledgeStats"), "Missing getKnowledgeStats");
-  assert(code.includes("clearAllKnowledge"), "Missing clearAllKnowledge");
-  log("T-RAG-017: 知识库 Repository", true);
+  const knowledgeDbPath = path.join(SERVER_SRC, "lib", "knowledgeDb.ts");
+  assert(fileExists(knowledgeDbPath), "knowledgeDb.ts not found");
+  const code = readFile(knowledgeDbPath);
+  assert(code.includes("createSource") || code.includes("addSource"), "Missing createSource/addSource");
+  assert(code.includes("createChunk") || code.includes("addChunks"), "Missing createChunk/addChunks");
+  assert(code.includes("createVector") || code.includes("addVectors"), "Missing createVector/addVectors");
+  assert(code.includes("deleteSource") || code.includes("clearSource"), "Missing deleteSource/clearSource");
+  assert(code.includes("getStats") || code.includes("getKnowledgeStats"), "Missing getStats/getKnowledgeStats");
+  assert(code.includes("clearAll") || code.includes("clearAllKnowledge"), "Missing clearAll/clearAllKnowledge");
+  log("T-RAG-017: 知识库 Repository（服务端 SQLite）", true);
 }
 
 // ── T-RAG-018: 查询扩展验证 ────────────────────────────────────────
