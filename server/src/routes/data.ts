@@ -218,6 +218,58 @@ dataRouter.put("/data/:store/:id", express.json(), (req, res) => {
   }
 });
 
+/** PATCH /api/data/:store/:id — 部分更新记录（deep merge），仅 settings store 支持 */
+dataRouter.patch("/data/:store/:id", express.json(), (req, res) => {
+  try {
+    const storeParsed = storeNameSchema.safeParse(req.params.store);
+    const idParsed = recordIdSchema.safeParse(req.params.id);
+    if (!storeParsed.success || !idParsed.success) {
+      const issues = [...(storeParsed.success ? [] : storeParsed.error.issues), ...(idParsed.success ? [] : idParsed.error.issues)];
+      res.status(400).json({ ok: false, error: issues.map(i => i.message).join("; ") });
+      return;
+    }
+    const store = storeParsed.data;
+    const id = idParsed.data;
+
+    if (store !== "settings") {
+      res.status(405).json({ ok: false, error: "PATCH only supported for settings store" });
+      return;
+    }
+
+    const db = getSyncDb();
+    const row = db.prepare("SELECT data FROM sync_data WHERE store_name = ? AND record_id = ?").get(store, id) as { data: string } | undefined;
+
+    let existing: Record<string, unknown> = {};
+    if (row) {
+      try { existing = JSON.parse(row.data); } catch { /* ignore */ }
+    }
+
+    const patch = req.body as Record<string, unknown>;
+    // Deep merge: 顶层字段用 patch 覆盖，数组字段直接替换
+    const merged: Record<string, unknown> = { ...existing };
+    for (const [key, value] of Object.entries(patch)) {
+      if (key === "id") continue; // id 不覆盖
+      if (Array.isArray(value)) {
+        merged[key] = value; // 数组直接替换
+      } else if (value && typeof value === "object" && !Array.isArray(value) && existing[key] && typeof existing[key] === "object" && !Array.isArray(existing[key])) {
+        merged[key] = { ...(existing[key] as Record<string, unknown>), ...value }; // 对象 deep merge
+      } else {
+        merged[key] = value; // 标量直接替换
+      }
+    }
+
+    db.prepare("INSERT OR REPLACE INTO sync_data (store_name, record_id, data, updated_at) VALUES (?, ?, ?, datetime('now'))")
+      .run(store, id, JSON.stringify(merged));
+
+    writeAudit({ op: "UPDATE", store, recordId: id, caller: req.header("X-Caller") ?? "unknown", dataBefore: existing, dataAfter: patch, result: "OK (PATCH)" });
+
+    res.json({ ok: true, id });
+  } catch (err) {
+    logger.error("Data patch error: " + errMsg(err));
+    res.status(500).json({ ok: false, error: errMsg(err) });
+  }
+});
+
 /** DELETE /api/data/:store/:id — 删除记录 */
 dataRouter.delete("/data/:store/:id", (req, res) => {
   try {

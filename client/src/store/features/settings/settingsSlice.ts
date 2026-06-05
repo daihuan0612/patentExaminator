@@ -3,7 +3,7 @@ import type { AppMode } from "@shared/types/domain";
 import type { AppSettings, ProviderErrorMessage } from "@shared/types/agents";
 import type { KnowledgeConfig } from "@shared/types/knowledge";
 import { DEFAULT_KNOWLEDGE_CONFIG } from "@shared/types/knowledge";
-import { getById, create as dbCreate } from "../../../lib/repos";
+import { getById, create as dbCreate, patch as dbPatch } from "../../../lib/repos";
 import { waitForServerReady } from "../../../lib/serverReady";
 import { createLogger } from "../../../lib/logger";
 import { idbWriteGuard } from "../../../lib/idbWriteGuard";
@@ -81,6 +81,14 @@ async function readSettings(caller: string): Promise<AppSettings> {
 function writeSettings(settings: AppSettings, caller: string): void {
   dbCreate("settings", { ...settings, id: SETTINGS_ID }, caller).catch((e) => {
     log("Server write failed:", e);
+    idbWriteGuard("settings")(e);
+  });
+}
+
+/** 部分更新 — 只写指定字段，服务器 deep merge，不会覆盖其他字段 */
+function patchSettings(partial: Partial<AppSettings>, caller: string): void {
+  dbPatch("settings", SETTINGS_ID, partial, caller).catch((e) => {
+    log("Server patch failed:", e);
     idbWriteGuard("settings")(e);
   });
 }
@@ -193,7 +201,8 @@ export const createSettingsSlice = (
       const messages = prev.settings.providerErrorMessages ?? [];
       const entry: ProviderErrorMessage = { ...error, id };
       const updated = { ...prev.settings, providerErrorMessages: [entry, ...messages].slice(0, 50) };
-      writeSettings(updated, "addProviderError");
+      // BUG-162: 用 patchSettings 只写 providerErrorMessages 字段，不覆盖其他字段
+      patchSettings({ providerErrorMessages: updated.providerErrorMessages }, "addProviderError");
       return { settings: updated };
     });
   },
@@ -201,7 +210,8 @@ export const createSettingsSlice = (
     if (!_get().isInitialized) return;
     set((prev) => {
       const next = { ...prev.settings, knowledge: config };
-      writeSettings(next, "updateKnowledgeConfig");
+      // BUG-162: 用 patchSettings 只写 knowledge 字段，不覆盖其他字段
+      patchSettings({ knowledge: config }, "updateKnowledgeConfig");
       return { settings: next };
     });
   },

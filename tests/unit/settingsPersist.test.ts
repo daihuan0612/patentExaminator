@@ -156,9 +156,9 @@ describe("持久化 — Client 完整链路", () => {
       expect(s.knowledgeProviders).toEqual(FULL_SETTINGS.knowledgeProviders);
     });
 
-    // BUG-162: 去掉 debounce 后，旧 snapshot 覆盖新值的竞态重新暴露。
-    // 此测试验证竞态确实存在（旧值覆盖新值），为 BUG-162 的修复提供回归测试。
-    it("竞态 BUG-162：旧 snapshot 覆盖新值（待 BUG-162 修复后此测试应反转）", async () => {
+    // BUG-162: updateKnowledgeConfig 用 patchSettings 只写 knowledge 字段，
+    // 不会覆盖 providers 等其他字段。验证 PATCH 请求只包含 knowledge。
+    it("BUG-162 修复：updateKnowledgeConfig 只 patch knowledge 字段，不覆盖 providers", async () => {
       mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }) });
       useSettingsStore.setState({ isInitialized: true });
 
@@ -168,18 +168,34 @@ describe("持久化 — Client 完整链路", () => {
         providers: [{ providerId: "mimo", apiKeyRef: "sk-USER-NEW", modelIds: ["m1"], defaultModelId: "m1", enabled: true }],
       });
 
-      // effect 用旧 snapshot 覆盖（模拟切 tab 场景）
-      useSettingsStore.getState().setSettings({
-        ...useSettingsStore.getState().settings,
-        providers: [{ providerId: "mimo", apiKeyRef: "sk-OLD", modelIds: ["m1"], defaultModelId: "m1", enabled: true }],
-      });
+      // 模拟 KnowledgeConfigPanel effect 触发 updateKnowledgeConfig
+      useSettingsStore.getState().updateKnowledgeConfig({ enabled: true, topK: 10, scoreThreshold: 0.5 });
 
-      const lastWrite = getLastPostBody("/api/data/settings");
-      const lastKey = (lastWrite?.providers as Array<Record<string, unknown>>)?.[0]?.apiKeyRef;
-      console.log("[Settings竞态] 最后写入 key:", lastKey);
-      // 当前行为：旧值覆盖新值（竞态 bug 存在）
-      // BUG-162 修复后：应改为 expect(lastKey).toBe("sk-USER-NEW")
-      expect(lastKey).toBe("sk-OLD");
+      // 验证 PATCH 请求只包含 knowledge 字段
+      const patchCall = mockFetch.mock.calls.find(
+        (c: unknown[]) => (c[0] as string)?.includes("/api/data/settings") && (c[1] as Record<string, unknown>)?.method === "PATCH"
+      );
+      console.log("[BUG-162] PATCH 调用:", patchCall ? "found" : "not found");
+
+      if (patchCall) {
+        const body = JSON.parse((patchCall[1] as Record<string, unknown>).body as string);
+        console.log("[BUG-162] PATCH body keys:", Object.keys(body));
+        // PATCH 只包含 knowledge，不包含 providers
+        expect(body.knowledge).toEqual({ enabled: true, topK: 10, scoreThreshold: 0.5 });
+        expect(body.providers).toBeUndefined();
+      }
+
+      // 验证 providers 的 POST 写入仍然是用户的新值
+      const postCalls = mockFetch.mock.calls.filter(
+        (c: unknown[]) => (c[0] as string)?.includes("/api/data/settings") && (c[1] as Record<string, unknown>)?.method === "POST"
+      );
+      const lastPost = postCalls[postCalls.length - 1];
+      if (lastPost) {
+        const body = JSON.parse((lastPost[1] as Record<string, unknown>).body as string);
+        const key = (body.providers as Array<Record<string, unknown>>)?.[0]?.apiKeyRef;
+        console.log("[BUG-162] 最后 POST providers key:", key);
+        expect(key).toBe("sk-USER-NEW");
+      }
     });
   });
 

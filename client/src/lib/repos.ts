@@ -65,6 +65,17 @@ export async function create<T extends { id: string }>(store: string, record: T,
   if (!res.ok) throw new Error(`Failed to create ${store}: ${res.status}`);
 }
 
+export async function patch<T>(store: string, id: string, data: Partial<T>, caller?: string): Promise<void> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (caller) headers["X-Caller"] = caller;
+  const res = await fetch(`${API_BASE}/${store}/${id}`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Failed to patch ${store}/${id}: ${res.status}`);
+}
+
 export async function update<T>(store: string, id: string, data: T): Promise<void> {
   const res = await fetch(`${API_BASE}/${store}/${id}`, {
     method: "PUT",
