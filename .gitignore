@@ -38,6 +38,9 @@ opencode.json
 # Sync database (local only)
 data/
 
+# ML model cache (cross-encoder reranker)
+server/models/
+
 # Legal reference documents (knowledge base, too large for git)
 docs/专利*.pdf
 docs/专利*.txt
@@ -47,3 +50,4 @@ docs/*汇编*.pdf
 docs/*对照表*.pdf
 docs/国家知识产权局*.pdf
 docs/URL在线网页知识库.txt
+docs/rag-finetune-plan.md

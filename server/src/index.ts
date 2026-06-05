@@ -106,6 +106,8 @@ if (fs.existsSync(clientDist)) {
 
 const server = app.listen(PORT, () => {
   logger.info(`Server listening on http://localhost:${PORT}`);
+  // BUG-141: 异步预加载 cross-encoder reranker 模型（不阻塞启动）
+  import("./lib/reranker.js").then(({ preloadCrossEncoder }) => preloadCrossEncoder()).catch(() => {});
 });
 
 function shutdown() {

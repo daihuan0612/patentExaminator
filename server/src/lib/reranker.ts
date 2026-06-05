@@ -8,6 +8,8 @@
  */
 
 import { logger } from "./logger.js";
+import path from "path";
+import { fileURLToPath } from "url";
 
 export interface RerankConfig {
   semanticWeight: number;
@@ -151,6 +153,8 @@ let crossEncoderLoading = false;
 let crossEncoderFailed = false;
 
 const RERANKER_MODEL = "Xenova/bge-reranker-v2-m3";
+const LOAD_TIMEOUT_MS = 10_000;
+const MODEL_CACHE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../models");
 
 /** 获取 Cross-Encoder 模型（懒加载，失败后不再重试） */
 async function getCrossEncoder(): Promise<unknown> {
@@ -167,11 +171,27 @@ async function getCrossEncoder(): Promise<unknown> {
   crossEncoderLoading = true;
   try {
     const { pipeline } = await import("@xenova/transformers");
+
+    // 优先从本地缓存加载，失败再尝试远程下载
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    crossEncoderModel = await (pipeline as any)("text-classification", RERANKER_MODEL, {
+    const loadModel = async (localOnly: boolean) => (pipeline as any)("text-classification", RERANKER_MODEL, {
       quantized: true,
+      cache_dir: MODEL_CACHE_DIR,
+      local_files_only: localOnly,
     });
-    logger.info(`Cross-encoder reranker loaded: ${RERANKER_MODEL}`);
+
+    const loadWithTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
+      Promise.race([promise, new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`Cross-encoder 加载超时 (${ms}ms)`)), ms))]);
+
+    try {
+      crossEncoderModel = await loadWithTimeout(loadModel(true), LOAD_TIMEOUT_MS);
+      logger.info(`Cross-encoder reranker loaded from local cache: ${MODEL_CACHE_DIR}`);
+    } catch {
+      // 本地缓存不存在或加载超时，尝试远程下载（同样有超时）
+      logger.info(`Cross-encoder local cache miss, attempting remote download...`);
+      crossEncoderModel = await loadWithTimeout(loadModel(false), LOAD_TIMEOUT_MS * 3);
+      logger.info(`Cross-encoder reranker downloaded and loaded: ${RERANKER_MODEL}`);
+    }
     return crossEncoderModel;
   } catch (err) {
     logger.warn(`Failed to load cross-encoder reranker: ${err}`);
@@ -180,6 +200,13 @@ async function getCrossEncoder(): Promise<unknown> {
   } finally {
     crossEncoderLoading = false;
   }
+}
+
+/** 服务器启动时异步预加载 cross-encoder 模型（不阻塞启动） */
+export function preloadCrossEncoder(): void {
+  getCrossEncoder().then((model) => {
+    if (model) logger.info("[Startup] Cross-encoder reranker preloaded successfully");
+  }).catch(() => { /* 已在 getCrossEncoder 内处理 */ });
 }
 
 interface CrossEncoderInput {
