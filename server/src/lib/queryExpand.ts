@@ -1,5 +1,5 @@
 /**
- * 查询扩展模块 — 跨语言扩展 + 法律同义词 + 法条图谱扩展
+ * 查询扩展模块 — 跨语言扩展 + 法律同义词 + 法条图谱扩展 + Multi-Query
  * bg-71: 从客户端迁移到服务端，统一检索流程
  */
 
@@ -169,4 +169,76 @@ function expandQueryWithGraph(query: string): string {
 /** 组合所有扩展策略：跨语言 → 法律同义词 → 法条图谱 */
 export function expandQueryFull(query: string): string {
   return expandCrossLanguage(expandQuery(expandQueryWithGraph(query)));
+}
+
+// ── Multi-Query 改写 ──────────────────────────────────────
+
+/** 核心关键词提取 */
+function extractKeywords(query: string): string[] {
+  const keywords: string[] = [];
+  // 中文关键词（2字以上）
+  const zhWords = query.match(/[一-鿿]{2,}/g) ?? [];
+  keywords.push(...zhWords);
+  // 英文关键词（3字母以上）
+  const enWords = query.match(/[a-zA-Z]{3,}/g) ?? [];
+  keywords.push(...enWords.map((w) => w.toLowerCase()));
+  return [...new Set(keywords)];
+}
+
+/** 法律同义词替换 */
+function getSynonyms(term: string): string[] {
+  const synonymMap: Record<string, string[]> = {
+    "需要": ["应当", "必须", "需要"],
+    "提交": ["递交", "提出", "提交"],
+    "文件": ["材料", "文书", "文件"],
+    "条件": ["要求", "条件", "资格"],
+    "程序": ["流程", "步骤", "程序"],
+    "规定": ["规定", "要求", "规范"],
+    "申请": ["申请", "请求", "提请"],
+    "审查": ["审查", "审核", "审定"],
+    "驳回": ["驳回", "拒绝", "否决"],
+    "复审": ["复审", "复核", "重新审查"],
+  };
+  return synonymMap[term] ?? [term];
+}
+
+/**
+ * Multi-Query 改写：将原始查询改写为多个子查询
+ *
+ * 策略：
+ * 1. 原始查询（保留完整语义）
+ * 2. 核心关键词组合（提取关键术语）
+ * 3. 同义词替换版本（扩展召回）
+ */
+export function generateMultiQueries(query: string): string[] {
+  const queries = new Set<string>();
+
+  // 1. 原始查询
+  queries.add(query);
+
+  // 2. 核心关键词组合
+  const keywords = extractKeywords(query);
+  if (keywords.length > 1) {
+    queries.add(keywords.join(" "));
+  }
+
+  // 3. 同义词替换版本
+  if (keywords.length > 0) {
+    const synonyms = keywords.flatMap((kw) => getSynonyms(kw));
+    const synonymQuery = [...new Set(synonyms)].join(" ");
+    if (synonymQuery !== query) {
+      queries.add(synonymQuery);
+    }
+  }
+
+  // 4. 缩短版本（去掉虚词）
+  const shortened = query
+    .replace(/[的了是在和有不这我他她它们那被从到也就都而及与或但如所之等将已可对于其上中为以因并地要会能来去]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (shortened.length >= 4 && shortened !== query) {
+    queries.add(shortened);
+  }
+
+  return [...queries];
 }

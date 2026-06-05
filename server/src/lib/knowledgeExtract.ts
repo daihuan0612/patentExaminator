@@ -46,7 +46,7 @@ async function extractPdf(buffer: Buffer): Promise<ExtractionResult> {
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      const pageText = content.items.map((item) => ("str" in item ? item.str : "")).join(" ");
+      const pageText = reconstructParagraphs(content.items);
       texts.push(pageText);
     }
     return { text: texts.join("\n\n"), mediaType: "text" };
@@ -54,6 +54,72 @@ async function extractPdf(buffer: Buffer): Promise<ExtractionResult> {
     logger.warn(`PDF extraction failed: ${err}, falling back to raw text`);
     return { text: buffer.toString("utf-8"), mediaType: "text" };
   }
+}
+
+/** PDF 段落重建：基于文本项的垂直位置检测段落边界 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function reconstructParagraphs(items: any[]): string {
+  if (items.length === 0) return "";
+
+  const lines: Array<{ text: string; y: number }> = [];
+  let currentLine = "";
+  let lastY: number | null = null;
+  let lastEndX: number | null = null;
+
+  for (const item of items) {
+    const text = "str" in item ? (item as { str: string }).str : "";
+    if (!text) continue;
+
+    // transform: [scaleX, skewX, skewY, scaleY, translateX, translateY]
+    const transform = "transform" in item ? (item as { transform: number[] }).transform : undefined;
+    const y = transform?.[5] ?? 0;
+    const x = transform?.[4] ?? 0;
+
+    // 检测换行：Y 坐标变化超过阈值
+    if (lastY !== null && Math.abs(y - lastY) > 2) {
+      if (currentLine.trim()) {
+        lines.push({ text: currentLine.trim(), y: lastY });
+      }
+      currentLine = text;
+    } else {
+      // 同一行：检查水平间距（检测列间距或段落缩进）
+      if (lastEndX !== null && x - lastEndX > 20) {
+        // 大间距：可能是新段落或列
+        currentLine += "  " + text;
+      } else {
+        currentLine += text;
+      }
+    }
+    lastY = y;
+    lastEndX = x + text.length * 5; // 估算文本结束位置
+  }
+  if (currentLine.trim() && lastY !== null) {
+    lines.push({ text: currentLine.trim(), y: lastY });
+  }
+
+  // 检测段落边界：基于行间距
+  const paragraphs: string[] = [];
+  let currentPara = "";
+  let lastLineY: number | null = null;
+
+  for (const line of lines) {
+    if (lastLineY !== null) {
+      const gap = lastLineY - line.y; // PDF 坐标系 Y 轴向下
+      if (gap > 15) {
+        // 大行间距：新段落
+        if (currentPara) paragraphs.push(currentPara);
+        currentPara = line.text;
+      } else {
+        currentPara += line.text;
+      }
+    } else {
+      currentPara = line.text;
+    }
+    lastLineY = line.y;
+  }
+  if (currentPara) paragraphs.push(currentPara);
+
+  return paragraphs.join("\n\n");
 }
 
 async function extractDocx(buffer: Buffer): Promise<ExtractionResult> {

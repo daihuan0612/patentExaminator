@@ -1,0 +1,147 @@
+{
+  "version": "1.0",
+  "description": "RAG 知识库检索质量评估数据集",
+  "created": "2026-06-05",
+  "questions": [
+    {
+      "id": "Q01",
+      "query": "复审需要提交哪些文件",
+      "expectedSources": ["专利法实施细则"],
+      "expectedArticles": ["第六十五条"],
+      "category": "程序性问题"
+    },
+    {
+      "id": "Q02",
+      "query": "新颖性的判断标准是什么",
+      "expectedSources": ["专利法", "审查指南"],
+      "expectedArticles": ["第二十二条"],
+      "category": "实体性问题"
+    },
+    {
+      "id": "Q03",
+      "query": "创造性三步法如何适用",
+      "expectedSources": ["审查指南"],
+      "expectedArticles": ["第二十二条"],
+      "category": "实体性问题"
+    },
+    {
+      "id": "Q04",
+      "query": "修改超范围的判断标准",
+      "expectedSources": ["专利法", "审查指南"],
+      "expectedArticles": ["第三十三条"],
+      "category": "实体性问题"
+    },
+    {
+      "id": "Q05",
+      "query": "说明书充分公开的要求",
+      "expectedSources": ["专利法", "审查指南"],
+      "expectedArticles": ["第二十六条"],
+      "category": "实体性问题"
+    },
+    {
+      "id": "Q06",
+      "query": "权利要求书应当满足什么条件",
+      "expectedSources": ["专利法", "审查指南"],
+      "expectedArticles": ["第二十六条"],
+      "category": "实体性问题"
+    },
+    {
+      "id": "Q07",
+      "query": "单一性的判断标准",
+      "expectedSources": ["专利法", "审查指南"],
+      "expectedArticles": ["第三十一条"],
+      "category": "实体性问题"
+    },
+    {
+      "id": "Q08",
+      "query": "不丧失新颖性宽限的情形",
+      "expectedSources": ["专利法"],
+      "expectedArticles": ["第二十四条"],
+      "category": "实体性问题"
+    },
+    {
+      "id": "Q09",
+      "query": "优先权的种类和条件",
+      "expectedSources": ["专利法"],
+      "expectedArticles": ["第二十九条"],
+      "category": "实体性问题"
+    },
+    {
+      "id": "Q10",
+      "query": "先申请原则的含义",
+      "expectedSources": ["专利法"],
+      "expectedArticles": ["第九条"],
+      "category": "实体性问题"
+    },
+    {
+      "id": "Q11",
+      "query": "复审请求的受理条件",
+      "expectedSources": ["专利法实施细则"],
+      "expectedArticles": ["第六十五条"],
+      "category": "程序性问题"
+    },
+    {
+      "id": "Q12",
+      "query": "驳回决定的种类",
+      "expectedSources": ["审查指南"],
+      "expectedArticles": [],
+      "category": "程序性问题"
+    },
+    {
+      "id": "Q13",
+      "query": "意见陈述书的答复期限",
+      "expectedSources": ["专利法实施细则"],
+      "expectedArticles": [],
+      "category": "程序性问题"
+    },
+    {
+      "id": "Q14",
+      "query": "实用新型专利的保护范围",
+      "expectedSources": ["专利法"],
+      "expectedArticles": ["第二条"],
+      "category": "实体性问题"
+    },
+    {
+      "id": "Q15",
+      "query": "外观设计专利的授权条件",
+      "expectedSources": ["专利法"],
+      "expectedArticles": ["第二十三条"],
+      "category": "实体性问题"
+    },
+    {
+      "id": "Q16",
+      "query": "专利权的保护期限",
+      "expectedSources": ["专利法"],
+      "expectedArticles": ["第四十二条"],
+      "category": "实体性问题"
+    },
+    {
+      "id": "Q17",
+      "query": "强制许可的条件和程序",
+      "expectedSources": ["专利法"],
+      "expectedArticles": ["第四十八条", "第四十九条", "第五十条"],
+      "category": "实体性问题"
+    },
+    {
+      "id": "Q18",
+      "query": "专利侵权的判定方法",
+      "expectedSources": ["最高法司法解释"],
+      "expectedArticles": [],
+      "category": "实体性问题"
+    },
+    {
+      "id": "Q19",
+      "query": "等同原则的适用条件",
+      "expectedSources": ["最高法司法解释"],
+      "expectedArticles": [],
+      "category": "实体性问题"
+    },
+    {
+      "id": "Q20",
+      "query": "现有技术抗辩的成立条件",
+      "expectedSources": ["专利法", "最高法司法解释"],
+      "expectedArticles": ["第六十七条"],
+      "category": "实体性问题"
+    }
+  ]
+}

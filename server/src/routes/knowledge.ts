@@ -26,6 +26,7 @@ import { logger } from "../lib/logger.js";
 import { crossEncoderRerank } from "../lib/reranker.js";
 import { invalidateBM25Index } from "../lib/hybridSearch.js";
 import { expandQueryFull } from "../lib/queryExpand.js";
+import { chunkByDocumentType } from "../lib/legalChunker.js";
 import { validateExternalUrl, BlockedUrlError } from "../lib/urlValidation.js";
 import { knowledgeSearchInputSchema, knowledgeProviderTestInputSchema, knowledgeImportUrlInputSchema, embeddingConfigSchema, recordIdSchema } from "../../../shared/src/schemas/api-input.schema.js";
 
@@ -144,12 +145,6 @@ function classifyDocument(fileName: string, text: string): string {
   return "其他";
 }
 
-/** 法条引用提取 */
-function extractArticleRefs(text: string): string[] {
-  const refs = text.match(/第[一二三四五六七八九十百千零\d]+条(?:第[一二三四五六七八九十百千零\d]+款)?/g);
-  return [...new Set(refs ?? [])];
-}
-
 /** 噪声检测 */
 function isNoise(text: string): boolean {
   const t = text.trim();
@@ -194,118 +189,6 @@ function preprocessText(text: string, _fileName: string): string {
   result = normalizeDate(result);        // 日期规范化
   result = normalizeWidth(result);       // 全角转半角
   result = normalizeTraditional(result); // 繁简转换
-  return result;
-}
-
-// ── 切片引擎（含合并/拆分/重叠/上下文补充） ──────────
-
-function simpleChunk(text: string, fileName: string): Array<{ text: string; metadata: Record<string, unknown> }> {
-  const rawChunks: Array<{ text: string; metadata: Record<string, unknown> }> = [];
-  const lines = text.split("\n");
-  let current: string[] = [];
-  let sectionId = "";
-
-  for (const line of lines) {
-    const sectionMatch = line.match(/^(第[一二三四五六七八九十百千\d]+[部分章节条款]|[一二三四五六七八九十]+\s*[、.])/);
-    const articleMatch = line.match(/^第[一二三四五六七八九十百千零\d]+条/);
-
-    if ((sectionMatch || articleMatch) && current.length > 0 && current.join("\n").trim().length >= 20) {
-      rawChunks.push({
-        text: current.join("\n").trim(),
-        metadata: { fileName, mediaType: "text", sectionId },
-      });
-      current = [];
-      sectionId = line.trim().slice(0, 50);
-    }
-    current.push(line);
-  }
-
-  if (current.length > 0 && current.join("\n").trim().length >= 20) {
-    rawChunks.push({
-      text: current.join("\n").trim(),
-      metadata: { fileName, mediaType: "text", sectionId },
-    });
-  }
-
-  // 合并过小 chunk + 拆分过大 chunk
-  const merged = mergeAndSplitChunks(rawChunks, 200, 2000);
-
-  // 上下文补充：prepend 章节标题
-  const enriched = merged.map((chunk) => {
-    const sid = chunk.metadata.sectionId as string;
-    if (sid && !chunk.text.startsWith(sid)) {
-      return { ...chunk, text: `【${sid}】\n${chunk.text}` };
-    }
-    return chunk;
-  });
-
-  // 重叠窗口：相邻 chunk 保留 80 字重叠
-  return addOverlap(enriched, 80);
-}
-
-/** 合并过小 chunk，拆分过大 chunk */
-function mergeAndSplitChunks(
-  chunks: Array<{ text: string; metadata: Record<string, unknown> }>,
-  minSize: number,
-  maxSize: number
-): Array<{ text: string; metadata: Record<string, unknown> }> {
-  // 合并过小
-  const merged: Array<{ text: string; metadata: Record<string, unknown> }> = [];
-  let pending: { text: string; metadata: Record<string, unknown> } | null = null;
-
-  for (const chunk of chunks) {
-    if (!pending) {
-      pending = { ...chunk };
-    } else if (pending.text.length < minSize) {
-      pending.text += "\n\n" + chunk.text;
-    } else {
-      merged.push(pending);
-      pending = { ...chunk };
-    }
-  }
-  if (pending) merged.push(pending);
-
-  // 拆分过大
-  const result: Array<{ text: string; metadata: Record<string, unknown> }> = [];
-  for (const chunk of merged) {
-    if (chunk.text.length <= maxSize) {
-      result.push(chunk);
-    } else {
-      const paragraphs = chunk.text.split("\n\n");
-      let current = "";
-      for (const para of paragraphs) {
-        if (current.length + para.length > maxSize && current.length > 0) {
-          result.push({ text: current.trim(), metadata: chunk.metadata });
-          current = para;
-        } else {
-          current += (current ? "\n\n" : "") + para;
-        }
-      }
-      if (current.trim()) {
-        result.push({ text: current.trim(), metadata: chunk.metadata });
-      }
-    }
-  }
-  return result;
-}
-
-/** 重叠窗口：相邻 chunk 保留 overlapSize 字符的重叠 */
-function addOverlap(
-  chunks: Array<{ text: string; metadata: Record<string, unknown> }>,
-  overlapSize: number
-): Array<{ text: string; metadata: Record<string, unknown> }> {
-  if (chunks.length <= 1 || overlapSize <= 0) return chunks;
-
-  const first = chunks[0];
-  if (!first) return chunks;
-  const result = [first];
-  for (let i = 1; i < chunks.length; i++) {
-    const prev = chunks[i - 1];
-    const curr = chunks[i];
-    if (!prev || !curr) continue;
-    const overlap = prev.text.slice(-overlapSize);
-    result.push({ ...curr, text: overlap + curr.text });
-  }
   return result;
 }
 
@@ -372,27 +255,31 @@ knowledgeRouter.post("/knowledge/upload", upload.single("file"), async (req, res
     logger.info(`[${fileName}] 预处理: ${extraction.text.length} → ${cleanedText.length} 字符`);
     sendEvent({ step: "preprocessing", stepNum: 2, totalSteps: TOTAL_STEPS, done: true });
 
-    // Step 3/5: 切片
+    // Step 3/5: 切片（法律文本按条切分，保留层级元数据）
     sendEvent({ step: "chunking", stepNum: 3, totalSteps: TOTAL_STEPS, message: "切片处理中..." });
-    const rawChunks = simpleChunk(cleanedText, fileName);
-
-    // Step 4/5: 噪声过滤 + 乱码过滤 + Chunk 级去重 + 元数据增强
     const docCategory = classifyDocument(fileName, cleanedText);
+    const legalChunks = chunkByDocumentType(cleanedText, docCategory, {
+      fileName,
+      documentCategory: docCategory,
+    });
+
+    // Step 4/5: 噪声过滤 + 乱码过滤 + Chunk 级去重
     const dedupHashes = new Set<string>();
-    const filteredChunks: typeof rawChunks = [];
-    for (const rc of rawChunks) {
+    const filteredChunks: Array<{ text: string; metadata: Record<string, unknown>; parentId?: string | undefined }> = [];
+    for (const rc of legalChunks) {
       if (isNoise(rc.text) || isGarbled(rc.text)) continue;
       const hash = crypto.createHash("sha256").update(rc.text.replace(/[\s　]/g, "").toLowerCase()).digest("hex"); // eslint-disable-line no-irregular-whitespace
       if (dedupHashes.has(hash)) continue;
       dedupHashes.add(hash);
-      filteredChunks.push(rc);
+      const entry: { text: string; metadata: Record<string, unknown>; parentId?: string | undefined } = {
+        text: rc.text,
+        metadata: rc.metadata as unknown as Record<string, unknown>,
+      };
+      if (rc.parentId) entry.parentId = rc.parentId;
+      filteredChunks.push(entry);
     }
-    for (const chunk of filteredChunks) {
-      chunk.metadata.documentCategory = docCategory;
-      chunk.metadata.articleRefs = extractArticleRefs(chunk.text);
-    }
-    const noiseCount = rawChunks.length - filteredChunks.length;
-    logger.info(`[${fileName}] 文档分类: ${docCategory} | 切片: ${rawChunks.length} → ${filteredChunks.length} 条（去噪/去重 ${noiseCount}）`);
+    const noiseCount = legalChunks.length - filteredChunks.length;
+    logger.info(`[${fileName}] 文档分类: ${docCategory} | 切片: ${legalChunks.length} → ${filteredChunks.length} 条（去噪/去重 ${noiseCount}）`);
     if (filteredChunks[0]) {
       logger.info(`[${fileName}] 首条 chunk 预览: ${filteredChunks[0].text.slice(0, 100)}...`);
     }
@@ -412,14 +299,21 @@ knowledgeRouter.post("/knowledge/upload", upload.single("file"), async (req, res
       embedStatus: "processing",
     });
 
-    const chunks = filteredChunks.map((rc, i) => ({
-      id: `${sourceId}-c${i}`,
-      sourceId,
-      index: i,
-      text: rc.text,
-      strategy: "auto",
-      metadata: rc.metadata,
-    }));
+    const chunks = filteredChunks.map((rc, i) => {
+      const chunk: {
+        id: string; sourceId: string; index: number; text: string;
+        strategy: string; metadata: Record<string, unknown>; parentId?: string;
+      } = {
+        id: `${sourceId}-c${i}`,
+        sourceId,
+        index: i,
+        text: rc.text,
+        strategy: "auto",
+        metadata: rc.metadata,
+      };
+      if (rc.parentId) chunk.parentId = `${sourceId}-${rc.parentId}`;
+      return chunk;
+    });
     addChunks(chunks);
     sendEvent({ step: "storing", stepNum: 4, totalSteps: TOTAL_STEPS, done: true });
 
@@ -561,14 +455,15 @@ knowledgeRouter.post("/knowledge/import-url", express.json(), async (req, res) =
     const extraction = await extractFromUrl(url);
     const cleanedText = preprocessText(extraction.text, url);
     logger.info(`[URL:${url}] 预处理: ${extraction.text.length} → ${cleanedText.length} 字符`);
-    const rawChunks = simpleChunk(cleanedText, url);
     const docCategory = classifyDocument(url, cleanedText);
-    const filteredChunks = rawChunks.filter((rc) => !isNoise(rc.text));
-    for (const chunk of filteredChunks) {
-      chunk.metadata.documentCategory = docCategory;
-      chunk.metadata.articleRefs = extractArticleRefs(chunk.text);
-    }
-    logger.info(`[URL:${url}] 文档分类: ${docCategory} | 切片: ${rawChunks.length} → ${filteredChunks.length} 条`);
+    const legalChunks = chunkByDocumentType(cleanedText, docCategory, {
+      fileName: url,
+      documentCategory: docCategory,
+    });
+    const filteredChunks = legalChunks
+      .filter((rc) => !isNoise(rc.text))
+      .map((rc) => ({ text: rc.text, metadata: rc.metadata as unknown as Record<string, unknown> }));
+    logger.info(`[URL:${url}] 文档分类: ${docCategory} | 切片: ${legalChunks.length} → ${filteredChunks.length} 条`);
 
     addSource({
       id: sourceId,
@@ -758,6 +653,7 @@ knowledgeRouter.post("/knowledge/search", express.json(), async (req, res) => {
         if (!qVec) throw new Error("Failed to embed query");
         const queryVector = qVec;
         logger.info(`[Search] [Step 1] Embedding 完成: vector dim=${queryVector.length}`);
+        const allScores: Array<{ chunkId: string; score: number }> = [];
         for (const [chunkId, vec] of vectorMap) {
           const chunk = chunkMap.get(chunkId);
           if (!chunk) continue;
@@ -769,12 +665,19 @@ knowledgeRouter.post("/knowledge/search", express.json(), async (req, res) => {
             normB += (vec.vector[i] ?? 0) * (vec.vector[i] ?? 0);
           }
           const score = dot / (Math.sqrt(normA) * Math.sqrt(normB));
-          if (score >= 0.3) {
-            scores.push({ chunkId, score });
-          }
+          allScores.push({ chunkId, score });
         }
-        scores.sort((a, b) => b.score - a.score);
-        logger.info(`[Search] [Step 1] Vector search: ${scores.length} 结果 (threshold=0.3), top=${scores[0]?.score?.toFixed(4) ?? "N/A"}`);
+        allScores.sort((a, b) => b.score - a.score);
+
+        // 动态 threshold：top-K + 相对 threshold
+        const TOP_K = 15;
+        const RELATIVE_THRESHOLD = 0.7;
+        const topScore = allScores[0]?.score ?? 0;
+        const minScore = topScore * RELATIVE_THRESHOLD;
+        scores = allScores
+          .filter((s) => s.score >= minScore && s.score >= 0.1)
+          .slice(0, TOP_K);
+        logger.info(`[Search] [Step 1] Vector search: ${allScores.length} 全部 → ${scores.length} 结果 (dynamic threshold, top=${topScore.toFixed(4)}, min=${minScore.toFixed(4)})`);
       } catch (embedErr) {
         // bg-70: Embedding 失败时降级到纯 BM25，不返回 500
         logger.warn(`[Search] Embedding failed, falling back to pure BM25: ${embedErr}`);

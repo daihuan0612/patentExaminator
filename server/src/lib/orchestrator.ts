@@ -610,9 +610,9 @@ async function enhanceWithKnowledge(
     }
     logger.info(`[RAG] === 知识库增强开始 === agent=${agentType}, query="${query}"`);
 
-    const { hybridSearch } = await import("./hybridSearch.js");
-    const { getAllChunks, getAllVectors } = await import("./knowledgeDb.js");
-    const { expandQueryFull } = await import("./queryExpand.js");
+    const { hybridSearch, mmrDiversityRank } = await import("./hybridSearch.js");
+    const { getAllChunks, getAllVectors, getChunksWithParent } = await import("./knowledgeDb.js");
+    const { expandQueryFull, generateMultiQueries } = await import("./queryExpand.js");
 
     const allChunks = getAllChunks();
     const allVectors = getAllVectors();
@@ -630,7 +630,7 @@ async function enhanceWithKnowledge(
     const expandedQuery = expandQueryFull(query);
     logger.info(`[RAG] [Step 1] Query expansion: "${query}" → "${expandedQuery}"`);
 
-    // Step 2: Embedding Search
+    // Step 2: Embedding Search（动态 threshold：top-K + 相对 threshold）
     const vectorScores: Array<{ chunkId: string; score: number }> = [];
     if (embeddingConfig) {
       try {
@@ -639,6 +639,7 @@ async function enhanceWithKnowledge(
         logger.info(`[RAG] [Step 2] Embedding query: model=${emb.modelId}, vectorMap=${vectorMap.size} vectors`);
         const qVec = (await emb.embed([expandedQuery]))[0];
         if (qVec) {
+          const allScores: Array<{ chunkId: string; score: number }> = [];
           for (const [chunkId, vec] of vectorMap) {
             let dot = 0, normA = 0, normB = 0;
             for (let i = 0; i < qVec.length; i++) {
@@ -647,10 +648,20 @@ async function enhanceWithKnowledge(
               normB += (vec.vector[i] ?? 0) * (vec.vector[i] ?? 0);
             }
             const score = dot / (Math.sqrt(normA) * Math.sqrt(normB));
-            if (score >= 0.3) vectorScores.push({ chunkId, score });
+            allScores.push({ chunkId, score });
           }
-          vectorScores.sort((a, b) => b.score - a.score);
-          logger.info(`[RAG] [Step 2] Vector search: ${vectorScores.length} 结果 (threshold=0.3), top=${vectorScores[0]?.score?.toFixed(4) ?? "N/A"}`);
+          allScores.sort((a, b) => b.score - a.score);
+
+          // 动态 threshold：取 top-K，然后用相对 threshold 过滤低质量结果
+          const TOP_K = 15;
+          const RELATIVE_THRESHOLD = 0.7; // 相对于最高分
+          const topScore = allScores[0]?.score ?? 0;
+          const minScore = topScore * RELATIVE_THRESHOLD;
+          const filtered = allScores
+            .filter((s) => s.score >= minScore && s.score >= 0.1) // 绝对最低 0.1
+            .slice(0, TOP_K);
+          vectorScores.push(...filtered);
+          logger.info(`[RAG] [Step 2] Vector search: ${allScores.length} 全部 → ${vectorScores.length} 结果 (dynamic threshold, top=${topScore.toFixed(4)}, min=${minScore.toFixed(4)})`);
         }
       } catch (embErr) {
         logger.warn(`[RAG] [Step 2] Embedding 失败，降级到纯 BM25: ${embErr}`);
@@ -659,10 +670,30 @@ async function enhanceWithKnowledge(
       logger.info("[RAG] [Step 2] 未配置 embedding，跳过向量搜索");
     }
 
-    // Step 3: BM25 + Hybrid RRF
-    logger.info(`[RAG] [Step 3] BM25 + RRF 融合搜索 (topK=15)...`);
-    const hybridScores = hybridSearch(expandedQuery, vectorScores, 15);
-    logger.info(`[RAG] [Step 3] 搜索完成: ${hybridScores.length} 候选结果`);
+    // Step 3: BM25 + Hybrid RRF（Multi-Query 模式）
+    const multiQueries = generateMultiQueries(expandedQuery);
+    logger.info(`[RAG] [Step 3] Multi-Query: ${multiQueries.length} 个子查询`);
+
+    // 对每个子查询执行混合检索，合并结果（RRF 融合多个查询的结果）
+    const allHybridScores: Array<{ chunkId: string; score: number }> = [];
+    for (const subQuery of multiQueries) {
+      const subResults = hybridSearch(subQuery, vectorScores, 10);
+      allHybridScores.push(...subResults);
+    }
+
+    // 合并去重：同一 chunk 取最高分
+    const mergedScores = new Map<string, number>();
+    for (const s of allHybridScores) {
+      const existing = mergedScores.get(s.chunkId);
+      if (existing === undefined || s.score > existing) {
+        mergedScores.set(s.chunkId, s.score);
+      }
+    }
+    const hybridScores = [...mergedScores.entries()]
+      .map(([chunkId, score]) => ({ chunkId, score }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 15);
+    logger.info(`[RAG] [Step 3] Multi-Query 合并: ${allHybridScores.length} → ${hybridScores.length} 候选结果`);
 
     // Step 4: Reranking
     const topCandidates = hybridScores.slice(0, 10);
@@ -707,18 +738,27 @@ async function enhanceWithKnowledge(
       logger.info(`[RAG] [Step 4] Rerank 完成: ${reranked.length} 结果, top=${reranked[0]?.score?.toFixed(4) ?? "N/A"}`);
     }
 
-    // Step 5: Build citations
-    const topResults = rerankedScores.slice(0, 5);
+    // Step 4.5: MMR 多样性排序（避免返回过于相似的结果）
+    const chunkTextMap = new Map(allChunks.map(c => [c.id, c.text]));
+    const diverseResults = mmrDiversityRank(rerankedScores, chunkTextMap, 0.7, 5);
+    logger.info(`[RAG] [Step 4.5] MMR 多样性排序: ${rerankedScores.length} → ${diverseResults.length} 结果`);
+
+    // Step 5: Build citations（Parent-Child 模式：检索用 child，注入用 parent）
+    const topResults = diverseResults;
     if (topResults.length === 0) {
       logger.info("[RAG] 无结果，跳过增强");
       return { prompt, citations: [] };
     }
 
+    // 获取 parent chunk 文本（如果有 parent 则注入 parent 完整上下文）
+    const topChunkIds = topResults.map(r => r.chunkId);
+    const chunksWithParent = getChunksWithParent(topChunkIds);
+
     const contextPrefix = getAgentContext(agentType);
-    const parts = [prompt, "", contextPrefix, ""];
+    const parts = [prompt, "", contextPrefix, `以下法规段落与当前分析相关（${topResults.length}条）：`, ""];
     const citations: Array<{ source: string; score: number; excerpt: string }> = [];
 
-    logger.info(`[RAG] [Step 5] 构建 ${topResults.length} 条 citations...`);
+    logger.info(`[RAG] [Step 5] 构建 ${topResults.length} 条 citations（Parent-Child 模式）...`);
     for (let i = 0; i < topResults.length; i++) {
       const result = topResults[i];
       if (!result) continue;
@@ -728,12 +768,19 @@ async function enhanceWithKnowledge(
       try { metadata = JSON.parse(chunk.metadata) as Record<string, unknown>; } catch { /* ignore */ }
       const source = typeof metadata.fileName === "string" ? metadata.fileName : "unknown";
       const category = typeof metadata.documentCategory === "string" ? metadata.documentCategory : "未知";
-      const articleRefs = Array.isArray(metadata.articleRefs) ? (metadata.articleRefs as string[]).join(", ") : "无";
-      logger.info(`[RAG]   #${i + 1}: source="${source}" category="${category}" score=${result.score.toFixed(4)} refs=[${articleRefs}]`);
-      parts.push(`> 【来源：${source} · 相似度: ${result.score.toFixed(2)}】`);
-      for (const line of chunk.text.split("\n").slice(0, 10)) parts.push(`> ${line}`);
+      const article = typeof metadata.article === "string" ? metadata.article : "";
+      logger.info(`[RAG]   #${i + 1}: source="${source}" category="${category}" score=${result.score.toFixed(4)} article="${article}"`);
+
+      // Parent-Child 模式：注入 parent 完整文本（保留完整上下文）
+      const parentInfo = chunksWithParent.get(result.chunkId);
+      const injectText = parentInfo?.parentText ?? chunk.text;
+
+      // 结构化注入格式
+      const sourceLabel = article ? `《${source}》${article}` : `《${source}》`;
+      parts.push(`### ${i + 1}. ${sourceLabel}（相似度: ${result.score.toFixed(2)}）`);
+      for (const line of injectText.split("\n").slice(0, 15)) parts.push(line);
       parts.push("");
-      citations.push({ source, score: result.score, excerpt: chunk.text.slice(0, 100) });
+      citations.push({ source, score: result.score, excerpt: injectText.slice(0, 100) });
     }
 
     logger.info(`[RAG] === 检索完成 === ${citations.length} 条引用注入 prompt`);

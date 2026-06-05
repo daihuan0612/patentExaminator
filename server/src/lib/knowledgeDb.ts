@@ -84,6 +84,15 @@ function getKnowledgeDb(): Database.Database {
   // 创建 text_hash 索引以加速断点续传查询
   db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_text_hash ON kb_chunks(text_hash)`);
 
+  // 增量升级：为旧数据库添加 parent_id 列（Parent-Child Chunk 模式）
+  const currentColumns = db.prepare("PRAGMA table_info(kb_chunks)").all() as Array<{ name: string }>;
+  const hasParentId = currentColumns.some((col) => col.name === "parent_id");
+  if (!hasParentId) {
+    logger.info("[KnowledgeDB] Adding parent_id column to kb_chunks");
+    db.exec("ALTER TABLE kb_chunks ADD COLUMN parent_id TEXT");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_chunks_parent_id ON kb_chunks(parent_id)");
+  }
+
   logger.info(`Knowledge DB initialized at ${DB_PATH}`);
   return db;
 }
@@ -141,18 +150,18 @@ export function deleteSource(id: string): void {
 
 export function addChunks(chunks: Array<{
   id: string; sourceId: string; index: number; text: string;
-  strategy: string; metadata: Record<string, unknown>;
+  strategy: string; metadata: Record<string, unknown>; parentId?: string;
 }>): void {
   const db = getKnowledgeDb();
   const stmt = db.prepare(`INSERT OR REPLACE INTO kb_chunks
-    (id, source_id, idx, text, strategy, metadata, embedded, text_hash, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`);
+    (id, source_id, idx, text, strategy, metadata, embedded, text_hash, parent_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`);
   const now = new Date().toISOString();
   const tx = db.transaction(() => {
     for (const chunk of chunks) {
       const textHash = computeTextHash(chunk.text);
       stmt.run(chunk.id, chunk.sourceId, chunk.index, chunk.text,
-        chunk.strategy, JSON.stringify(chunk.metadata), textHash, now);
+        chunk.strategy, JSON.stringify(chunk.metadata), textHash, chunk.parentId ?? null, now);
     }
   });
   tx();
@@ -227,6 +236,47 @@ export function getChunksBySourceId(sourceId: string, limit = 20): Array<{
   return db.prepare("SELECT id, idx as `index`, text, metadata FROM kb_chunks WHERE source_id = ? ORDER BY idx LIMIT ?").all(sourceId, limit) as Array<{
     id: string; index: number; text: string; metadata: string;
   }>;
+}
+
+/** 获取 chunk 及其 parent chunk 的文本（用于 Parent-Child 注入） */
+export function getChunksWithParent(chunkIds: string[]): Map<string, { childText: string; parentText: string; metadata: string }> {
+  const db = getKnowledgeDb();
+  const result = new Map<string, { childText: string; parentText: string; metadata: string }>();
+
+  if (chunkIds.length === 0) return result;
+
+  // 批量查询 child chunks
+  const placeholders = chunkIds.map(() => "?").join(",");
+  const childRows = db.prepare(`
+    SELECT id, text, metadata, parent_id FROM kb_chunks WHERE id IN (${placeholders})
+  `).all(...chunkIds) as Array<{ id: string; text: string; metadata: string; parent_id: string | null }>;
+
+  // 收集所有 parent_id
+  const parentIds = [...new Set(childRows.map(r => r.parent_id).filter((id): id is string => id !== null))];
+
+  // 批量查询 parent chunks
+  const parentMap = new Map<string, string>();
+  if (parentIds.length > 0) {
+    const parentPlaceholders = parentIds.map(() => "?").join(",");
+    const parentRows = db.prepare(`
+      SELECT id, text FROM kb_chunks WHERE id IN (${parentPlaceholders})
+    `).all(...parentIds) as Array<{ id: string; text: string }>;
+    for (const row of parentRows) {
+      parentMap.set(row.id, row.text);
+    }
+  }
+
+  // 组装结果
+  for (const child of childRows) {
+    const parentText = child.parent_id ? (parentMap.get(child.parent_id) ?? child.text) : child.text;
+    result.set(child.id, {
+      childText: child.text,
+      parentText,
+      metadata: child.metadata,
+    });
+  }
+
+  return result;
 }
 
 // ── Vectors ─────────────────────────────────────────

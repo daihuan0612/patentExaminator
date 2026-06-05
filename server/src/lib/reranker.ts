@@ -25,6 +25,15 @@ const DEFAULT_CONFIG: RerankConfig = {
   depthWeight: 0.05,
 };
 
+/** 法律文本专用权重：法条引用匹配权重更高 */
+const LEGAL_CONFIG: RerankConfig = {
+  semanticWeight: 0.3,
+  keywordWeight: 0.2,
+  categoryWeight: 0.15,
+  articleRefWeight: 0.3,  // 法律文本中，法条引用匹配更重要
+  depthWeight: 0.05,
+};
+
 const CATEGORY_WEIGHTS: Record<string, number> = {
   "法律": 1.0,
   "行政法规": 0.9,
@@ -46,11 +55,20 @@ interface RerankOutput {
   score: number;
 }
 
+/** 根据文档类型获取 reranking 配置 */
+function getRerankConfig(metadata: Record<string, unknown>): RerankConfig {
+  const category = (metadata.documentCategory as string) ?? "其他";
+  if (["法律", "行政法规", "司法解释"].includes(category)) {
+    return LEGAL_CONFIG;
+  }
+  return DEFAULT_CONFIG;
+}
+
 /** 对检索结果进行本地重排序 */
 export function localRerank(
   results: RerankInput[],
   query: string,
-  config: RerankConfig = DEFAULT_CONFIG
+  config?: RerankConfig
 ): RerankOutput[] {
   logger.info(`[Rerank] localRerank 开始: ${results.length} 候选, query="${query.slice(0, 40)}..."`);
   if (results.length <= 1) {
@@ -58,6 +76,8 @@ export function localRerank(
     return results.map((r) => ({ chunkId: r.chunkId, score: r.score }));
   }
 
+  // 如果未指定配置，根据文档元数据自动选择
+  const effectiveConfig = config ?? (results[0]?.metadata ? getRerankConfig(results[0].metadata) : DEFAULT_CONFIG);
   const queryTerms = extractTerms(query);
 
   const scored = results.map((result) => {
@@ -88,11 +108,11 @@ export function localRerank(
 
     // 综合评分
     const finalScore =
-      s1 * config.semanticWeight +
-      s2 * config.keywordWeight +
-      s3 * config.categoryWeight +
-      s4 * config.articleRefWeight +
-      s5 * config.depthWeight;
+      s1 * effectiveConfig.semanticWeight +
+      s2 * effectiveConfig.keywordWeight +
+      s3 * effectiveConfig.categoryWeight +
+      s4 * effectiveConfig.articleRefWeight +
+      s5 * effectiveConfig.depthWeight;
 
     return { chunkId, score: finalScore };
   });
