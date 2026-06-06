@@ -28,7 +28,12 @@ vi.mock("@server/lib/logger.js", () => ({
 
 // B-042: 注入内存数据库，隔离生产库（必须在 import server routes 之前）
 import { resetSyncDbForTesting } from "@server/lib/syncDb.js";
-beforeAll(() => { resetSyncDbForTesting(":memory:"); });
+// BUG-171: knowledgeDb 测试隔离
+import { resetKnowledgeDbForTesting } from "@server/lib/knowledgeDb.js";
+beforeAll(() => {
+  resetSyncDbForTesting(":memory:");
+  resetKnowledgeDbForTesting(":memory:");
+});
 
 // ── Data routes ───────────────────────────────────────────────
 

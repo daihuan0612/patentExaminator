@@ -8,6 +8,7 @@
 
 | 版本 | 日期 | 变更摘要 | 影响范围 | 关联 commit |
 |------|------|---------|----------|-------------|
+| v0.1.0-r44 | 2026-06-06 | BUG-171: knowledgeDb 测试隔离 — 添加 resetKnowledgeDbForTesting() 和 closeKnowledgeDb() 导出，getKnowledgeDb() 支持 globalThis 注入测试路径；testDb.ts 添加 initKnowledgeSchema()；集成测试 beforeAll 注入 ":memory:" | knowledgeDb.ts, testDb.ts, globalSetup.ts, route-coverage.test.ts, agentPipeline.test.ts | — |
 | v0.1.0-r43 | 2026-06-05 | BUG-166: settings 持久化去掉 debounce + localStorage 中间层 — writeSettings 直接 POST 服务器 DB，readSettings 直接 GET；删除死代码 syncClient.ts；修复 Ctrl+C kill 服务器后配置丢失 | settingsSlice.ts, syncClient.ts(删除), settingsPersist.test.ts | — |
 | v0.1.0-r42 | 2026-06-04 | §9 测试架构全面更新：E2E 框架重构为统一入口+模块化子文件结构（e2e-shared/ 共享模块 + e2e/ 测试模块）、智能测试选择（--auto）、质量门禁（--check）、API Key 传递方式说明；删除 3 个临时设计文档（test-framework-refactor-plan.md、e2e-failure-report-2026-06-02.md、feat-042-implementation-review.md） | DESIGN.md §9 | — |
 | v0.1.0-r41 | 2026-06-02 | B-042: 测试数据库隔离机制 — 三层隔离架构（内存/临时文件/快照），syncDb.ts 添加 resetSyncDbForTesting() 支持测试注入；新建 tests/helpers/testDb.ts（数据库创建+CRUD 辅助）、tests/globalSetup.ts（全局清理）；重写 5 个被 skip 的集成测试（repositories/dbScenario/dbLogicChain/dbEdgeChain/chatPersistence），91 个测试用例全部通过；vitest.integration.config.ts 配置 globalSetup | syncDb.ts, tests/helpers/testDb.ts(新建), tests/globalSetup.ts(新建), vitest.integration.config.ts, 5 个集成测试文件 |
@@ -1143,7 +1144,7 @@ resolveFixture(req) → fixture key
 1. **Mock 零外发验证：** Mock 模式下服务端返回预置 fixture，不调用外部 API。
 2. **Schema 兼容：** Mock fixture 和真实 Provider 返回使用相同 JSON schema，通过 `safeParse` 统一校验。
 3. **Evaluation Set：** 9 条测试用例（G1/G2/G3 + A1/A2/A3 + E1/E2/E3），自动评分覆盖率/Citation准确率/区别特征准确率/时间轴分数。
-4. **测试数据库隔离（B-042）：** 集成测试使用 `tests/helpers/testDb.ts` 创建隔离的 SQLite 数据库（内存/临时文件/快照三种模式），通过 `syncDb.ts` 的 `resetSyncDbForTesting()` 注入测试路径，确保测试永远不访问 `data/patent-examiner.db`。全局 teardown（`tests/globalSetup.ts`）确保崩溃时也能清理临时文件。
+4. **测试数据库隔离（B-042 + BUG-171）：** 集成测试使用 `tests/helpers/testDb.ts` 创建隔离的 SQLite 数据库（内存/临时文件/快照三种模式）。syncDb 通过 `resetSyncDbForTesting()` 注入测试路径；knowledgeDb 通过 `resetKnowledgeDbForTesting()` 注入测试路径（`globalThis.__TEST_KNOWLEDGE_DB_PATH__`）。两者均确保测试永远不访问生产数据库。全局 teardown（`tests/globalSetup.ts`）确保崩溃时也能清理临时文件和全局状态。
 5. **API Key 严格隔离（ADR-007 + B-041）：** APP 用户 Key 只在设置页配置存入 server；开发者测试 Key 只来自 `.env`，通过请求体字段传递，两类 Key 互不读取。
 
 ### 9.3 评分公式

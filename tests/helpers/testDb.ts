@@ -156,6 +156,57 @@ function initSchema(db: Database.Database): void {
 }
 
 /**
+ * BUG-171: 初始化 knowledgeDb 表结构（与 knowledgeDb.ts 一致）
+ * 用于集成测试中 knowledgeDb 隔离场景
+ */
+export function initKnowledgeSchema(db: Database.Database): void {
+  db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = ON");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS kb_sources (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      format TEXT NOT NULL,
+      media_type TEXT NOT NULL,
+      size INTEGER DEFAULT 0,
+      file_hash TEXT,
+      source_url TEXT,
+      chunk_count INTEGER DEFAULT 0,
+      embed_status TEXT DEFAULT 'pending',
+      error TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS kb_chunks (
+      id TEXT PRIMARY KEY,
+      source_id TEXT NOT NULL,
+      idx INTEGER NOT NULL,
+      text TEXT NOT NULL,
+      strategy TEXT DEFAULT 'auto',
+      metadata TEXT DEFAULT '{}',
+      embedded INTEGER DEFAULT 0,
+      text_hash TEXT,
+      parent_id TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (source_id) REFERENCES kb_sources(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS kb_vectors (
+      chunk_id TEXT PRIMARY KEY,
+      vector TEXT NOT NULL,
+      model_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (chunk_id) REFERENCES kb_chunks(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_chunks_text_hash ON kb_chunks(text_hash);
+    CREATE INDEX IF NOT EXISTS idx_chunks_parent_id ON kb_chunks(parent_id);
+  `);
+}
+
+/**
  * 清理所有追踪的临时文件（全局 teardown 用）
  * 即使测试崩溃也会被 globalTeardown 调用
  */

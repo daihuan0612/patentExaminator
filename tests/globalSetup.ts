@@ -7,9 +7,18 @@
 import { cleanupAllTrackedFiles } from "./helpers/testDb.js";
 
 /** 全局 teardown：清理所有临时文件 */
-export function teardown(): void {
+export async function teardown(): Promise<void> {
   cleanupAllTrackedFiles();
 
   // 清理测试注入的全局变量
   delete (globalThis as Record<string, unknown>).__TEST_SYNC_DB_PATH__;
+
+  // BUG-171: 清理 knowledgeDb 全局状态
+  delete (globalThis as Record<string, unknown>).__TEST_KNOWLEDGE_DB_PATH__;
+  try {
+    const { closeKnowledgeDb } = await import("../server/src/lib/knowledgeDb.js");
+    closeKnowledgeDb();
+  } catch {
+    // 模块可能未加载，忽略
+  }
 }

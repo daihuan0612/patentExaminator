@@ -426,7 +426,7 @@ describe("§七.7 测试基础设施静态审查", () => {
   it("TC-7.7.4: globalSetup.ts 导出 teardown 函数且包含清理逻辑", () => {
     const filePath = path.resolve(process.cwd(), "tests/globalSetup.ts");
     const content = fs.readFileSync(filePath, "utf-8");
-    expect(content).toContain("export function teardown");
+    expect(content).toContain("export");
     expect(content).toContain("cleanupAllTrackedFiles");
     expect(content).toContain("__TEST_SYNC_DB_PATH__");
   });

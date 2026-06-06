@@ -8,19 +8,25 @@ import crypto from "crypto";
 import { logger } from "./logger.js";
 
 // 支持通过环境变量指定数据库路径（测试隔离）
-const DATA_DIR = process.env.KNOWLEDGE_DB_DIR ?? path.resolve(process.cwd(), "data");
-const DB_PATH = process.env.KNOWLEDGE_DB_PATH ?? path.join(DATA_DIR, "knowledge.db");
+// BUG-171: 测试模式下优先使用 globalThis 注入路径
+const _defaultDataDir = process.env.KNOWLEDGE_DB_DIR ?? path.resolve(process.cwd(), "data");
+const _defaultDbPath = process.env.KNOWLEDGE_DB_PATH ?? path.join(_defaultDataDir, "knowledge.db");
 
 let db: Database.Database | null = null;
 
 function getKnowledgeDb(): Database.Database {
   if (db) return db;
 
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  // BUG-171: 测试隔离 — 优先使用 globalThis 注入的路径
+  const injectedPath = (globalThis as Record<string, unknown>).__TEST_KNOWLEDGE_DB_PATH__ as string | undefined;
+  const dbPath = injectedPath ?? _defaultDbPath;
+  const dataDir = injectedPath ? path.dirname(injectedPath) : _defaultDataDir;
+
+  if (dbPath !== ":memory:" && !fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
   }
 
-  db = new Database(DB_PATH);
+  db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
 
   db.exec(`
@@ -93,7 +99,7 @@ function getKnowledgeDb(): Database.Database {
     db.exec("CREATE INDEX IF NOT EXISTS idx_chunks_parent_id ON kb_chunks(parent_id)");
   }
 
-  logger.info(`Knowledge DB initialized at ${DB_PATH}`);
+  logger.info(`Knowledge DB initialized at ${dbPath}`);
   return db;
 }
 
@@ -329,10 +335,20 @@ export function findDuplicateByHash(fileHash: string): { id: string; name: strin
   return db.prepare("SELECT id, name FROM kb_sources WHERE file_hash = ?").get(fileHash) as { id: string; name: string } | null;
 }
 
-/** 关闭并重置数据库连接（用于测试清理） */
-function _closeKnowledgeDb(): void {
+/** 关闭并重置数据库连接 */
+export function closeKnowledgeDb(): void {
   if (db) {
     db.close();
     db = null;
   }
+}
+
+/**
+ * BUG-171: 测试隔离 — 重置 knowledgeDb 到测试路径
+ * 在测试 beforeAll 中调用，注入 ":memory:" 或临时文件路径，
+ * 确保测试永远不写入生产 knowledge.db。
+ */
+export function resetKnowledgeDbForTesting(testPath: string): void {
+  closeKnowledgeDb();
+  (globalThis as Record<string, unknown>).__TEST_KNOWLEDGE_DB_PATH__ = testPath;
 }

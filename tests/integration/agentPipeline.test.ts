@@ -32,6 +32,9 @@ beforeAll(async () => {
   // B-042: 注入内存数据库，隔离生产库（必须在 import server routes 之前）
   const { resetSyncDbForTesting } = await import("@server/lib/syncDb.js");
   resetSyncDbForTesting(":memory:");
+  // BUG-171: knowledgeDb 测试隔离
+  const { resetKnowledgeDbForTesting } = await import("@server/lib/knowledgeDb.js");
+  resetKnowledgeDbForTesting(":memory:");
 
   // 动态导入服务器路由
   const { healthRouter } = await import("@server/routes/health.js");
