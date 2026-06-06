@@ -65,6 +65,7 @@ export {
   testMockFixtureNotFound,
   testResponseStructureValidation,
   testMalformedResponseHandling,
+  testExtractFromUrlValidation,
 } from "./schema-validation.mjs";
 
 // 知识库测试

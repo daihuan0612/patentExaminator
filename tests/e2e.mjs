@@ -91,6 +91,7 @@ import {
   testMockFixtureNotFound,
   testResponseStructureValidation,
   testMalformedResponseHandling,
+  testExtractFromUrlValidation,
   testKnowledgeUploadTxt,
   testKnowledgeUploadLargeFile,
   testKnowledgeUploadMd,
@@ -556,6 +557,7 @@ async function main() {
       console.log("\n--- Response Structure Validation ---");
       await maybe(testResponseStructureValidation);
       await maybe(testMalformedResponseHandling);
+      await maybe(testExtractFromUrlValidation);
 
       // Full pipeline
       setGroup("pipeline");

@@ -109,6 +109,11 @@ export const documentsExtractHtmlInputSchema = z.object({
   html: z.string().min(1, "html is required"),
 });
 
+// ── POST /api/documents/extract-from-url ─────────────────────
+export const documentsExtractFromUrlInputSchema = z.object({
+  url: z.string().url("url must be a valid URL"),
+});
+
 // ── POST /api/documents/parse-claims ─────────────────────────
 export const documentsParseClaimsInputSchema = z.object({
   text: z.string().min(1, "text is required"),

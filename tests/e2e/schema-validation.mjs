@@ -160,3 +160,19 @@ export async function testMalformedResponseHandling() {
   }
 }
 
+// ── BUG-172: extract-from-url 端点测试 ──────────────────────
+
+export async function testExtractFromUrlValidation() {
+  // 测试 1：无效 URL → 400
+  const res1 = await postJSON("/documents/extract-from-url", { url: "not-a-url" });
+  const data1 = await res1.json();
+  log("extract-from-url: invalid URL → 400", res1.status === 400,
+    `status=${res1.status}, error=${data1.error}`);
+
+  // 测试 2：缺少 url 字段 → 400
+  const res2 = await postJSON("/documents/extract-from-url", {});
+  const data2 = await res2.json();
+  log("extract-from-url: missing url → 400", res2.status === 400,
+    `status=${res2.status}, error=${data2.error}`);
+}
+

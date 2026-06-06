@@ -10,6 +10,7 @@ import path from "path";
 import { logger } from "../lib/logger.js";
 import {
   documentsExtractHtmlInputSchema,
+  documentsExtractFromUrlInputSchema,
   documentsParseClaimsInputSchema,
   documentsMatchCitationInputSchema,
   documentsBuildTextIndexInputSchema,
@@ -178,6 +179,33 @@ documentsRouter.post("/documents/extract-html", express.json(), async (req, res)
     });
   } catch (err) {
     logger.error("HTML extraction error: " + (err instanceof Error ? err.message : String(err)));
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+/** POST /api/documents/extract-from-url — 从 URL 抓取并提取文本 */
+documentsRouter.post("/documents/extract-from-url", express.json(), async (req, res) => {
+  try {
+    const parsed = documentsExtractFromUrlInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ ok: false, error: parsed.error.issues.map(i => i.message).join("; ") });
+      return;
+    }
+    const { url } = parsed.data;
+
+    logger.info(`URL extraction request: ${url}`);
+
+    const { extractFromUrl } = await import("../lib/knowledgeExtract.js");
+    const result = await extractFromUrl(url);
+
+    logger.info(`URL extraction completed: ${url} - ${result.text.length} chars, mediaType: ${result.mediaType}`);
+
+    res.json({
+      ok: true,
+      text: result.text,
+    });
+  } catch (err) {
+    logger.error("URL extraction error: " + (err instanceof Error ? err.message : String(err)));
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });

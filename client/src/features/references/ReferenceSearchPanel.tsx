@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
-import type { ReferenceDocument, SourceDocument } from "@shared/types/domain";
+import type { ReferenceDocument } from "@shared/types/domain";
 import type { SearchReferencesCandidate, SearchReferencesResponse } from "@shared/types/api";
 import { classifyReferenceDate } from "../../lib/dateRules";
 import { createLogger } from "../../lib/logger";
@@ -8,9 +8,10 @@ import { createLogger } from "../../lib/logger";
 const log = createLogger("ReferenceSearchPanel");
 import { TimelineStatusBadge } from "../../components/TimelineStatusBadge";
 import { useReferencesStore, useCaseStore, useSettingsStore } from "../../store";
-import { createDocument } from "../../lib/repos";
+import { updateDocument } from "../../lib/repos";
 import { getLatestSearchSession, createSearchSession, updateSearchSession } from "../../lib/repos";
 import { extractSearchTerms, searchWithTerms } from "../../lib/repos";
+import { extractFromUrl } from "../../lib/urlText";
 import { ErrorBanner } from "../../lib/errorDisplay";
 
 interface ReferenceSearchPanelProps {
@@ -27,7 +28,8 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
     searchStep, setSearchStep,
     searchSessionId, setSearchSessionId,
     providerResults, setProviderResults,
-    addSearchTerm, updateSearchTerm, removeSearchTerm
+    addSearchTerm, updateSearchTerm, removeSearchTerm,
+    updateReference
   } = useReferencesStore();
   const { references } = useReferencesStore();
   const { currentCase, updateWorkflowState } = useCaseStore();
@@ -249,11 +251,25 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
     if (!candidate) return;
     const controller = new AbortController();
     abortControllersRef.current.set(`accept-${candidateId}`, controller);
-    const timelineStatus = classifyReferenceDate(baselineDate, candidate.publicationDate, candidate.publicationDateConfidence);
     try {
-      await createDocument({ ...candidate, timelineStatus } as SourceDocument);
-      if (!isMountedRef.current) return;
       acceptCandidate(candidateId);
+      // BUG-172: AI 搜索文献 accepted 后自动从 sourceUrl 抓取全文
+      if (candidate.sourceUrl && !candidate.extractedText?.trim()) {
+        extractFromUrl(candidate.sourceUrl, controller.signal)
+          .then((text) => {
+            if (!isMountedRef.current || !text.trim()) return;
+            const ref = useReferencesStore.getState().references.find((r) => r.id === candidate.id);
+            if (!ref) return;
+            const updated: ReferenceDocument = {
+              ...ref,
+              extractedText: text,
+              textStatus: "extracted",
+            };
+            updateReference(updated);
+            updateDocument(updated).catch((e) => log("[BUG-172] IDB updateDocument error:", e));
+          })
+          .catch(() => { /* 静默降级：summary fallback 已在 NoveltyAgentTrigger 中 */ });
+      }
     } finally {
       abortControllersRef.current.delete(`accept-${candidateId}`);
     }
