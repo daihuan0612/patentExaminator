@@ -41,9 +41,7 @@ dataRouter.get("/data/:store", (req, res) => {
       }
     }
 
-    if (store === "settings") {
-      writeAudit({ op: "GET_ALL", store, caller: req.header("X-Caller") ?? "unknown", result: `${records.length} records` });
-    }
+    writeAudit({ op: "GET_ALL", store, caller: req.header("X-Caller") ?? "unknown", result: `${records.length} records` });
     res.json({ ok: true, records });
   } catch (err) {
     logger.error("Data get error: " + errMsg(err));
@@ -108,9 +106,7 @@ dataRouter.get("/data/:store/:id", (req, res) => {
     } | undefined;
 
     if (!row) {
-      if (store === "settings") {
-        writeAudit({ op: "GET", store, recordId: id, caller: req.header("X-Caller") ?? "unknown", result: "NOT_FOUND" });
-      }
+      writeAudit({ op: "GET", store, recordId: id, caller: req.header("X-Caller") ?? "unknown", result: "NOT_FOUND" });
       res.status(404).json({ ok: false, error: "Record not found" });
       return;
     }
@@ -123,9 +119,7 @@ dataRouter.get("/data/:store/:id", (req, res) => {
       res.status(500).json({ ok: false, error: "Corrupted data" });
       return;
     }
-    if (store === "settings") {
-      writeAudit({ op: "GET", store, recordId: id, caller: req.header("X-Caller") ?? "unknown", dataAfter: record, result: "OK" });
-    }
+    writeAudit({ op: "GET", store, recordId: id, caller: req.header("X-Caller") ?? "unknown", dataAfter: record, result: "OK" });
     res.json({ ok: true, record });
   } catch (err) {
     logger.error("Data get error: " + errMsg(err));
@@ -153,17 +147,13 @@ dataRouter.post("/data/:store", express.json(), (req, res) => {
 
     // 读取写入前的数据（审计用）
     let dataBefore: unknown = undefined;
-    if (store === "settings") {
-      const prev = db.prepare("SELECT data FROM sync_data WHERE store_name = ? AND record_id = ?").get(store, id) as { data: string } | undefined;
-      if (prev) try { dataBefore = JSON.parse(prev.data); } catch { /* ignore */ }
-    }
+    const prev = db.prepare("SELECT data FROM sync_data WHERE store_name = ? AND record_id = ?").get(store, id) as { data: string } | undefined;
+    if (prev) try { dataBefore = JSON.parse(prev.data); } catch { /* ignore */ }
 
     db.prepare("INSERT OR REPLACE INTO sync_data (store_name, record_id, data, updated_at) VALUES (?, ?, ?, datetime('now'))")
       .run(store, id, JSON.stringify(data));
 
-    if (store === "settings") {
-      writeAudit({ op: "CREATE", store, recordId: id, caller: req.header("X-Caller") ?? "unknown", dataBefore, dataAfter: data, result: "OK" });
-    }
+    writeAudit({ op: "CREATE", store, recordId: id, caller: req.header("X-Caller") ?? "unknown", dataBefore, dataAfter: data, result: "OK" });
 
     res.json({ ok: true, id });
   } catch (err) {
@@ -191,25 +181,19 @@ dataRouter.put("/data/:store/:id", express.json(), (req, res) => {
 
     // 读取更新前的数据（审计用）
     let dataBefore: unknown = undefined;
-    if (store === "settings") {
-      const prev = db.prepare("SELECT data FROM sync_data WHERE store_name = ? AND record_id = ?").get(store, id) as { data: string } | undefined;
-      if (prev) try { dataBefore = JSON.parse(prev.data); } catch { /* ignore */ }
-    }
+    const prev = db.prepare("SELECT data FROM sync_data WHERE store_name = ? AND record_id = ?").get(store, id) as { data: string } | undefined;
+    if (prev) try { dataBefore = JSON.parse(prev.data); } catch { /* ignore */ }
 
     const result = db.prepare("UPDATE sync_data SET data = ?, updated_at = datetime('now') WHERE store_name = ? AND record_id = ?")
       .run(JSON.stringify(data), store, id);
 
     if (result.changes === 0) {
-      if (store === "settings") {
-        writeAudit({ op: "UPDATE", store, recordId: id, caller: req.header("X-Caller") ?? "unknown", result: "NOT_FOUND" });
-      }
+      writeAudit({ op: "UPDATE", store, recordId: id, caller: req.header("X-Caller") ?? "unknown", result: "NOT_FOUND" });
       res.status(404).json({ ok: false, error: "Record not found" });
       return;
     }
 
-    if (store === "settings") {
-      writeAudit({ op: "UPDATE", store, recordId: id, caller: req.header("X-Caller") ?? "unknown", dataBefore, dataAfter: data, result: "OK" });
-    }
+    writeAudit({ op: "UPDATE", store, recordId: id, caller: req.header("X-Caller") ?? "unknown", dataBefore, dataAfter: data, result: "OK" });
 
     res.json({ ok: true, id });
   } catch (err) {
@@ -287,25 +271,19 @@ dataRouter.delete("/data/:store/:id", (req, res) => {
 
     // 读取删除前的数据（审计用）
     let dataBefore: unknown = undefined;
-    if (store === "settings") {
-      const prev = db.prepare("SELECT data FROM sync_data WHERE store_name = ? AND record_id = ?").get(store, id) as { data: string } | undefined;
-      if (prev) try { dataBefore = JSON.parse(prev.data); } catch { /* ignore */ }
-    }
+    const prev = db.prepare("SELECT data FROM sync_data WHERE store_name = ? AND record_id = ?").get(store, id) as { data: string } | undefined;
+    if (prev) try { dataBefore = JSON.parse(prev.data); } catch { /* ignore */ }
 
     const result = db.prepare("DELETE FROM sync_data WHERE store_name = ? AND record_id = ?")
       .run(store, id);
 
     if (result.changes === 0) {
-      if (store === "settings") {
-        writeAudit({ op: "DELETE", store, recordId: id, caller: req.header("X-Caller") ?? "unknown", result: "NOT_FOUND" });
-      }
+      writeAudit({ op: "DELETE", store, recordId: id, caller: req.header("X-Caller") ?? "unknown", result: "NOT_FOUND" });
       res.status(404).json({ ok: false, error: "Record not found" });
       return;
     }
 
-    if (store === "settings") {
-      writeAudit({ op: "DELETE", store, recordId: id, caller: req.header("X-Caller") ?? "unknown", dataBefore, result: "OK" });
-    }
+    writeAudit({ op: "DELETE", store, recordId: id, caller: req.header("X-Caller") ?? "unknown", dataBefore, result: "OK" });
 
     res.json({ ok: true, id });
   } catch (err) {
@@ -327,18 +305,13 @@ dataRouter.delete("/data/:store", (req, res) => {
     const db = getSyncDb();
 
     // 读取删除前的数据（审计用）
-    let dataBefore: unknown = undefined;
-    if (store === "settings") {
-      const rows = db.prepare("SELECT record_id, data FROM sync_data WHERE store_name = ?").all(store) as Array<{ record_id: string; data: string }>;
-      dataBefore = rows.map(r => { try { return { id: r.record_id, ...JSON.parse(r.data) }; } catch { return { id: r.record_id }; } });
-    }
+    const rows = db.prepare("SELECT record_id, data FROM sync_data WHERE store_name = ?").all(store) as Array<{ record_id: string; data: string }>;
+    const dataBefore = rows.map(r => { try { return { id: r.record_id, ...JSON.parse(r.data) }; } catch { return { id: r.record_id }; } });
 
     const result = db.prepare("DELETE FROM sync_data WHERE store_name = ?")
       .run(store);
 
-    if (store === "settings") {
-      writeAudit({ op: "DELETE_ALL", store, caller: req.header("X-Caller") ?? "unknown", dataBefore, result: `deleted ${result.changes}` });
-    }
+    writeAudit({ op: "DELETE_ALL", store, caller: req.header("X-Caller") ?? "unknown", dataBefore, result: `deleted ${result.changes}` });
 
     res.json({ ok: true, deleted: result.changes });
   } catch (err) {

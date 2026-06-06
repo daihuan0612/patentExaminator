@@ -8,6 +8,7 @@
 
 | 版本 | 日期 | 变更摘要 | 影响范围 | 关联 commit |
 |------|------|---------|----------|-------------|
+| v0.1.0-r45 | 2026-06-06 | bug3: 数据库操作日志扩展到所有 store — 移除 data.ts 中 `store === "settings"` 守卫，所有 CRUD 操作（GET/CREATE/UPDATE/DELETE/DELETE_ALL）均记录审计日志；auditLog.ts 日志文件重命名为 db-audit.log | data.ts, auditLog.ts | — |
 | v0.1.0-r44 | 2026-06-06 | BUG-171: knowledgeDb 测试隔离 — 添加 resetKnowledgeDbForTesting() 和 closeKnowledgeDb() 导出，getKnowledgeDb() 支持 globalThis 注入测试路径；testDb.ts 添加 initKnowledgeSchema()；集成测试 beforeAll 注入 ":memory:" | knowledgeDb.ts, testDb.ts, globalSetup.ts, route-coverage.test.ts, agentPipeline.test.ts | — |
 | v0.1.0-r43 | 2026-06-05 | BUG-166: settings 持久化去掉 debounce + localStorage 中间层 — writeSettings 直接 POST 服务器 DB，readSettings 直接 GET；删除死代码 syncClient.ts；修复 Ctrl+C kill 服务器后配置丢失 | settingsSlice.ts, syncClient.ts(删除), settingsPersist.test.ts | — |
 | v0.1.0-r42 | 2026-06-04 | §9 测试架构全面更新：E2E 框架重构为统一入口+模块化子文件结构（e2e-shared/ 共享模块 + e2e/ 测试模块）、智能测试选择（--auto）、质量门禁（--check）、API Key 传递方式说明；删除 3 个临时设计文档（test-framework-refactor-plan.md、e2e-failure-report-2026-06-02.md、feat-042-implementation-review.md） | DESIGN.md §9 | — |

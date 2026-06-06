@@ -1,6 +1,6 @@
 /**
- * 审计日志 — 记录 settings 数据库的每次 CRUD 操作
- * 日志文件: server/data/settings-audit.log
+ * 审计日志 — 记录所有用户数据库 store 的每次 CRUD 操作
+ * 日志文件: server/data/db-audit.log
  */
 import { appendFileSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
@@ -8,7 +8,7 @@ import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const LOG_DIR = join(__dirname, "../../data");
-const LOG_FILE = join(LOG_DIR, "settings-audit.log");
+const LOG_FILE = join(LOG_DIR, "db-audit.log");
 
 try { mkdirSync(LOG_DIR, { recursive: true }); } catch { /* exists */ }
 
