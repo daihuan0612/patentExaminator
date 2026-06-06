@@ -493,7 +493,7 @@ export function CaseSetupPage() {
         documents: docs.map((doc, index) => ({
           fileIndex: index,
           fileName: doc.fileName,
-          textSample: doc.extractedText.slice(0, 2000) // 取前 2000 字符用于分类
+          textSample: doc.extractedText.slice(0, 500) // 取前 500 字符用于分类（文件名已是主要信号）
         }))
       };
 

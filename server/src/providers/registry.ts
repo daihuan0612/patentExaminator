@@ -17,7 +17,7 @@ const GEMINI_MODEL_FALLBACKS = ["gemini-2.5-flash-lite", "gemini-2.0-flash-lite"
 const BACKOFF_DELAYS = [500, 1500];
 const MAX_RETRIES = 2;
 const MAX_TOTAL_ATTEMPTS = 8;
-const TIMEOUT_MS = 60_000;
+const TIMEOUT_MS = 120_000;
 
 export interface AttemptRecord {
   providerId: ProviderId;
@@ -79,7 +79,11 @@ export class ProviderRegistry {
       const providerBaseUrl = providerBaseUrls?.[pid];
       const providerApiKey = providerApiKeys?.[pid];
       const enabled = enableModelFallback?.[pid] ?? true;
-      const models = modelFallbacks?.[pid] ?? (pid === "mimo" ? (mimoModelFallbacks ?? MIMO_MODEL_FALLBACKS) : (pid === "gemini" ? GEMINI_MODEL_FALLBACKS : null));
+      const configuredFallbacks = modelFallbacks?.[pid] ?? (pid === "mimo" ? (mimoModelFallbacks ?? MIMO_MODEL_FALLBACKS) : (pid === "gemini" ? GEMINI_MODEL_FALLBACKS : null));
+      // agent 指定了模型 → 先用它，失败再走用户配置的 fallback 顺序
+      const models = req.modelId && configuredFallbacks
+        ? [req.modelId, ...configuredFallbacks.filter((m) => m !== req.modelId)]
+        : configuredFallbacks;
 
       const buildReq = (base: ChatRequest, overrides: Partial<ChatRequest>): ChatRequest => {
         const result = { ...base, ...overrides };

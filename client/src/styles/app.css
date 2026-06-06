@@ -1555,6 +1555,13 @@
   overflow-y: auto;
 }
 
+.model-select__dropdown--above {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 4px;
+}
+
 .model-select__search {
   padding: 8px;
   border-bottom: 1px solid var(--pex-color-border-light);

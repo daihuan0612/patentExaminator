@@ -226,6 +226,11 @@ export function markChunkEmbedded(chunkId: string): void {
   db.prepare("UPDATE kb_chunks SET embedded = 1 WHERE id = ?").run(chunkId);
 }
 
+export function markSourceEmbedStatus(sourceId: string, status: string): void {
+  const db = getKnowledgeDb();
+  db.prepare("UPDATE kb_sources SET embed_status = ?, updated_at = ? WHERE id = ?").run(status, new Date().toISOString(), sourceId);
+}
+
 export function getAllChunks(): Array<{
   id: string; sourceId: string; text: string; metadata: string;
 }> {

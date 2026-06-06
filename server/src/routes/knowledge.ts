@@ -12,6 +12,7 @@ import {
   addChunks,
   addVectors,
   markChunkEmbedded,
+  markSourceEmbedStatus,
   getAllVectors,
   getAllChunks,
   getStats,
@@ -409,6 +410,7 @@ knowledgeRouter.post("/knowledge/upload", upload.single("file"), async (req, res
 
     // 清除 BM25 索引缓存，强制下次检索时重建
     invalidateBM25Index();
+    markSourceEmbedStatus(sourceId, "done");
 
     sendEvent({
       step: "done",
@@ -439,7 +441,12 @@ knowledgeRouter.post("/knowledge/import-url", express.json(), async (req, res) =
       res.status(400).json({ ok: false, error: parsed.error.issues.map(i => i.message).join("; ") });
       return;
     }
-    const { url } = parsed.data;
+    const { url, embeddingConfig } = parsed.data;
+
+    // bg-41: 读取 embedding 配置
+    if (embeddingConfig) {
+      setRemoteEmbedder(embeddingConfig);
+    }
 
     try {
       validateExternalUrl(url);
@@ -461,7 +468,7 @@ knowledgeRouter.post("/knowledge/import-url", express.json(), async (req, res) =
       documentCategory: docCategory,
     });
     const filteredChunks = legalChunks
-      .filter((rc) => !isNoise(rc.text))
+      .filter((rc) => !isNoise(rc.text) && !isGarbled(rc.text))
       .map((rc) => ({ text: rc.text, metadata: rc.metadata as unknown as Record<string, unknown> }));
     logger.info(`[URL:${url}] 文档分类: ${docCategory} | 切片: ${legalChunks.length} → ${filteredChunks.length} 条`);
 
@@ -469,8 +476,8 @@ knowledgeRouter.post("/knowledge/import-url", express.json(), async (req, res) =
       id: sourceId,
       name: url,
       type: "url",
-      format: "html",
-      mediaType: "text",
+      format: extraction.mediaType === "text" ? "html" : "pdf",
+      mediaType: extraction.mediaType,
       size: extraction.text.length,
       sourceUrl: url,
       chunkCount: filteredChunks.length,
@@ -551,11 +558,15 @@ knowledgeRouter.post("/knowledge/import-url", express.json(), async (req, res) =
       }
     } else if (chunks.length > 0 && !emb) {
       logger.info("No embedding provider configured, URL import stored as BM25-only");
+      for (const chunk of chunks) {
+        markChunkEmbedded(chunk.id);
+      }
     }
 
     // 清除 BM25 索引缓存，强制下次检索时重建
     invalidateBM25Index();
 
+    markSourceEmbedStatus(sourceId, "done");
     res.json({ ok: true, sourceId, chunkCount: chunks.length, message: `✅ ${url} — ${chunks.length} 条知识已入库` });
   } catch (err) {
     logger.error("Knowledge URL import error: " + errMsg(err));

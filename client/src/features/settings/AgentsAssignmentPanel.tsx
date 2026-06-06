@@ -4,20 +4,20 @@ import { useSettingsStore } from "../../store";
 import { getModelMeta } from "../../lib/modelCatalog";
 
 const AGENT_OPTIONS = [
+  { id: "extract-case-fields", name: "案件信息提取", desc: "从专利文档自动提取基本信息" },
+  { id: "classify-documents", name: "文档分类", desc: "自动分类专利文档类型" },
+  { id: "interpret", name: "文档解读", desc: "AI 交互式理解专利文档" },
+  { id: "search-references", name: "文献检索", desc: "AI 辅助检索对比文件" },
   { id: "claim-chart", name: "权利要求拆解", desc: "将专利权利要求拆解为技术特征" },
   { id: "novelty", name: "新颖性分析", desc: "对比文献逐特征判断公开状态" },
   { id: "inventive", name: "创造性分析", desc: "三步法判断是否具有创造性" },
   { id: "defects", name: "形式缺陷检测", desc: "检测权利要求和说明书的形式问题" },
-  { id: "extract-case-fields", name: "案件信息提取", desc: "从专利文档自动提取基本信息" },
-  { id: "interpret", name: "文档解读", desc: "AI 交互式理解专利文档" },
-  { id: "summary", name: "专利简述", desc: "生成专利申请简述" },
-  { id: "chat", name: "通用对话", desc: "AI 问答" },
-  { id: "search-references", name: "文献检索", desc: "AI 辅助检索对比文件" },
   { id: "opinion-analysis", name: "审查意见分析", desc: "分析审查意见通知书" },
   { id: "argument-analysis", name: "意见陈述分析", desc: "分析申请人意见陈述书" },
   { id: "reexam-draft", name: "复审决定草稿", desc: "生成复审决定草稿" },
-  { id: "classify-documents", name: "文档分类", desc: "自动分类专利文档类型" },
-  { id: "translate", name: "文档翻译", desc: "AI 辅助翻译专利文献" }
+  { id: "summary", name: "专利简述", desc: "生成专利申请简述" },
+  { id: "translate", name: "文档翻译", desc: "AI 辅助翻译专利文献" },
+  { id: "chat", name: "通用对话", desc: "AI 问答" }
 ] as const;
 
 const PROVIDER_NAMES: Record<ProviderId, string> = {
@@ -36,9 +36,11 @@ const PROVIDER_NAMES: Record<ProviderId, string> = {
 export function AgentsAssignmentPanel() {
   const { settings, setSettings } = useSettingsStore();
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [dropdownAbove, setDropdownAbove] = useState(false);
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const triggerRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -50,6 +52,15 @@ export function AgentsAssignmentPanel() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (!openDropdown) { setDropdownAbove(false); return; }
+    const trigger = triggerRefs.current.get(openDropdown);
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    setDropdownAbove(spaceBelow < 380);
+  }, [openDropdown]);
 
   const enabledProviders = settings.providers.filter((p) => p.enabled);
 
@@ -158,6 +169,7 @@ export function AgentsAssignmentPanel() {
                   <button
                     type="button"
                     className="model-select__trigger"
+                    ref={(el) => { if (el) triggerRefs.current.set(agentOpt.id, el); }}
                     onClick={() => {
                       if (isOpen) {
                         setOpenDropdown(null);
@@ -172,7 +184,7 @@ export function AgentsAssignmentPanel() {
                   </button>
 
                   {isOpen && (
-                    <div className="model-select__dropdown">
+                    <div className={`model-select__dropdown${dropdownAbove ? " model-select__dropdown--above" : ""}`}>
                       <div className="model-select__search">
                         <input
                           type="text"

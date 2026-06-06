@@ -21,7 +21,9 @@ export async function extractPdfText(file: File): Promise<PdfExtractionResult> {
   });
 
   if (!res.ok) {
-    throw new Error(`PDF extraction failed: ${res.status} ${res.statusText}`);
+    const body = await res.json().catch(() => null);
+    const detail = body?.error || res.statusText;
+    throw new Error(`PDF extraction failed: ${res.status} ${detail}`);
   }
 
   const data = await res.json() as {

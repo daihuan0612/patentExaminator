@@ -43,7 +43,7 @@ async function extractPdf(buffer: Buffer): Promise<ExtractionResult> {
       data: new Uint8Array(buffer),
       disableFontFace: true,
       useSystemFonts: false,
-      standardFontDataUrl: path.join(pdfjsDir, "standard_fonts"),
+      standardFontDataUrl: path.join(pdfjsDir, "standard_fonts") + "/",
     }).promise;
     const texts: string[] = [];
     for (let i = 1; i <= pdf.numPages; i++) {
@@ -155,10 +155,23 @@ async function extractExcel(buffer: Buffer): Promise<ExtractionResult> {
 }
 
 export async function extractFromUrl(url: string): Promise<ExtractionResult> {
-  const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+  const response = await fetch(url, { signal: AbortSignal.timeout(30_000), redirect: "follow" });
   if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+
+  // 检测 Content-Type，PDF 走专用解析
+  const contentType = response.headers.get("content-type") ?? "";
+  const isPdfByType = contentType.includes("application/pdf");
+  const isPdfByUrl = url.toLowerCase().split("?")[0]?.endsWith(".pdf") ?? false;
+
+  if (isPdfByType || isPdfByUrl) {
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    logger.info(`[URL] PDF detected (${isPdfByType ? "content-type" : "url-ext"}), size=${buffer.length}`);
+    return extractPdf(buffer);
+  }
+
+  // HTML → 纯文本
   const html = await response.text();
-  // Simple HTML to text
   const text = html
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")

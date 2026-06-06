@@ -39,9 +39,17 @@ export const agentRunInputSchema = z.object({
   mockKey: z.string().optional(),
 });
 
+// ── Knowledge embedding config ───────────────────────────────
+export const embeddingConfigSchema = z.object({
+  baseUrl: z.string().url(),
+  apiKey: z.string().min(1),
+  modelId: z.string().min(1),
+});
+
 // ── POST /api/knowledge/import-url ───────────────────────────
 export const knowledgeImportUrlInputSchema = z.object({
   url: z.string().url("Invalid URL format"),
+  embeddingConfig: embeddingConfigSchema.optional(),
 });
 
 // ── POST /api/knowledge/search ───────────────────────────────
@@ -135,10 +143,3 @@ export const dataUpdateInputSchema = z.object({}).passthrough().refine(
 
 // ── POST /api/ocr (body.lang) ────────────────────────────────
 export const ocrLangSchema = z.enum(["chi_sim+eng", "eng", "chi_sim", "chi_tra"]).optional().default("chi_sim+eng");
-
-// ── Knowledge embedding config ───────────────────────────────
-export const embeddingConfigSchema = z.object({
-  baseUrl: z.string().url(),
-  apiKey: z.string().min(1),
-  modelId: z.string().min(1),
-});

@@ -1,5 +1,5 @@
 import { createBrowserRouter, Navigate, Outlet, useParams } from "react-router-dom";
-import { useEffect, useMemo, useCallback, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useCallback, useState } from "react";
 import type {
   SummaryResponse, NoveltyResponse, InventiveResponse, InterpretResponse,
   TranslateResponse, OpinionAnalysisResponse, ArgumentAnalysisResponse,
@@ -243,12 +243,11 @@ export function InventiveWrapper() {
 
 export function InterpretWrapper() {
   const { caseId } = useParams<{ caseId: string }>();
-  // Scroll to top when navigating to a new case's interpret page
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.scrollTo(0, 0);
-    }
-  }, [caseId]);
+  // Scroll main content to top on mount (the scrollable container is .app-shell__main, not window)
+  useLayoutEffect(() => {
+    const el = document.querySelector(".app-shell__main");
+    if (el) el.scrollTop = 0;
+  }, []);
   const { documents } = useDocumentsStore();
   const { references } = useReferencesStore();
   const { settings } = useSettingsStore();

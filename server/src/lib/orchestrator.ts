@@ -669,6 +669,7 @@ async function enhanceWithKnowledge(
     const vectorMap = new Map(allVectors.map((v) => [v.chunkId, v]));
 
     // Step 1: Query Expansion
+    logger.info(`[RAG] [Step 1] 开始 query expansion...`);
     const expandedQuery = expandQueryFull(query);
     logger.info(`[RAG] [Step 1] Query expansion: "${query}" → "${expandedQuery}"`);
 
@@ -676,6 +677,7 @@ async function enhanceWithKnowledge(
     const vectorScores: Array<{ chunkId: string; score: number }> = [];
     if (embeddingConfig) {
       try {
+        logger.info(`[RAG] [Step 2] 开始 embedding search, model=${embeddingConfig.modelId}, baseUrl=${embeddingConfig.baseUrl}`);
         const { createRemoteEmbedder } = await import("../routes/knowledge.js");
         const emb = createRemoteEmbedder(embeddingConfig);
         logger.info(`[RAG] [Step 2] Embedding query: model=${emb.modelId}, vectorMap=${vectorMap.size} vectors`);
@@ -898,9 +900,14 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
     }
 
     // 2. 知识库增强（知识上下文注入 user prompt）
+    // 某些 agent 不需要 RAG（查询无意义或纯文件名）
+    const SKIP_RAG_AGENTS = new Set(["classify-documents", "extract-case-fields", "translate", "summary"]);
+    const shouldUseRag = req.knowledgeEnabled && !SKIP_RAG_AGENTS.has(req.agent);
     const query = extractQuery(req.agent, req.request);
-    logger.info(`[Orchestrator] agent=${req.agent}, 提取检索 query="${query.slice(0, 80)}${query.length > 80 ? "..." : ""}", knowledgeEnabled=${req.knowledgeEnabled}`);
-    const { prompt: enhancedUserPrompt, citations } = await enhanceWithKnowledge(promptParts.user, query, req.agent, req.knowledgeEnabled, req.knowledgeEmbedding, req.knowledgeReranker);
+    logger.info(`[Orchestrator] agent=${req.agent}, 提取检索 query="${query.slice(0, 80)}${query.length > 80 ? "..." : ""}", knowledgeEnabled=${req.knowledgeEnabled}, shouldUseRag=${shouldUseRag}`);
+    const { prompt: enhancedUserPrompt, citations } = shouldUseRag
+      ? await enhanceWithKnowledge(promptParts.user, query, req.agent, true, req.knowledgeEmbedding, req.knowledgeReranker)
+      : { prompt: promptParts.user, citations: [] };
 
     // 2.5 检查 API key 可用性
     const { getApiKey } = await import("../security/keyStore.js");
@@ -916,6 +923,16 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
     }
 
     // 3. 调用内部 AI Gateway
+    // 简单任务的 maxTokens 上限（防止推理模型过度思考）
+    const SIMPLE_AGENT_MAX_TOKENS: Record<string, number> = {
+      "classify-documents": 1024,  // ×4 推理倍数后 = 4096，足够分类 JSON
+      "extract-case-fields": 2048,
+    };
+    const agentMaxCap = SIMPLE_AGENT_MAX_TOKENS[req.agent];
+    const effectiveMaxTokens = agentMaxCap
+      ? Math.min(req.maxTokens ?? agentMaxCap, agentMaxCap)  // 取更小值
+      : req.maxTokens;
+
     logger.info(`[Orchestrator] 发送 AI 请求: system=${promptParts.system.length} 字符, user=${enhancedUserPrompt.length} 字符, ${citations.length} 条知识引用已注入`);
     const aiResponse = await callInternalGateway({
       agent: req.agent,
@@ -927,7 +944,7 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
       modelFallbacks: req.modelFallbacks,
       enableModelFallback: req.enableModelFallback,
       providerBaseUrls: req.providerBaseUrls,
-      maxTokens: req.maxTokens,
+      maxTokens: effectiveMaxTokens,
       signal: req.signal,
       apiKey: req.apiKey,
     });
@@ -938,8 +955,8 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
       const extracted = extractJsonFromText(output);
       if (extracted) {
         output = extracted.parsed;
-      } else if (req.agent === "chat") {
-        // chat agent 返回纯文本，包装为 ChatResponse 格式
+      } else if (req.agent === "chat" || req.agent === "interpret") {
+        // chat/interpret agent 返回纯文本，包装为 { reply } 格式
         output = { reply: output };
       }
     }
@@ -968,7 +985,8 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.error(`Orchestrator error: ${message}`);
+    const stack = err instanceof Error ? err.stack : undefined;
+    logger.error(`Orchestrator error: ${message}${stack ? `\n${stack}` : ""}`);
     return { ok: false, error: { type: "orchestrator", message } };
   }
 }
@@ -1065,6 +1083,7 @@ async function callInternalGateway(req: InternalGatewayRequest): Promise<Interna
   }
 
   const providerOrder = req.providerPreference ?? [];
+  logger.info(`[Gateway] providerOrder=[${providerOrder.join(", ")}], hasApiKeys=[${Object.keys(providerApiKeys).join(", ")}], modelId=${req.modelId}`);
 
   const chatRequest: ChatRequest = {
     modelId: req.modelId ?? "",
@@ -1086,6 +1105,12 @@ async function callInternalGateway(req: InternalGatewayRequest): Promise<Interna
     req.providerBaseUrls,
     providerApiKeys
   );
+
+  if (result.response.error) {
+    logger.warn(`[Gateway] LLM 调用失败: code=${result.response.error.code}, message=${result.response.error.message}, attempts=${result.attempts.map(a => `${a.providerId}(${a.errorCode ?? "ok"})`).join(", ")}`);
+  } else {
+    logger.info(`[Gateway] LLM 调用成功: ${result.response.text.length} chars, attempts=${result.attempts.map(a => `${a.providerId}(${a.errorCode ?? "ok"})`).join(", ")}`);
+  }
 
   return {
     output: result.response.text,

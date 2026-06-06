@@ -30,8 +30,9 @@ ocrRouter.post("/ocr", upload.single("file"), async (req, res) => {
     }
     const lang = langParsed.data;
     const file = req.file;
+    const originalName = Buffer.from(file.originalname, "latin1").toString("utf8");
 
-    logger.info(`OCR request: ${file.originalname} (${file.size} bytes, lang: ${lang})`);
+    logger.info(`OCR request: ${originalName} (${file.size} bytes, lang: ${lang})`);
 
     // 创建 Tesseract worker
     const worker = await createWorker(lang);
@@ -46,7 +47,7 @@ ocrRouter.post("/ocr", upload.single("file"), async (req, res) => {
         confidence: data.confidence,
       };
 
-      logger.info(`OCR completed: ${file.originalname} - ${data.confidence}% confidence, ${data.text.length} chars`);
+      logger.info(`OCR completed: ${originalName} - ${data.confidence}% confidence, ${data.text.length} chars`);
 
       res.json({ ok: true, ...result });
     } finally {

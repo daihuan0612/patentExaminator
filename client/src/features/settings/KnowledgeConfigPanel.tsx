@@ -227,10 +227,17 @@ export function KnowledgeConfigPanel() {
     setImporting(true);
     setImportResult(null);
     try {
+      // bg-41: 传递 embedding 配置
+      const embeddingProvider = knowledgeProviders.find(
+        (p) => p.providerType === "embedding" && p.enabled && p.apiKeyRef
+      );
       const res = await fetch(`${API}/import-url`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: urlInput }),
+        body: JSON.stringify({
+          url: urlInput,
+          ...(embeddingProvider ? { embeddingConfig: { baseUrl: embeddingProvider.baseUrl, apiKey: embeddingProvider.apiKeyRef, modelId: embeddingProvider.modelId } } : {}),
+        }),
       });
       const data = await res.json() as { ok: boolean; message?: string; error?: string };
       if (!isMountedRef.current) return;

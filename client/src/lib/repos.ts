@@ -445,7 +445,8 @@ function resolveAgent(
   if (!assignment) return null;
   const providerId = assignment.providerOrder[0] ?? getDefaultProvider(settings);
   const providerSetting = settings.providers.find((p) => p.providerId === providerId);
-  const modelId = providerSetting?.defaultModelId ?? assignment.modelId;
+  // agent 级别 modelId 优先于 provider 级别 defaultModelId
+  const modelId = assignment.modelId || providerSetting?.defaultModelId || "";
   return { providerId, modelId, maxTokens: assignment.maxTokens };
 }
 

@@ -47,7 +47,9 @@ const REPO_DEFAULT_SETTINGS: AppSettings = {
     { agent: "inventive", providerOrder: [], modelId: "", maxTokens: 4096 },
     { agent: "summary", providerOrder: [], modelId: "", maxTokens: 4096 },
     { agent: "chat", providerOrder: [], modelId: "", maxTokens: 4096 },
-    { agent: "extract-case-fields", providerOrder: [], modelId: "", maxTokens: 8192 }
+    { agent: "extract-case-fields", providerOrder: [], modelId: "", maxTokens: 8192 },
+    { agent: "classify-documents", providerOrder: [], modelId: "", maxTokens: 2048 },
+    { agent: "translate", providerOrder: [], modelId: "", maxTokens: 4096 }
   ],
   searchProviders: [
     { providerId: "tavily", name: "Tavily", apiKeyRef: "", enabled: true }

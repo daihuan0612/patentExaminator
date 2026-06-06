@@ -41,7 +41,8 @@ documentsRouter.post("/documents/extract-pdf", upload.single("file"), async (req
     }
 
     const file = req.file;
-    logger.info(`PDF extraction request: ${file.originalname} (${file.size} bytes)`);
+    const originalName = Buffer.from(file.originalname, "latin1").toString("utf8");
+    logger.info(`PDF extraction request: ${originalName} (${file.size} bytes)`);
 
     // 动态导入 pdfjs-dist（Node.js 必须用 legacy build）
     const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -55,7 +56,7 @@ documentsRouter.post("/documents/extract-pdf", upload.single("file"), async (req
       data: new Uint8Array(buffer),
       disableFontFace: true,
       useSystemFonts: false,
-      standardFontDataUrl: path.join(pdfjsDir, "standard_fonts"),
+      standardFontDataUrl: path.join(pdfjsDir, "standard_fonts") + "/",
     }).promise;
 
     const pageTexts: string[] = [];
@@ -86,7 +87,7 @@ documentsRouter.post("/documents/extract-pdf", upload.single("file"), async (req
     const avgCharsPerPage = text.length / (pdf.numPages || 1);
     const hasTextLayer = avgCharsPerPage >= 40;
 
-    logger.info(`PDF extraction completed: ${file.originalname} - ${pdf.numPages} pages, ${text.length} chars, hasTextLayer: ${hasTextLayer}`);
+    logger.info(`PDF extraction completed: ${originalName} - ${pdf.numPages} pages, ${text.length} chars, hasTextLayer: ${hasTextLayer}`);
 
     res.json({
       ok: true,
@@ -122,7 +123,8 @@ documentsRouter.post("/documents/extract-docx", upload.single("file"), async (re
     }
 
     const file = req.file;
-    logger.info(`DOCX extraction request: ${file.originalname} (${file.size} bytes)`);
+    const originalName = Buffer.from(file.originalname, "latin1").toString("utf8");
+    logger.info(`DOCX extraction request: ${originalName} (${file.size} bytes)`);
 
     // 动态导入 mammoth
     const mammoth = await import("mammoth");
@@ -130,7 +132,7 @@ documentsRouter.post("/documents/extract-docx", upload.single("file"), async (re
 
     const text = result.value.trim();
 
-    logger.info(`DOCX extraction completed: ${file.originalname} - ${text.length} chars`);
+    logger.info(`DOCX extraction completed: ${originalName} - ${text.length} chars`);
 
     res.json({
       ok: true,
