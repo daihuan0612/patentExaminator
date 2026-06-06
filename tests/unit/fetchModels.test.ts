@@ -25,7 +25,7 @@ describe("fetchModels baseUrl parameter", () => {
   it("does not include baseUrl query parameter when not provided", async () => {
     const fetchSpy = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ models: ["MiMo-V2.5-Pro"] })
+      json: async () => ({ models: ["mimo-v2.5-pro"] })
     } as Response);
     vi.stubGlobal("fetch", fetchSpy);
 

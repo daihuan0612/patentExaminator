@@ -125,8 +125,8 @@ describe("Settings slice", () => {
         {
           providerId: "mimo",
           apiKeyRef: "tp-test",
-          modelIds: ["MiMo-V2.5-Pro"],
-          defaultModelId: "MiMo-V2.5-Pro",
+          modelIds: ["mimo-v2.5-pro"],
+          defaultModelId: "mimo-v2.5-pro",
           enabled: true
         }
       ]

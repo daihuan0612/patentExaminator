@@ -537,7 +537,7 @@ describe("aiRunRequestSchema", () => {
     const result = aiRunRequestSchema.safeParse({
       agent: "claim-chart",
       providerPreference: ["mimo"],
-      modelId: "MiMo-V2.5-Pro",
+      modelId: "mimo-v2.5-pro",
       prompt: "Analyze this claim",
       sanitized: true,
       metadata: { caseId: "test", moduleScope: "claim-chart", tokenEstimate: 100 }
@@ -569,16 +569,16 @@ describe("aiRunRequestSchema", () => {
     const result = aiRunRequestSchema.safeParse({
       agent: "claim-chart",
       providerPreference: ["mimo"],
-      modelId: "MiMo-V2.5-Pro",
+      modelId: "mimo-v2.5-pro",
       prompt: "Analyze this claim",
       sanitized: true,
       metadata: { caseId: "test", moduleScope: "claim-chart", tokenEstimate: 100 },
-      modelFallbacks: { mimo: ["MiMo-V3-Flash", "MiMo-V2.5-Pro"] },
+      modelFallbacks: { mimo: ["MiMo-V3-Flash", "mimo-v2.5-pro"] },
       enableModelFallback: { mimo: true }
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.modelFallbacks).toEqual({ mimo: ["MiMo-V3-Flash", "MiMo-V2.5-Pro"] });
+      expect(result.data.modelFallbacks).toEqual({ mimo: ["MiMo-V3-Flash", "mimo-v2.5-pro"] });
       expect(result.data.enableModelFallback).toEqual({ mimo: true });
     }
   });
@@ -587,7 +587,7 @@ describe("aiRunRequestSchema", () => {
     const result = aiRunRequestSchema.safeParse({
       agent: "claim-chart",
       providerPreference: ["mimo"],
-      modelId: "MiMo-V2.5-Pro",
+      modelId: "mimo-v2.5-pro",
       prompt: "Analyze this claim",
       sanitized: true,
       metadata: { caseId: "test", moduleScope: "claim-chart", tokenEstimate: 100 }

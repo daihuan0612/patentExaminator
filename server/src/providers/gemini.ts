@@ -101,6 +101,16 @@ export class GeminiAdapter implements ProviderAdapter {
     const base = req.baseUrl ?? GEMINI_BASE_URL;
     const url = `${base}/models/${req.modelId}:generateContent`;
 
+    const maskedKey = req.apiKey ? `${req.apiKey.slice(0, 6)}...${req.apiKey.slice(-4)}` : "none";
+    const reqTimestamp = new Date().toISOString();
+    const effectiveMaxTokens = resolveMaxTokens(req.modelId, req.maxTokens);
+    console.log(`[GEMINI-DEBUG] ──── REQUEST START ──── ${reqTimestamp}`);
+    console.log(`[GEMINI-DEBUG] provider=gemini url=${url}`);
+    console.log(`[GEMINI-DEBUG] model=${req.modelId} maxTokens=${effectiveMaxTokens} temp=${req.temperature ?? 0.7}`);
+    console.log(`[GEMINI-DEBUG] apiKey=${maskedKey} messages=${req.messages.length}`);
+    console.log(`[GEMINI-DEBUG] signal=${req.signal ? "set" : "none"} signal.aborted=${req.signal?.aborted ?? "n/a"}`);
+    const reqStartMs = Date.now();
+
     const contents = req.messages
       .filter(m => m.role !== "system")
       .map(m => ({
@@ -151,18 +161,42 @@ export class GeminiAdapter implements ProviderAdapter {
     }
 
     // Single attempt — retry logic is handled by ProviderRegistry
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": req.apiKey
-      },
-      body: JSON.stringify(body),
-      signal: req.signal ?? null
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": req.apiKey
+        },
+        body: JSON.stringify(body),
+        signal: req.signal ?? null
+      });
+    } catch (fetchErr) {
+      const elapsed = Date.now() - reqStartMs;
+      const errName = fetchErr instanceof Error ? fetchErr.name : "unknown";
+      const errMsg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+      const errCode = (fetchErr as NodeJS.ErrnoException)?.code ?? "none";
+      const errCause = fetchErr instanceof Error && fetchErr.cause
+        ? `cause={name=${(fetchErr.cause as Error)?.name} message=${(fetchErr.cause as Error)?.message} code=${(fetchErr.cause as NodeJS.ErrnoException)?.code}}`
+        : "cause=none";
+      console.log(`[GEMINI-DEBUG] ──── FETCH ERROR ──── elapsed=${elapsed}ms`);
+      console.log(`[GEMINI-DEBUG] name=${errName} code=${errCode} message=${errMsg}`);
+      console.log(`[GEMINI-DEBUG] ${errCause}`);
+      console.log(`[GEMINI-DEBUG] stack=${fetchErr instanceof Error ? fetchErr.stack?.split("\n").slice(0, 5).join(" | ") : "no stack"}`);
+      throw fetchErr;
+    }
+
+    const elapsed = Date.now() - reqStartMs;
+    console.log(`[GEMINI-DEBUG] ──── RESPONSE ──── elapsed=${elapsed}ms`);
+    console.log(`[GEMINI-DEBUG] status=${res.status} statusText=${res.statusText}`);
+    const resHeaders: Record<string, string> = {};
+    res.headers.forEach((v, k) => { resHeaders[k] = v; });
+    console.log(`[GEMINI-DEBUG] responseHeaders=${JSON.stringify(resHeaders)}`);
 
     if (!res.ok) {
       const errorBody = await res.text().catch(() => "");
+      console.log(`[GEMINI-DEBUG] ──── HTTP ERROR ──── status=${res.status} body=${errorBody.slice(0, 500)}`);
       const error = new Error(`Gemini API error ${res.status}: ${errorBody}`);
       (error as Error & { status: number }).status = res.status;
       throw error;
@@ -175,6 +209,11 @@ export class GeminiAdapter implements ProviderAdapter {
     };
 
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const totalElapsed = Date.now() - reqStartMs;
+    console.log(`[GEMINI-DEBUG] ──── SUCCESS ──── totalElapsed=${totalElapsed}ms`);
+    console.log(`[GEMINI-DEBUG] usage=${data.usageMetadata ? JSON.stringify(data.usageMetadata) : "none"}`);
+    console.log(`[GEMINI-DEBUG] textLen=${text.length} candidates=${data.candidates?.length ?? 0}`);
+    console.log(`[GEMINI-DEBUG] ──── REQUEST END ────`);
 
     if (!text) {
       logger.warn("Gemini returned empty response", {

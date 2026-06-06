@@ -9,10 +9,10 @@ export const DEFAULT_MODELS: Record<ProviderId, ModelInfo[]> = {
     { id: "gemini-2.5-pro", recommendation: "高级能力 (配额较低)", rpm: 2, rpd: 50, tpm: "12.5M", inputTokenLimit: 1048576, outputTokenLimit: 65536 }
   ],
   mimo: [
-    { id: "MiMo-V2.5-Pro", recommendation: "推理能力最强", rpm: 10, rpd: 500, tpm: "5.0M" },
-    { id: "MiMo-V2.5", recommendation: "均衡推荐", rpm: 15, rpd: 1000, tpm: "10.0M" },
-    { id: "MiMo-V2-Pro", recommendation: "上一代旗舰", rpm: 10, rpd: 500, tpm: "5.0M" },
-    { id: "MiMo-V2-Omni", recommendation: "多模态", rpm: 10, rpd: 500, tpm: "5.0M" }
+    { id: "mimo-v2.5-pro", recommendation: "推理能力最强", rpm: 10, rpd: 500, tpm: "5.0M" },
+    { id: "mimo-v2.5", recommendation: "均衡推荐", rpm: 15, rpd: 1000, tpm: "10.0M" },
+    { id: "mimo-v2-pro", recommendation: "上一代旗舰", rpm: 10, rpd: 500, tpm: "5.0M" },
+    { id: "mimo-v2-omni", recommendation: "多模态", rpm: 10, rpd: 500, tpm: "5.0M" }
   ],
   kimi: [
     { id: "moonshot-v1-128k", recommendation: "长文本 (128K)", rpm: 5, rpd: 300, tpm: "3.0M" },

@@ -507,7 +507,7 @@ describe("持久化 — Client 完整链路", () => {
       mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }) });
       useSettingsStore.setState({ isInitialized: true });
       const agents = [
-        { agent: "interpret" as const, providerOrder: ["mimo" as const], modelId: "MiMo-V2.5-Pro", maxTokens: 8192 },
+        { agent: "interpret" as const, providerOrder: ["mimo" as const], modelId: "mimo-v2.5-pro", maxTokens: 8192 },
         { agent: "novelty" as const, providerOrder: ["gemini" as const], modelId: "gemini-2.5-flash", maxTokens: 4096 },
       ];
       useSettingsStore.getState().setSettings({ ...useSettingsStore.getState().settings, agents });

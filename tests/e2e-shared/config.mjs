@@ -47,8 +47,8 @@ export const API_KEY_NAMES = {
 /** 默认模型 ID */
 export const DEFAULT_MODEL_IDS = {
   gemini: "gemini-3.1-flash-lite-preview",
-  mimo: "MiMo-V2.5",
-  openrouter: "deepseek/deepseek-v4-flash:free",
+  mimo: "mimo-v2.5",
+  openrouter: "z-ai/glm-4.5-air:free",
 };
 
 /**
@@ -81,15 +81,15 @@ export const GEMINI_FALLBACK_MODELS = [
 
 /** OpenRouter fallback 模型列表（带标签） */
 export const OPENROUTER_FALLBACK_MODELS = [
-  { id: "deepseek/deepseek-v4-flash:free", label: "DeepSeek V4" },
   { id: "z-ai/glm-4.5-air:free", label: "GLM-4.5" },
-  { id: "qwen/qwen3-coder:free", label: "Qwen3 Coder" },
-  { id: "arcee-ai/trinity-large-thinking:free", label: "Trinity Large" },
   { id: "google/gemma-4-31b-it:free", label: "Gemma-4" },
+  { id: "qwen/qwen3-coder:free", label: "Qwen3 Coder" },
   { id: "qwen/qwen3-next-80b-a3b-instruct:free", label: "Qwen3 Next" },
-  { id: "minimax/minimax-m2.5:free", label: "MiniMax M2.5" },
   { id: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", label: "Nemotron" },
   { id: "openai/gpt-oss-120b:free", label: "GPT-OSS" },
+  { id: "moonshotai/kimi-k2.6:free", label: "Kimi K2.6" },
+  { id: "google/gemma-4-26b-a4b-it:free", label: "Gemma-4 26B" },
+  { id: "nvidia/nemotron-3-ultra-550b-a55b:free", label: "Nemotron Ultra" },
 ];
 
 /** OpenRouter 每个模型的最大重试次数 */

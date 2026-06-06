@@ -122,6 +122,7 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
       max_tokens: effectiveMaxTokens
     };
 
+    const maskedKey = req.apiKey ? `${req.apiKey.slice(0, 6)}...${req.apiKey.slice(-4)}` : "none";
     const fetchInit: RequestInit = {
       method: "POST",
       headers: {
@@ -132,10 +133,46 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
       signal: req.signal ?? null
     };
 
-    const res = await fetch(url, fetchInit);
+    const reqTimestamp = new Date().toISOString();
+    console.log(`[MIMO-DEBUG] ──── REQUEST START ──── ${reqTimestamp}`);
+    console.log(`[MIMO-DEBUG] provider=${this.id} url=${url}`);
+    console.log(`[MIMO-DEBUG] model=${req.modelId} maxTokens=${effectiveMaxTokens} temp=${req.temperature ?? 0.1}`);
+    console.log(`[MIMO-DEBUG] apiKey=${maskedKey} messages=${req.messages.length}`);
+    console.log(`[MIMO-DEBUG] signal=${req.signal ? "set" : "none"} signal.aborted=${req.signal?.aborted ?? "n/a"}`);
+    console.log(`[MIMO-DEBUG] bodySize=${JSON.stringify(body).length} bytes`);
+    const reqStartMs = Date.now();
+
+    let res: Response;
+    try {
+      res = await fetch(url, fetchInit);
+    } catch (fetchErr) {
+      const elapsed = Date.now() - reqStartMs;
+      const errName = fetchErr instanceof Error ? fetchErr.name : "unknown";
+      const errMsg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+      const errCode = (fetchErr as NodeJS.ErrnoException)?.code ?? "none";
+      const errCause = fetchErr instanceof Error && fetchErr.cause
+        ? `cause={name=${(fetchErr.cause as Error)?.name} message=${(fetchErr.cause as Error)?.message} code=${(fetchErr.cause as NodeJS.ErrnoException)?.code}}`
+        : "cause=none";
+      console.log(`[MIMO-DEBUG] ──── FETCH ERROR ──── elapsed=${elapsed}ms`);
+      console.log(`[MIMO-DEBUG] name=${errName} code=${errCode} message=${errMsg}`);
+      console.log(`[MIMO-DEBUG] ${errCause}`);
+      console.log(`[MIMO-DEBUG] stack=${fetchErr instanceof Error ? fetchErr.stack?.split("\n").slice(0, 5).join(" | ") : "no stack"}`);
+      throw fetchErr;
+    }
+
+    const elapsed = Date.now() - reqStartMs;
+    console.log(`[MIMO-DEBUG] ──── RESPONSE ──── elapsed=${elapsed}ms`);
+    console.log(`[MIMO-DEBUG] status=${res.status} statusText=${res.statusText}`);
+    const resHeaders: Record<string, string> = {};
+    res.headers.forEach((v, k) => { resHeaders[k] = v; });
+    console.log(`[MIMO-DEBUG] responseHeaders=${JSON.stringify(resHeaders)}`);
+    const contentLength = res.headers.get("content-length");
+    const contentType = res.headers.get("content-type");
+    console.log(`[MIMO-DEBUG] contentLength=${contentLength} contentType=${contentType}`);
 
     if (!res.ok) {
       const errorBody = await res.text().catch(() => "");
+      console.log(`[MIMO-DEBUG] ──── HTTP ERROR ──── status=${res.status} body=${errorBody.slice(0, 500)}`);
       const error = new Error(`Provider ${this.id} returned ${res.status}: ${errorBody}`);
       (error as Error & { status: number; providerId: ProviderId }).status = res.status;
       (error as Error & { status: number; providerId: ProviderId }).providerId = this.id;
@@ -143,10 +180,16 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
     }
 
     const data = (await res.json()) as Record<string, unknown>;
+    const totalElapsed = Date.now() - reqStartMs;
+    console.log(`[MIMO-DEBUG] ──── SUCCESS ──── totalElapsed=${totalElapsed}ms`);
+    const usage = data.usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined;
+    console.log(`[MIMO-DEBUG] usage=${usage ? JSON.stringify(usage) : "none"}`);
     const choices = Array.isArray(data.choices) ? data.choices : [];
     const firstChoice = choices[0] as Record<string, unknown> | undefined;
     const message = firstChoice?.message as Record<string, unknown> | undefined;
     const text = (typeof message?.content === "string" ? message.content : "") as string;
+    console.log(`[MIMO-DEBUG] choices=${choices.length} textLen=${text.length} finishReason=${firstChoice?.finish_reason}`);
+    console.log(`[MIMO-DEBUG] ──── REQUEST END ────`);
 
     if (!text) {
       const reasoningContent = typeof message?.reasoning_content === "string" ? message.reasoning_content : undefined;
@@ -164,7 +207,6 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
       });
     }
 
-    const usage = data.usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined;
     const tokenUsage = usage
       ? {
           input: usage.prompt_tokens ?? 0,

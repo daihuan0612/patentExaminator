@@ -65,10 +65,10 @@ describe("Settings Full Chain (SQLite)", () => {
       mode: "real",
       guidelineVersion: "2023",
       providers: [
-        { providerId: "mimo", apiKeyRef: "tp-test", modelIds: ["MiMo-V2.5-Pro"], enabled: true },
+        { providerId: "mimo", apiKeyRef: "tp-test", modelIds: ["mimo-v2.5-pro"], enabled: true },
       ],
       agents: [
-        { agent: "interpret", providerOrder: ["mimo"], modelId: "MiMo-V2.5-Pro", maxTokens: 8192 },
+        { agent: "interpret", providerOrder: ["mimo"], modelId: "mimo-v2.5-pro", maxTokens: 8192 },
       ],
       persistKeysEncrypted: true,
     };
@@ -83,7 +83,7 @@ describe("Settings Full Chain (SQLite)", () => {
     const settings = {
       mode: "mock",
       guidelineVersion: "2023",
-      providers: [{ providerId: "mimo", apiKeyRef: "key-123", modelIds: ["MiMo-V2.5-Pro"], enabled: true }],
+      providers: [{ providerId: "mimo", apiKeyRef: "key-123", modelIds: ["mimo-v2.5-pro"], enabled: true }],
       agents: [],
       persistKeysEncrypted: false,
     };

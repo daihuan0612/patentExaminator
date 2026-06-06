@@ -144,7 +144,7 @@ describe("ProviderRegistry", () => {
       let callCount = 0;
       const mimoAdapter = createMockAdapter("mimo", vi.fn().mockImplementation(async (req) => {
         callCount++;
-        if (req.modelId === "MiMo-V2.5-Pro") {
+        if (req.modelId === "mimo-v2.5-pro") {
           throw createHttpError(500, "Model unavailable");
         }
         return {
@@ -159,10 +159,10 @@ describe("ProviderRegistry", () => {
       const result = await registry.runWithFallback(
         ["mimo"],
         baseReq,
-        ["MiMo-V2.5-Pro", "MiMo-V2.5"]
+        ["mimo-v2.5-pro", "mimo-v2.5"]
       );
 
-      expect(result.response.text).toContain("MiMo-V2.5");
+      expect(result.response.text).toContain("mimo-v2.5");
       expect(callCount).toBeGreaterThan(1);
     });
 
