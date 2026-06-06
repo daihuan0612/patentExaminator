@@ -51,6 +51,19 @@ export const DEFAULT_MODEL_IDS = {
   openrouter: "deepseek/deepseek-v4-flash:free",
 };
 
+/**
+ * Provider fallback 优先级链（MiMo → Gemini → OpenRouter）
+ * 对应 ADR-005/ADR-007：MiMo Token Plan 是 v0.1.0 默认 usage method
+ *
+ * keyName: .env 中的 key 名（通过 getApiKey(keyName) 获取）
+ * preference: 传给 /ai/run 的 providerPreference 数组
+ */
+export const PROVIDER_FALLBACK_CHAIN = [
+  { name: "MiMo", keyName: "mimo", preference: ["mimo"] },
+  { name: "Gemini", keyName: "gemini", preference: ["gemini", "openrouter"] },
+  { name: "OpenRouter", keyName: "openrouter", preference: ["openrouter"] },
+];
+
 // ── Fallback 模型链条 ────────────────────────────────────────────────
 
 /** Gemini fallback 模型列表 */

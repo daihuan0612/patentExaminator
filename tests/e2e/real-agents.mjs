@@ -30,6 +30,7 @@ import {
   validateSearchReferencesOutput,
   validateDefectsOutput,
   GEMINI_FALLBACK_MODELS,
+  PROVIDER_FALLBACK_CHAIN,
   AI_RATE_LIMIT_DELAY,
   SEARCH_RATE_LIMIT_DELAY,
   RETRY_BASE_DELAY,
@@ -235,24 +236,46 @@ async function runRealAiAgentTest(label, agent, prompt, metadata, onResponse) {
 // ── Real Mode Tests ─────────────────────────────────────────────────
 
 export async function testRealProviderConnectivity() {
-  const GEMINI_KEY = getApiKey("gemini");
-  if (!GEMINI_KEY) {
-    log("Real Provider Connectivity", false, "GEMINI_KEY not set");
+  // 检查是否至少有一个 provider 的 key
+  const hasAnyKey = PROVIDER_FALLBACK_CHAIN.some(({ keyName }) => getApiKey(keyName));
+  if (!hasAnyKey) {
+    log("Real Provider Connectivity", false, "No API keys configured");
     return;
   }
 
-  const res = await postJSON("/ai/run", {
-    agent: "claim-chart",
-    providerPreference: ["gemini"],
-    modelId: getModelId("gemini"),
-    prompt: "Test connectivity",
-    sanitized: false,
-    metadata: { caseId: "connectivity-test", moduleScope: "test", tokenEstimate: 10 },
-    apiKey: GEMINI_KEY,
-  });
+  for (const { name, keyName, preference } of PROVIDER_FALLBACK_CHAIN) {
+    const key = getApiKey(keyName);
+    if (!key) {
+      console.log(`  [Connectivity] ${name} key not set, skipping`);
+      continue;
+    }
 
-  const data = await res.json();
-  log("Real Provider Connectivity", data.ok === true, `ok=${data.ok}`);
+    const modelId = getModelId(keyName);
+    console.log(`  [Connectivity] trying ${name} (model=${modelId})`);
+    try {
+      const res = await postJSON("/ai/run", {
+        agent: "claim-chart",
+        providerPreference: preference,
+        modelId,
+        prompt: "Test connectivity",
+        sanitized: false,
+        metadata: { caseId: "connectivity-test", moduleScope: "test", tokenEstimate: 10 },
+        apiKey: key,
+      });
+
+      const data = await res.json();
+      if (data.ok) {
+        log("Real Provider Connectivity", true, `ok via ${name} (model=${modelId})`);
+        return;
+      } else {
+        console.log(`  [Connectivity] ${name} failed: ${data.error?.message || "unknown"}, trying next`);
+      }
+    } catch (err) {
+      console.log(`  [Connectivity] ${name} error: ${err.message}, trying next`);
+    }
+  }
+
+  log("Real Provider Connectivity", false, "All providers exhausted");
 }
 
 export async function testRealClaimChart_G1() {
