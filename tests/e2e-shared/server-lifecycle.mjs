@@ -41,6 +41,7 @@ export async function startIsolatedServer() {
   console.log(`[server-lifecycle] Temp dir: ${tmpDir}`);
 
   // 2. Spawn server 子进程
+  console.log(`[server-lifecycle] Parent TEST_BASE=${process.env.TEST_BASE ?? "(unset)"}`);
   const child = spawn("node", ["--import", "tsx", "server/src/index.ts"], {
     env: {
       ...process.env,

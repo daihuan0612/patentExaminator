@@ -24,6 +24,9 @@ import { parseSSEResponse } from "./http.mjs";
  */
 export async function uploadKnowledgeFile(filePath, options = {}) {
   const base = options.baseUrl || getTestBase();
+  if (base.includes("localhost:3000")) {
+    console.warn(`[upload.mjs] ⚠️ upload 指向主服务器! base=${base} | caller: ${new Error().stack?.split("\n")[2]?.trim()}`);
+  }
   const fileName = path.basename(filePath);
 
   // 读取文件

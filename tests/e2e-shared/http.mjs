@@ -21,7 +21,11 @@ const DEFAULT_TIMEOUT_MS = 60_000;
  */
 export async function postJSON(pathname, body, baseUrl, timeoutMs) {
   const base = baseUrl || getTestBase();
-  return fetch(`${base}${pathname}`, {
+  const url = `${base}${pathname}`;
+  if (url.includes("localhost:3000")) {
+    console.warn(`[http.mjs] ⚠️ POST 指向主服务器! url=${url} | caller: ${new Error().stack?.split("\n")[2]?.trim()}`);
+  }
+  return fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -34,7 +38,11 @@ export async function postJSON(pathname, body, baseUrl, timeoutMs) {
  */
 export async function getJSON(pathname, baseUrl) {
   const base = baseUrl || getTestBase();
-  return fetch(`${base}${pathname}`, {
+  const url = `${base}${pathname}`;
+  if (url.includes("localhost:3000")) {
+    console.warn(`[http.mjs] ⚠️ GET 指向主服务器! url=${url} | caller: ${new Error().stack?.split("\n")[2]?.trim()}`);
+  }
+  return fetch(url, {
     signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
   });
 }
@@ -44,7 +52,11 @@ export async function getJSON(pathname, baseUrl) {
  */
 export async function getJSONWithParams(pathname, params, baseUrl) {
   const base = baseUrl || getTestBase();
-  const url = new URL(`${base}${pathname}`);
+  const fullUrl = `${base}${pathname}`;
+  if (fullUrl.includes("localhost:3000")) {
+    console.warn(`[http.mjs] ⚠️ GET+params 指向主服务器! url=${fullUrl} | caller: ${new Error().stack?.split("\n")[2]?.trim()}`);
+  }
+  const url = new URL(fullUrl);
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }
@@ -56,7 +68,11 @@ export async function getJSONWithParams(pathname, params, baseUrl) {
  */
 export async function uploadFile(pathname, formData, baseUrl) {
   const base = baseUrl || getTestBase();
-  return fetch(`${base}${pathname}`, {
+  const url = `${base}${pathname}`;
+  if (url.includes("localhost:3000")) {
+    console.warn(`[http.mjs] ⚠️ upload 指向主服务器! url=${url} | caller: ${new Error().stack?.split("\n")[2]?.trim()}`);
+  }
+  return fetch(url, {
     method: "POST",
     body: formData,
   });

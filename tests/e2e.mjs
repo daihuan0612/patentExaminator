@@ -485,6 +485,9 @@ async function main() {
       setGroup("knowledge");
       console.log("\n--- Knowledge Base ---");
       const BASE = getTestBase();
+      if (BASE.includes("localhost:3000")) {
+        console.warn(`[e2e.mjs] ⚠️ knowledge/clear 指向主服务器! base=${BASE}`);
+      }
       await fetch(`${BASE}/knowledge/clear`, { method: "DELETE" }).catch((err) => console.warn(`  [warn] knowledge/clear failed: ${err.message}`));
       await maybe(testKnowledgeUploadTxt);
       await maybe(testKnowledgeUploadLargeFile);

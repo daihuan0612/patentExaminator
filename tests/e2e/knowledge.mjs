@@ -26,6 +26,15 @@ function fetchWithTimeout(url, options = {}) {
   return fetch(url, { ...options, signal: AbortSignal.timeout(TIMEOUT_MS) });
 }
 
+/** 获取 BASE URL，如果是 localhost:3000 则警告 */
+function checkedBase() {
+  const base = getTestBase();
+  if (base.includes("localhost:3000")) {
+    console.warn(`[knowledge.mjs] ⚠️ 指向主服务器! base=${base} | caller: ${new Error().stack?.split("\n")[2]?.trim()}`);
+  }
+  return base;
+}
+
 // 安全解析 JSON（先检查 res.ok，非 2xx 抛异常）
 async function safeJson(res, label) {
   if (!res.ok && res.status >= 500) {
@@ -122,7 +131,7 @@ export async function testKnowledgeDelete() {
   }
 
   const sourceToDelete = sourcesData.sources[0];
-  const res = await fetchWithTimeout(`${getTestBase()}/knowledge/sources/${encodeURIComponent(sourceToDelete.name)}`, {
+  const res = await fetchWithTimeout(`${checkedBase()}/knowledge/sources/${encodeURIComponent(sourceToDelete.name)}`, {
     method: "DELETE",
   });
   const data = await safeJson(res, "Knowledge Delete");
@@ -131,7 +140,7 @@ export async function testKnowledgeDelete() {
 }
 
 export async function testKnowledgeClearAll() {
-  const res = await fetchWithTimeout(`${getTestBase()}/knowledge/clear`, {
+  const res = await fetchWithTimeout(`${checkedBase()}/knowledge/clear`, {
     method: "DELETE",
   });
   const data = await safeJson(res, "Knowledge Clear All");
@@ -142,7 +151,7 @@ export async function testKnowledgeClearAll() {
 // ── 集成测试（从 knowledge-base-e2e.mjs 迁移）──────────────────────
 
 export async function testKnowledgeUploadAndSearchChain() {
-  const BASE = getTestBase();
+  const BASE = checkedBase();
   await fetchWithTimeout(`${BASE}/knowledge/clear`, { method: "DELETE" }).catch(() => {});
 
   const filePath = path.join(SAMPLES_KNOWLEDGE_DIR, "专利法条文速查.md");
@@ -181,7 +190,7 @@ export async function testKnowledgeSearchResultMetadata() {
 }
 
 export async function testKnowledgeMultiFileUploadAndSearch() {
-  const BASE = getTestBase();
+  const BASE = checkedBase();
   await fetchWithTimeout(`${BASE}/knowledge/clear`, { method: "DELETE" }).catch(() => {});
 
   const files = ["专利法条文速查.md", "测试案例.json", "审查标准速查表.csv"];
@@ -209,7 +218,7 @@ export async function testKnowledgeMultiFileUploadAndSearch() {
 }
 
 export async function testKnowledgeProviderTestEndpoint() {
-  const BASE = getTestBase();
+  const BASE = checkedBase();
 
   // 测试缺少参数
   const missingRes = await fetchWithTimeout(`${BASE}/knowledge/providers/test`, {
@@ -238,7 +247,7 @@ export async function testKnowledgeProviderTestEndpoint() {
 }
 
 export async function testKnowledgeRerankerIntegration() {
-  const BASE = getTestBase();
+  const BASE = checkedBase();
 
   await fetchWithTimeout(`${BASE}/knowledge/clear`, { method: "DELETE" }).catch(() => {});
   const filePath = path.join(SAMPLES_KNOWLEDGE_DIR, "专利法条文速查.md");

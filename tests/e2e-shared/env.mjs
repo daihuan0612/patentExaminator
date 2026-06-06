@@ -108,7 +108,12 @@ export function getModelId(provider) {
  * 获取测试服务器地址
  */
 export function getTestBase() {
-  return process.env.TEST_BASE || DEFAULT_TEST_BASE;
+  const fromEnv = process.env.TEST_BASE;
+  const result = fromEnv || DEFAULT_TEST_BASE;
+  const source = fromEnv ? "env.TEST_BASE" : "DEFAULT_TEST_BASE(fallback)";
+  const stack = new Error().stack?.split("\n").slice(1, 4).map(s => s.trim()).join(" <- ") ?? "?";
+  console.log(`[getTestBase] ${source} → ${result} | caller: ${stack}`);
+  return result;
 }
 
 /**
