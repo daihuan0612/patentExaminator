@@ -367,7 +367,6 @@ async function main() {
 
     console.log("\n--- Provider Connectivity ---");
     await withTimeout(() => maybe(testRealProviderConnectivity));
-    await delay(2000);
 
     console.log("\n--- Real Agent Tests ---");
     const realAgentTests = [

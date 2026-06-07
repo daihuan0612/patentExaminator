@@ -135,32 +135,36 @@ export const BANNED_MODEL_PATTERNS = [
 
 // ── 超时和延迟配置 ──────────────────────────────────────────────────
 
-/** AI 请求速率限制延迟（毫秒） */
-export const AI_RATE_LIMIT_DELAY = Number(process.env.GEMINI_RATE_LIMIT_DELAY) || 8000;
+/**
+ * AI 请求速率限制延迟（毫秒）
+ * 依据 modelCatalog.ts RPM：MiMo 10 RPM (6s), Gemini-flash 15 RPM (4s)
+ * 取 2s 作为安全下限（不触发 429，同时不浪费时间）
+ */
+export const AI_RATE_LIMIT_DELAY = Number(process.env.AI_RATE_LIMIT_DELAY) || 2000;
 
-/** 搜索请求速率限制延迟（毫秒） */
-export const SEARCH_RATE_LIMIT_DELAY = Number(process.env.SEARCH_RATE_LIMIT_DELAY) || 15000;
+/** 搜索请求速率限制延迟（毫秒） — Tavily ~60 RPM (1s), EPO ~30 RPM (2s) */
+export const SEARCH_RATE_LIMIT_DELAY = Number(process.env.SEARCH_RATE_LIMIT_DELAY) || 2000;
 
 /** Real 模式测试单个测试超时（毫秒） */
 export const REAL_MODE_TEST_TIMEOUT = 60_000;
 
 /** 重试基础延迟（毫秒） */
-export const RETRY_BASE_DELAY = 5000;
+export const RETRY_BASE_DELAY = 2000;
 
 /** 重试延迟增量（毫秒） */
-export const RETRY_DELAY_INCREMENT = 3000;
+export const RETRY_DELAY_INCREMENT = 1000;
 
-/** Gemini fallback 基础延迟（毫秒） */
-export const GEMINI_FALLBACK_BASE_DELAY = 15000;
+/** Gemini fallback 基础延迟（毫秒） — Gemini 2.5-flash 15 RPM (4s) */
+export const GEMINI_FALLBACK_BASE_DELAY = 4000;
 
 /** Gemini fallback 延迟增量（毫秒） */
-export const GEMINI_FALLBACK_DELAY_INCREMENT = 5000;
+export const GEMINI_FALLBACK_DELAY_INCREMENT = 1000;
 
-/** OpenRouter fallback 基础延迟（毫秒） */
-export const OPENROUTER_FALLBACK_BASE_DELAY = 10000;
+/** OpenRouter fallback 基础延迟（毫秒） — OpenRouter ~20 RPM (3s) */
+export const OPENROUTER_FALLBACK_BASE_DELAY = 3000;
 
 /** OpenRouter fallback 延迟增量（毫秒） */
-export const OPENROUTER_FALLBACK_DELAY_INCREMENT = 5000;
+export const OPENROUTER_FALLBACK_DELAY_INCREMENT = 1000;
 
 // ── 测试服务器配置 ──────────────────────────────────────────────────
 

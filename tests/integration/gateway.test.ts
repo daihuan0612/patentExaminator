@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { ProviderRegistry } from "@server/providers/registry";
 import { clearAll } from "@server/security/keyStore";
 import { sanitizeText } from "@server/security/sanitize";
@@ -212,24 +212,34 @@ describe("ProviderRegistry", () => {
   });
 
   it("T-GW-005: enforces per-agent max total attempts", async () => {
-    const ids: ProviderId[] = [];
-    for (let i = 0; i < 10; i++) {
-      const adapter = new FailingAdapter(500);
-      adapter.id = `kimi` as ProviderId;
-      registry.register(adapter);
-      ids.push(adapter.id);
+    vi.useFakeTimers();
+    try {
+      const ids: ProviderId[] = [];
+      for (let i = 0; i < 10; i++) {
+        const adapter = new FailingAdapter(500);
+        adapter.id = `kimi` as ProviderId;
+        registry.register(adapter);
+        ids.push(adapter.id);
+      }
+
+      const promise = registry.runWithFallback(
+        ids,
+        { modelId: "test", messages: [{ role: "user", content: "test" }], apiKey: "test-key" }
+      );
+
+      // Flush all backoff timers: 8 providers × 3 retries × (0+500+1500) ≈ 16s
+      await vi.advanceTimersByTimeAsync(20_000);
+
+      const { response, attempts } = await promise;
+
+      expect(response.error).toBeDefined();
+      expect(response.error!.code).toBe("max-attempts-reached");
+      // 8 providers × 3 retries each = 24 attempt records (but totalAttempts caps at 8 providers)
+      expect(attempts.length).toBe(24);
+    } finally {
+      vi.useRealTimers();
     }
-
-    const { response, attempts } = await registry.runWithFallback(
-      ids,
-      { modelId: "test", messages: [{ role: "user", content: "test" }], apiKey: "test-key" }
-    );
-
-    expect(response.error).toBeDefined();
-    expect(response.error!.code).toBe("max-attempts-reached");
-    // 8 providers × 3 retries each = 24 attempt records (but totalAttempts caps at 8 providers)
-    expect(attempts.length).toBe(24);
-  }, 30000);
+  });
 
   // ── Gemini Model Fallback Tests ──
 
@@ -329,58 +339,78 @@ describe("ProviderRegistry", () => {
   });
 
   it("FW-005: All Gemini models fail → max-attempts-reached (no provider fallback room)", async () => {
-    const geminiAdapter = new FailingAdapter(503);
-    geminiAdapter.id = "gemini";
-    const bedrockAdapter = new FailingAdapter(503);
-    bedrockAdapter.id = "bedrock";
-    const kimiAdapter = new FailingAdapter(503);
-    kimiAdapter.id = "kimi";
-    const glmAdapter = new FailingAdapter(503);
-    glmAdapter.id = "glm";
-    const deepseekAdapter = new FailingAdapter(503);
-    deepseekAdapter.id = "deepseek";
-    registry.register(geminiAdapter);
-    registry.register(bedrockAdapter);
-    registry.register(kimiAdapter);
-    registry.register(glmAdapter);
-    registry.register(deepseekAdapter);
+    vi.useFakeTimers();
+    try {
+      const geminiAdapter = new FailingAdapter(503);
+      geminiAdapter.id = "gemini";
+      const bedrockAdapter = new FailingAdapter(503);
+      bedrockAdapter.id = "bedrock";
+      const kimiAdapter = new FailingAdapter(503);
+      kimiAdapter.id = "kimi";
+      const glmAdapter = new FailingAdapter(503);
+      glmAdapter.id = "glm";
+      const deepseekAdapter = new FailingAdapter(503);
+      deepseekAdapter.id = "deepseek";
+      registry.register(geminiAdapter);
+      registry.register(bedrockAdapter);
+      registry.register(kimiAdapter);
+      registry.register(glmAdapter);
+      registry.register(deepseekAdapter);
 
-    const { response, attempts } = await registry.runWithFallback(
-      ["gemini", "bedrock", "kimi", "glm", "deepseek"],
-      { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "test-key" }
-    );
+      const promise = registry.runWithFallback(
+        ["gemini", "bedrock", "kimi", "glm", "deepseek"],
+        { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "test-key" }
+      );
 
-    expect(response.error).toBeDefined();
-    expect(response.error!.code).toBe("max-attempts-reached");
-    // Gemini 5 models × 3 retries + Bedrock × 3 + Kimi × 3 + GLM × 3 = 24 (DeepSeek not reached)
-    expect(attempts.length).toBe(24);
-    expect(attempts.filter((a) => a.providerId === "gemini").length).toBe(15);
-    expect(attempts.filter((a) => a.providerId === "bedrock").length).toBe(3);
-    expect(attempts.filter((a) => a.providerId === "kimi").length).toBe(3);
-    expect(attempts.filter((a) => a.providerId === "glm").length).toBe(3);
-    expect(attempts.every((a) => !a.ok)).toBe(true);
-  }, 120000);
+      // Flush all backoff timers: Gemini 5×(0+500+1500)=10s + Bedrock/Kimi/GLM 3×(0+500+1500)=6s each ≈ 28s total
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      const { response, attempts } = await promise;
+
+      expect(response.error).toBeDefined();
+      expect(response.error!.code).toBe("max-attempts-reached");
+      // Gemini 5 models × 3 retries + Bedrock × 3 + Kimi × 3 + GLM × 3 = 24 (DeepSeek not reached)
+      expect(attempts.length).toBe(24);
+      expect(attempts.filter((a) => a.providerId === "gemini").length).toBe(15);
+      expect(attempts.filter((a) => a.providerId === "bedrock").length).toBe(3);
+      expect(attempts.filter((a) => a.providerId === "kimi").length).toBe(3);
+      expect(attempts.filter((a) => a.providerId === "glm").length).toBe(3);
+      expect(attempts.every((a) => !a.ok)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it("FW-009: Gemini 5 models fail → Bedrock (qwen) takes over successfully", async () => {
-    const geminiAdapter = new FailingAdapter(503);
-    geminiAdapter.id = "gemini";
-    const bedrockAdapter = new MockAdapter([{ text: "qwen-qwen3-vl-success", rawResponse: {} }]);
-    bedrockAdapter.id = "bedrock";
-    registry.register(geminiAdapter);
-    registry.register(bedrockAdapter);
+    vi.useFakeTimers();
+    try {
+      const geminiAdapter = new FailingAdapter(503);
+      geminiAdapter.id = "gemini";
+      const bedrockAdapter = new MockAdapter([{ text: "qwen-qwen3-vl-success", rawResponse: {} }]);
+      bedrockAdapter.id = "bedrock";
+      registry.register(geminiAdapter);
+      registry.register(bedrockAdapter);
 
-    const { response, attempts } = await registry.runWithFallback(
-      ["gemini", "bedrock"],
-      { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "test-key" }
-    );
+      const promise = registry.runWithFallback(
+        ["gemini", "bedrock"],
+        { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "test-key" }
+      );
 
-    expect(response.text).toBe("qwen-qwen3-vl-success");
-    // 5 models × 3 retries each = 15 gemini attempts + 1 bedrock = 16
-    expect(attempts.length).toBe(16);
-    expect(attempts.slice(0, 15).every((a) => a.providerId === "gemini" && !a.ok)).toBe(true);
-    expect(attempts[15]!.providerId).toBe("bedrock");
-    expect(attempts[15]!.ok).toBe(true);
-  }, 30000);
+      // Flush Gemini backoff timers: 5 models × 3 retries × (0+500+1500) ≈ 10s
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      const { response, attempts } = await promise;
+
+      expect(response.text).toBe("qwen-qwen3-vl-success");
+      // 5 models × 3 retries each = 15 gemini attempts + 1 bedrock = 16
+      expect(attempts.length).toBe(16);
+      expect(attempts.slice(0, 15).every((a) => a.providerId === "gemini" && !a.ok)).toBe(true);
+      expect(attempts[15]!.providerId).toBe("bedrock");
+      expect(attempts[15]!.ok).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   // ── executeWithRetry Layer Tests (non-Gemini providers) ──
 

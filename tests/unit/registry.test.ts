@@ -82,17 +82,25 @@ describe("ProviderRegistry", () => {
     });
 
     it("TC-REG-005: fallback to second provider on 5xx", async () => {
-      const failing = createErrorAdapter("failing", createHttpError(500, "Server Error"));
-      const success = createMockAdapter("success");
+      vi.useFakeTimers();
+      try {
+        const failing = createErrorAdapter("failing", createHttpError(500, "Server Error"));
+        const success = createMockAdapter("success");
 
-      registry.register(failing);
-      registry.register(success);
+        registry.register(failing);
+        registry.register(success);
 
-      const result = await registry.runWithFallback(["failing", "success"], baseReq);
+        const promise = registry.runWithFallback(["failing", "success"], baseReq);
+        await vi.advanceTimersByTimeAsync(5000);
 
-      // Should have retried failing (MAX_RETRIES=2 times) then fallen back to success
-      expect(result.response.text).toBe("response from success");
-      expect(result.attempts.some(a => a.providerId === ("success" as ProviderId) && a.ok)).toBe(true);
+        const result = await promise;
+
+        // Should have retried failing (MAX_RETRIES=2 times) then fallen back to success
+        expect(result.response.text).toBe("response from success");
+        expect(result.attempts.some(a => a.providerId === ("success" as ProviderId) && a.ok)).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("TC-REG-006: 401 stops all retries and fallback", async () => {
@@ -123,16 +131,24 @@ describe("ProviderRegistry", () => {
     });
 
     it("TC-REG-008: all providers fail", async () => {
-      const fail1 = createErrorAdapter("fail1", createHttpError(500, "Error 1"));
-      const fail2 = createErrorAdapter("fail2", createHttpError(500, "Error 2"));
+      vi.useFakeTimers();
+      try {
+        const fail1 = createErrorAdapter("fail1", createHttpError(500, "Error 1"));
+        const fail2 = createErrorAdapter("fail2", createHttpError(500, "Error 2"));
 
-      registry.register(fail1);
-      registry.register(fail2);
+        registry.register(fail1);
+        registry.register(fail2);
 
-      const result = await registry.runWithFallback(["fail1", "fail2"], baseReq);
+        const promise = registry.runWithFallback(["fail1", "fail2"], baseReq);
+        await vi.advanceTimersByTimeAsync(10000);
 
-      expect(result.response.error?.code).toBe("all-providers-failed");
-      expect(result.attempts.length).toBeGreaterThan(0);
+        const result = await promise;
+
+        expect(result.response.error?.code).toBe("all-providers-failed");
+        expect(result.attempts.length).toBeGreaterThan(0);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("TC-REG-009: unknown adapter skipped", async () => {
@@ -146,30 +162,37 @@ describe("ProviderRegistry", () => {
     });
 
     it("TC-REG-010: model fallback for mimo provider", async () => {
-      let callCount = 0;
-      const mimoAdapter = createMockAdapter("mimo", vi.fn().mockImplementation(async (req) => {
-        callCount++;
-        if (req.modelId === "mimo-v2.5-pro") {
-          throw createHttpError(500, "Model unavailable");
-        }
-        return {
-          text: `response from mimo model ${req.modelId}`,
-          rawResponse: {},
-          tokenUsage: { input: 100, output: 50, total: 150 }
-        };
-      }));
+      vi.useFakeTimers();
+      try {
+        let callCount = 0;
+        const mimoAdapter = createMockAdapter("mimo", vi.fn().mockImplementation(async (req) => {
+          callCount++;
+          if (req.modelId === "mimo-v2.5-pro") {
+            throw createHttpError(500, "Model unavailable");
+          }
+          return {
+            text: `response from mimo model ${req.modelId}`,
+            rawResponse: {},
+            tokenUsage: { input: 100, output: 50, total: 150 }
+          };
+        }));
 
-      registry.register(mimoAdapter);
+        registry.register(mimoAdapter);
 
-      // req.modelId 被插到 fallback 列表前面，所以这里用 mimo-v2.5-pro 作为初始模型
-      const result = await registry.runWithFallback(
-        ["mimo"],
-        { ...baseReq, modelId: "mimo-v2.5-pro" },
-        ["mimo-v2.5-pro", "mimo-v2.5"]
-      );
+        const promise = registry.runWithFallback(
+          ["mimo"],
+          { ...baseReq, modelId: "mimo-v2.5-pro" },
+          ["mimo-v2.5-pro", "mimo-v2.5"]
+        );
+        await vi.advanceTimersByTimeAsync(5000);
 
-      expect(result.response.text).toContain("mimo-v2.5");
-      expect(callCount).toBeGreaterThan(1);
+        const result = await promise;
+
+        expect(result.response.text).toContain("mimo-v2.5");
+        expect(callCount).toBeGreaterThan(1);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("TC-REG-011: MAX_TOTAL_ATTEMPTS stops execution", async () => {
@@ -196,46 +219,70 @@ describe("ProviderRegistry", () => {
     };
 
     it("TC-REG-012: network error retries then fallback", async () => {
-      const networkError = new Error("ECONNREFUSED");
-      const failAdapter = createErrorAdapter("fail", networkError);
-      const successAdapter = createMockAdapter("success");
+      vi.useFakeTimers();
+      try {
+        const networkError = new Error("ECONNREFUSED");
+        const failAdapter = createErrorAdapter("fail", networkError);
+        const successAdapter = createMockAdapter("success");
 
-      registry.register(failAdapter);
-      registry.register(successAdapter);
+        registry.register(failAdapter);
+        registry.register(successAdapter);
 
-      const result = await registry.runWithFallback(["fail", "success"], baseReq);
+        const promise = registry.runWithFallback(["fail", "success"], baseReq);
+        await vi.advanceTimersByTimeAsync(5000);
 
-      expect(result.response.text).toBe("response from success");
+        const result = await promise;
+
+        expect(result.response.text).toBe("response from success");
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("TC-REG-013: AbortError treated as timeout", async () => {
-      const abortError = new Error("Aborted");
-      abortError.name = "AbortError";
+      vi.useFakeTimers();
+      try {
+        const abortError = new Error("Aborted");
+        abortError.name = "AbortError";
 
-      const failAdapter = createErrorAdapter("fail", abortError);
-      const successAdapter = createMockAdapter("success");
+        const failAdapter = createErrorAdapter("fail", abortError);
+        const successAdapter = createMockAdapter("success");
 
-      registry.register(failAdapter);
-      registry.register(successAdapter);
+        registry.register(failAdapter);
+        registry.register(successAdapter);
 
-      const result = await registry.runWithFallback(["fail", "success"], baseReq);
+        const promise = registry.runWithFallback(["fail", "success"], baseReq);
+        await vi.advanceTimersByTimeAsync(5000);
 
-      // Should fallback after timeout
-      expect(result.response.text).toBe("response from success");
+        const result = await promise;
+
+        // Should fallback after timeout
+        expect(result.response.text).toBe("response from success");
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("TC-REG-014: unknown error stops retries", async () => {
-      const unknownError = "string error"; // not an Error instance
-      const failAdapter = createMockAdapter("fail", vi.fn().mockRejectedValue(unknownError));
-      const successAdapter = createMockAdapter("success");
+      vi.useFakeTimers();
+      try {
+        const unknownError = "string error"; // not an Error instance
+        const failAdapter = createMockAdapter("fail", vi.fn().mockRejectedValue(unknownError));
+        const successAdapter = createMockAdapter("success");
 
-      registry.register(failAdapter);
-      registry.register(successAdapter);
+        registry.register(failAdapter);
+        registry.register(successAdapter);
 
-      const result = await registry.runWithFallback(["fail", "success"], baseReq);
+        const promise = registry.runWithFallback(["fail", "success"], baseReq);
+        await vi.advanceTimersByTimeAsync(5000);
 
-      // Should fallback
-      expect(result.response.text).toBe("response from success");
+        const result = await promise;
+
+        // Should fallback
+        expect(result.response.text).toBe("response from success");
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
@@ -247,25 +294,33 @@ describe("ProviderRegistry", () => {
     };
 
     it("TC-REG-015: retries on 5xx errors", async () => {
-      let attempts = 0;
-      const adapter = createMockAdapter("retry-test", vi.fn().mockImplementation(async () => {
-        attempts++;
-        if (attempts <= 2) {
-          throw createHttpError(503, "Service Unavailable");
-        }
-        return {
-          text: "success after retries",
-          rawResponse: {},
-          tokenUsage: { input: 100, output: 50, total: 150 }
-        };
-      }));
+      vi.useFakeTimers();
+      try {
+        let attempts = 0;
+        const adapter = createMockAdapter("retry-test", vi.fn().mockImplementation(async () => {
+          attempts++;
+          if (attempts <= 2) {
+            throw createHttpError(503, "Service Unavailable");
+          }
+          return {
+            text: "success after retries",
+            rawResponse: {},
+            tokenUsage: { input: 100, output: 50, total: 150 }
+          };
+        }));
 
-      registry.register(adapter);
+        registry.register(adapter);
 
-      const result = await registry.runWithFallback(["retry-test"], baseReq);
+        const promise = registry.runWithFallback(["retry-test"], baseReq);
+        await vi.advanceTimersByTimeAsync(5000);
 
-      expect(result.response.text).toBe("success after retries");
-      expect(attempts).toBe(3); // 1 initial + 2 retries
+        const result = await promise;
+
+        expect(result.response.text).toBe("success after retries");
+        expect(attempts).toBe(3); // 1 initial + 2 retries
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("TC-REG-016: no retry on 401", async () => {
