@@ -196,19 +196,18 @@ export function AgentsAssignmentPanel() {
                         />
                       </div>
 
-                      {!assignment && (
-                        <button
-                          type="button"
-                          className="model-select__option model-select__option--default"
-                          onClick={() => {
-                            setOpenDropdown(null);
-                            setSearchQuery("");
-                          }}
-                        >
-                          <span>使用默认</span>
-                          {!currentModel && <span className="model-select__check">✓</span>}
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className="model-select__option model-select__option--default"
+                        onClick={() => {
+                          handleReset(agentOpt.id);
+                          setOpenDropdown(null);
+                          setSearchQuery("");
+                        }}
+                      >
+                        <span>使用默认</span>
+                        {!assignment && <span className="model-select__check">✓</span>}
+                      </button>
 
                       {enabledProviders.map((p) => {
                         const filteredModels = filterModels(p.providerId, p.modelIds);
