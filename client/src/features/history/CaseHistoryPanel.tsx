@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { PatentCase } from "@shared/types/domain";
-import { readAllCases, deleteCase } from "../../lib/repos";
+import { readAllCases, deleteCase, updateCase } from "../../lib/repos";
 import { loadCaseById } from "../../lib/caseLoader";
 import { useCaseStore } from "../../store";
 import { createLogger } from "../../lib/logger";
@@ -82,6 +82,19 @@ export function CaseHistoryPanel() {
     }
   };
 
+  const handleRename = async (caseId: string, newTitle: string) => {
+    const target = cases.find((c) => c.id === caseId);
+    if (!target || target.title === newTitle) return;
+    const updated = { ...target, title: newTitle };
+    setCases(cases.map((c) => (c.id === caseId ? updated : c)));
+    try {
+      await updateCase(updated);
+    } catch (err) {
+      log("重命名失败:", err);
+      if (isMountedRef.current) setCases(cases);
+    }
+  };
+
   return (
     <div className="case-history-panel" data-testid="case-history-panel">
       <h2>案件历史</h2>
@@ -121,6 +134,7 @@ export function CaseHistoryPanel() {
               caseData={c}
               onOpen={handleOpenCase}
               onDelete={handleDelete}
+              onRename={handleRename}
             />
           ))}
         </div>
@@ -132,25 +146,79 @@ export function CaseHistoryPanel() {
 function CaseListItem({
   caseData,
   onOpen,
-  onDelete
+  onDelete,
+  onRename
 }: {
   caseData: PatentCase;
   onOpen: (id: string) => void;
   onDelete: (id: string, e: React.MouseEvent) => void;
+  onRename: (id: string, newTitle: string) => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(caseData.title);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const startEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditValue(caseData.title);
+    setEditing(true);
+    requestAnimationFrame(() => inputRef.current?.select());
+  };
+
+  const commitEdit = () => {
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== caseData.title) {
+      onRename(caseData.id, trimmed);
+    }
+    setEditing(false);
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setEditValue(caseData.title);
+  };
+
   return (
     <div
       className="case-list-item"
       data-testid={`case-item-${caseData.id}`}
-      onClick={() => onOpen(caseData.id)}
+      onClick={() => !editing && onOpen(caseData.id)}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
-        if (e.key === "Enter") onOpen(caseData.id);
+        if (e.key === "Enter" && !editing) onOpen(caseData.id);
       }}
     >
       <div className="case-item-main">
-        <div className="case-title">{caseData.title || "（未命名案件）"}</div>
+        {editing ? (
+          <input
+            ref={inputRef}
+            className="case-title-edit"
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitEdit();
+              if (e.key === "Escape") cancelEdit();
+              e.stopPropagation();
+            }}
+            onBlur={commitEdit}
+            data-testid={`input-rename-${caseData.id}`}
+          />
+        ) : (
+          <div className="case-title">
+            {caseData.title || "（未命名案件）"}
+            <button
+              type="button"
+              className="btn-rename-case"
+              onClick={startEdit}
+              data-testid={`btn-rename-${caseData.id}`}
+              title="重命名"
+            >
+              重命名
+            </button>
+          </div>
+        )}
         <div className="case-meta">
           <span className="case-id" title={caseData.id}>{caseData.id}</span>
           {caseData.applicationNumber && (
