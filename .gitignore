@@ -39,11 +39,10 @@ scripts/
 .windsurfrules
 .github/
 
-docs/lesson-learned-57.md
 opencode.json
 
-# Docs (local only)
-docs/refactor-plan.md
+# Docs (local only, entire directory)
+docs/
 
 # Knowledge base samples (local only, too large for git)
 samples/knowledge-base/
@@ -53,18 +52,6 @@ data/
 
 # ML model cache (cross-encoder reranker)
 server/models/
-
-# Legal reference documents (knowledge base, too large for git)
-docs/专利*.pdf
-docs/专利*.txt
-docs/最高法*.txt
-docs/*年度*.pdf
-docs/*汇编*.pdf
-docs/*对照表*.pdf
-docs/国家知识产权局*.pdf
-docs/URL在线网页知识库.txt
-docs/rag-finetune-plan.md
-docs/persistence-test-plan.md
 bug-repro-context.md
 bug-repro-log.md
 bug-repro-report.md
