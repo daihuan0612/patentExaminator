@@ -37,6 +37,7 @@ export interface OpinionSlice {
   addCitedRef: (ref: RejectionCitedReference) => void;
   removeCitedRef: (pubNumber: string) => void;
   clearReexamData: (caseId?: string) => void;
+  resetOpinionState: () => void; // Reset in-memory state only (no DB delete), for case switching
   setLoading: (v: boolean) => void;
   setArgumentRanCases: (caseIds: string[]) => void;
   addArgumentRanCase: (caseId: string) => void;
@@ -173,6 +174,9 @@ export const createOpinionSlice = (
       clearOpinionData(caseId).catch((e) => log("error", "clearOpinionData error:", e));
     }
     set(() => ({ officeActionAnalysis: null, argumentMappings: [], unmappedGrounds: [] }));
+  },
+  resetOpinionState: () => {
+    set(() => ({ officeActionAnalysis: null, argumentMappings: [], unmappedGrounds: [], argumentRanCases: [] }));
   },
   setLoading: (v) => set(() => ({ isLoading: v })),
   setArgumentRanCases: (caseIds) => set(() => ({ argumentRanCases: caseIds })),

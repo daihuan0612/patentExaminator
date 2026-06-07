@@ -95,6 +95,12 @@ export async function loadCaseById(caseId: string) {
 
   // Hydrate Zustand stores using load* methods to avoid re-saving to DB
   log("Hydrating Zustand stores...");
+
+  // Reset stores that use global (non-caseId-keyed) state to prevent stale data from previous case
+  // Bug fix: officeActionAnalysis/argumentMappings are NOT keyed by caseId, so switching cases
+  // would leak old case's opinion data into the new case if the new case has no such data.
+  useOpinionStore.getState().resetOpinionState();
+
   useCaseStore.getState().setCurrentCase(theCase);
   useDocumentsStore.getState().setDocuments(docs);
   useReferencesStore.getState().setReferences(refs as unknown as ReferenceDocument[]);
