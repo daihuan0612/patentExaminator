@@ -65,12 +65,17 @@ describe("ProviderRegistry", () => {
     };
 
     it("TC-REG-004: successful call on first provider", async () => {
-      const adapter = createMockAdapter("primary");
+      // Use longer text to avoid L3 truncation detection (text >= 50 chars)
+      const adapter = createMockAdapter("primary", vi.fn().mockResolvedValue({
+        text: "response from primary with enough text to avoid truncation detection",
+        rawResponse: {},
+        tokenUsage: { input: 100, output: 50, total: 150 }
+      }));
       registry.register(adapter);
 
       const result = await registry.runWithFallback(["primary"], baseReq);
 
-      expect(result.response.text).toBe("response from primary");
+      expect(result.response.text).toContain("response from primary");
       expect(result.attempts).toHaveLength(1);
       expect(result.attempts[0]!.ok).toBe(true);
       expect(result.attempts[0]!.providerId).toBe("primary");

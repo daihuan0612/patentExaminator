@@ -8,6 +8,7 @@
 
 | 版本 | 日期 | 变更摘要 | 影响范围 | 关联 commit |
 |------|------|---------|----------|-------------|
+| v0.1.0-r46 | 2026-06-07 | bug5: 模型自适应框架 — ModelCapabilities 统一能力声明接口+注册表（6 维度：maxTokens/thinking tokens 三层防御、temperature 自适应、上下文窗口动态截断、structured output 降级、系统提示处理、视觉能力声明）；ChatResponse 新增 thinkingTokens/reasoningText；ChatRequest 新增 responseFormat；orchestrator temperature 传递 + truncateForModel；3 新文件 + 7 修改文件 | ProviderAdapter.ts, gemini.ts, bedrock.ts, registry.ts, orchestrator.ts, ModelCapabilities.ts(新建), model-capabilities-registry.ts(新建), tokenEstimator.ts(新建), provider-adapters.test.ts, registry.test.ts | — |
 | v0.1.0-r45 | 2026-06-06 | bug3: 数据库操作日志扩展到所有 store — 移除 data.ts 中 `store === "settings"` 守卫，所有 CRUD 操作（GET/CREATE/UPDATE/DELETE/DELETE_ALL）均记录审计日志；auditLog.ts 日志文件重命名为 db-audit.log | data.ts, auditLog.ts | — |
 | v0.1.0-r44 | 2026-06-06 | BUG-171: knowledgeDb 测试隔离 — 添加 resetKnowledgeDbForTesting() 和 closeKnowledgeDb() 导出，getKnowledgeDb() 支持 globalThis 注入测试路径；testDb.ts 添加 initKnowledgeSchema()；集成测试 beforeAll 注入 ":memory:" | knowledgeDb.ts, testDb.ts, globalSetup.ts, route-coverage.test.ts, agentPipeline.test.ts | — |
 | v0.1.0-r43 | 2026-06-05 | BUG-166: settings 持久化去掉 debounce + localStorage 中间层 — writeSettings 直接 POST 服务器 DB，readSettings 直接 GET；删除死代码 syncClient.ts；修复 Ctrl+C kill 服务器后配置丢失 | settingsSlice.ts, syncClient.ts(删除), settingsPersist.test.ts | — |
@@ -816,38 +817,60 @@ POST /api/ai/run
 ### 5.4 Provider Adapter 接口
 
 ```typescript
+interface ChatRequest {
+  modelId: string;
+  messages: Array<{ role: "system" | "user" | "assistant"; content: string | MultimodalPart[] }>;
+  temperature?: number;
+  maxTokens?: number;
+  apiKey: string;
+  signal?: AbortSignal;
+  baseUrl?: string;
+  timeoutMs?: number;
+  responseFormat?: {
+    type: "json_schema";
+    json_schema: { name: string; strict: boolean; schema: Record<string, unknown> };
+  };
+}
+
+interface ChatResponse {
+  text: string;
+  tokenUsage?: { input: number; output: number; total: number };
+  thinkingTokens?: number;       // thinking token 数量（>0 表示推理模型）
+  reasoningText?: string;        // reasoning 内容文本
+  rawResponse: unknown;
+  error?: { code: string; message: string; retryable: boolean };
+}
+
 interface ProviderAdapter {
   id: ProviderId;
   defaultBaseUrl: string;
   supportedModels(): string[];
-  chat(req: {
-    modelId: string;
-    messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
-    temperature?: number;
-    maxTokens?: number;
-    apiKey: string;
-    signal?: AbortSignal;
-  }): Promise<{
-    text: string;
-    tokenUsage?: { input: number; output: number; total: number };
-    rawResponse: unknown;
-  }>;
+  chat(req: ChatRequest): Promise<ChatResponse>;
+  listModels(apiKey: string, customBaseUrl?: string): Promise<string[]>;
 }
 ```
 
 > **注意：** `reasoningLevel` 不在 Provider Adapter 层处理。Gateway 根据 `AgentAssignment.reasoningLevel` 在构造请求时将其映射为 system prompt 前缀或 temperature 调节（例如 `high` → temperature 0 + "请进行深入分析" 系统提示），再传给 Adapter。各 Provider API 对推理强度的支持不一致，Adapter 层不应感知此参数。
 
-v0.1.0 实现五家的非流式 chat completions：
+> **模型自适应框架（bug5）：** Adapter 层通过 `ModelCapabilities` 注册表自动适配不同模型的差异：temperature 范围和是否支持、thinking token 提取、structured output 降级、视觉内容过滤。详见 `server/src/providers/ModelCapabilities.ts` 和 `model-capabilities-registry.ts`。
+
+v0.1.0 实现 11 家 Provider 的非流式 chat completions：
 
 | Provider | Base URL | 协议兼容 |
 |---------|---------|---------|
-| Kimi (Moonshot) | `https://api.moonshot.cn/v1` | OpenAI-like |
-| GLM (智谱) | `https://open.bigmodel.cn/api/paas/v4` | OpenAI-like |
-| Minimax | `https://api.minimax.chat/v1` | 自有 schema，adapter 内转换 |
+| Kimi (Moonshot) | `https://api.moonshot.cn/v1` | OpenAI-compatible |
+| GLM (智谱) | `https://open.bigmodel.cn/api/paas/v4` | OpenAI-compatible |
+| Minimax | `https://api.minimax.chat/v1` | OpenAI-compatible |
 | MiMo (Token Plan) | `https://token-plan-cn.xiaomimimo.com/v1` | OpenAI-compatible |
 | Deepseek | `https://api.deepseek.com` | OpenAI-compatible |
+| Gemini | `https://generativelanguage.googleapis.com/v1beta` | Gemini 原生 API |
+| Qwen (通义) | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI-compatible |
+| Bedrock | `https://bedrock-mantle.us-east-1.api.aws/v1` | OpenAI-compatible |
+| OpenRouter | `https://openrouter.ai/api/v1` | OpenAI-compatible |
+| OpenCode | `https://opencode.ai/zen/v1` | OpenAI-compatible |
+| Doubao (豆包) | `https://ark.cn-beijing.volces.com/api/v3` | OpenAI-compatible |
 
-> **上下文窗口约束：** 申请文件通常 30–100 页 PDF，多篇对比文件各 10–50 页。各 Provider 选用的模型 context window 需 ≥ 128K tokens，否则超长文档可能导致截断丢失关键段落。Gateway 在 Provider 选择时应校验此约束。
+> **上下文窗口约束：** 申请文件通常 30–100 页 PDF，多篇对比文件各 10–50 页。各 Provider 选用的模型 context window 需 ≥ 128K tokens，否则超长文档可能导致截断丢失关键段落。orchestrator 使用 `truncateForModel()` 根据模型上下文窗口动态截断。
 
 ### 5.5 安全模块
 

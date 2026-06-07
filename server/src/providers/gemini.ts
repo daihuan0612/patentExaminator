@@ -1,6 +1,7 @@
 import type { ProviderId } from "@shared/types/agents";
 import type { ProviderAdapter, ChatRequest, ChatResponse } from "./ProviderAdapter.js";
-import { resolveMaxTokens } from "./ProviderAdapter.js";
+import { resolveMaxTokens, learnThinkingCapability } from "./ProviderAdapter.js";
+import { getModelCapabilities } from "./model-capabilities-registry.js";
 import { logger } from "../lib/logger.js";
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
@@ -143,12 +144,32 @@ export class GeminiAdapter implements ProviderAdapter {
 
     const systemInstruction = req.messages.find(m => m.role === "system");
 
+    // D2: temperature 自适应
+    const caps = getModelCapabilities(req.modelId);
+    let temperature = req.temperature;
+    if (!caps.temperature.supported) {
+      temperature = undefined;
+    } else if (temperature !== undefined) {
+      const [min, max] = caps.temperature.range;
+      temperature = Math.max(min, Math.min(max, temperature));
+    }
+
+    const generationConfig: Record<string, unknown> = {
+      maxOutputTokens: resolveMaxTokens(req.modelId, req.maxTokens)
+    };
+    if (temperature !== undefined) {
+      generationConfig.temperature = temperature;
+    }
+
+    // D4: structured output — Gemini 用 responseMimeType + responseSchema
+    if (req.responseFormat && caps.supportsStructuredOutput) {
+      generationConfig.responseMimeType = "application/json";
+      generationConfig.responseSchema = req.responseFormat.json_schema.schema;
+    }
+
     const body: Record<string, unknown> = {
       contents,
-      generationConfig: {
-        temperature: req.temperature ?? 0.7,
-        maxOutputTokens: resolveMaxTokens(req.modelId, req.maxTokens)
-      }
+      generationConfig
     };
 
     if (systemInstruction) {
@@ -203,16 +224,22 @@ export class GeminiAdapter implements ProviderAdapter {
     }
 
     const data = await res.json() as {
-      candidates: Array<{ content: { parts: Array<{ text: string }> } }>;
-      usageMetadata?: { promptTokenCount: number; candidatesTokenCount: number };
+      candidates: Array<{ content: { parts: Array<{ text?: string; thought?: boolean }> } }>;
+      usageMetadata?: { promptTokenCount: number; candidatesTokenCount: number; thoughtsTokenCount?: number };
       promptFeedback?: unknown;
     };
 
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    // D1: 从所有 parts 中跳过 thought parts，只取非 thought 的 text
+    const allParts = data.candidates?.[0]?.content?.parts ?? [];
+    const textParts = allParts.filter((p) => p.text != null && !p.thought);
+    const text = textParts.map((p) => p.text!).join("") ?? "";
+
     const totalElapsed = Date.now() - reqStartMs;
+    const thinkingTokens = data.usageMetadata?.thoughtsTokenCount ?? 0;
+    learnThinkingCapability(req.modelId, thinkingTokens);
     console.log(`[GEMINI-DEBUG] ──── SUCCESS ──── totalElapsed=${totalElapsed}ms`);
     console.log(`[GEMINI-DEBUG] usage=${data.usageMetadata ? JSON.stringify(data.usageMetadata) : "none"}`);
-    console.log(`[GEMINI-DEBUG] textLen=${text.length} candidates=${data.candidates?.length ?? 0}`);
+    console.log(`[GEMINI-DEBUG] textLen=${text.length} candidates=${data.candidates?.length ?? 0} thinkingTokens=${thinkingTokens}`);
     console.log(`[GEMINI-DEBUG] ──── REQUEST END ────`);
 
     if (!text) {
@@ -235,6 +262,7 @@ export class GeminiAdapter implements ProviderAdapter {
     return {
       text,
       ...(usage ? { tokenUsage: usage } : {}),
+      thinkingTokens: thinkingTokens > 0 ? thinkingTokens : undefined,
       rawResponse: data
     };
   }

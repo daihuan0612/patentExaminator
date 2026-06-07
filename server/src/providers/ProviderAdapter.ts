@@ -1,6 +1,7 @@
 import type { ProviderId } from "@shared/types/agents";
 import type { MultimodalPart } from "@shared/types/domain";
 import { logger } from "../lib/logger.js";
+import { getModelCapabilities } from "./model-capabilities-registry.js";
 
 const NON_TEXT_PATTERNS =
   /\bembed\b|\bimage\b|\bimagen\b|\btts\b|\baudio\b|\bspeech\b|\basr\b|\bwhisper\b|\bdall\b|\bvision\b|\bmoderation\b|\brerank\b|\bcode-search\b|\bveo\b|\bvideo\b|\blyria\b|\bmusic\b|\bclip\b|\bupscale\b|\brecontext\b|\btranscrib|\bcomputer[- ]?use\b/i;
@@ -9,10 +10,42 @@ function isTextModel(id: string): boolean {
   return !NON_TEXT_PATTERNS.test(id);
 }
 
-const REASONING_MODEL_PATTERNS = /mimo|r1\b|o[134]\b|reasoner|thinking|gemini-[23]\.5/i;
+// L2 regex: 宽松兜底 — 宁可误判放大，不要漏判导致崩溃
+const REASONING_MODEL_PATTERNS = /mimo|r1\b|o[134]\b|reasoner|thinking|gemini-\d|glm-\d|k2\.[56]|deepseek-v[34]|kimi-k2|gpt-5|doubao/i;
 const REASONING_MAX_TOKENS_MULTIPLIER = 4;
 
-function isReasoningModel(modelId: string): boolean {
+// L1 运行时缓存：modelId → isReasoning（从 API 响应中学到的）
+const thinkingModelCache = new Map<string, boolean>();
+
+/**
+ * 从 API 响应中学习：如果模型使用了 thinking tokens，缓存为 thinking 模型
+ */
+export function learnThinkingCapability(modelId: string, thinkingTokens: number | undefined): void {
+  if (thinkingTokens && thinkingTokens > 0) {
+    if (!thinkingModelCache.has(modelId)) {
+      logger.info(`[ModelAdapt] Auto-detected thinking model: ${modelId} (${thinkingTokens} thinking tokens)`);
+    }
+    thinkingModelCache.set(modelId, true);
+  }
+}
+
+/**
+ * 判断模型是否为推理模型 — 三层查询：
+ * 1. 运行时缓存（最高优先级：从响应中学到的）
+ * 2. 静态能力声明（ModelCapabilities 注册表）
+ * 3. regex 兜底（cold-start）
+ */
+export function isReasoningModel(modelId: string): boolean {
+  // 1. 运行时缓存
+  if (thinkingModelCache.has(modelId)) {
+    return thinkingModelCache.get(modelId)!;
+  }
+  // 2. 静态能力声明
+  const caps = getModelCapabilities(modelId);
+  if (caps.isReasoning) {
+    return true;
+  }
+  // 3. regex 兜底
   return REASONING_MODEL_PATTERNS.test(modelId);
 }
 
@@ -22,6 +55,11 @@ export function resolveMaxTokens(modelId: string, requestedMaxTokens?: number): 
     return base * REASONING_MAX_TOKENS_MULTIPLIER;
   }
   return base;
+}
+
+/** 仅用于测试 — 清空运行时缓存 */
+export function clearThinkingCache(): void {
+  thinkingModelCache.clear();
 }
 
 export interface ChatRequest {
@@ -34,11 +72,18 @@ export interface ChatRequest {
   baseUrl?: string;
   /** Per-request timeout override (ms). Falls back to registry default if omitted. */
   timeoutMs?: number;
+  /** D4: structured output response format (JSON schema) */
+  responseFormat?: {
+    type: "json_schema";
+    json_schema: { name: string; strict: boolean; schema: Record<string, unknown> };
+  };
 }
 
 export interface ChatResponse {
   text: string;
   tokenUsage?: { input: number; output: number; total: number };
+  thinkingTokens?: number;       // thinking token 数量（>0 表示推理模型）
+  reasoningText?: string;        // reasoning 内容文本（用于日志/调试）
   rawResponse: unknown;
   error?: { code: string; message: string; retryable: boolean };
 }
@@ -117,12 +162,60 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
     if (!this.baseUrl && !req.baseUrl) this.init();
     const url = `${req.baseUrl ?? this.baseUrl}/chat/completions`;
     const effectiveMaxTokens = resolveMaxTokens(req.modelId, req.maxTokens);
-    const body = {
+
+    // D2: temperature 自适应 — 按模型能力决定是否发送和范围
+    const caps = getModelCapabilities(req.modelId);
+    let temperature = req.temperature;
+    if (!caps.temperature.supported) {
+      temperature = undefined; // 不支持 → 不发送
+    } else if (temperature !== undefined) {
+      const [min, max] = caps.temperature.range;
+      temperature = Math.max(min, Math.min(max, temperature)); // clamp 到合法范围
+    }
+
+    const body: Record<string, unknown> = {
       model: req.modelId,
-      messages: req.messages,
-      temperature: req.temperature ?? 0.1,
       max_tokens: effectiveMaxTokens
     };
+    if (temperature !== undefined) {
+      body.temperature = temperature;
+    }
+
+    // D4: structured output — 只在模型支持时发送 response_format
+    if (req.responseFormat && caps.supportsStructuredOutput) {
+      body.response_format = req.responseFormat;
+    }
+
+    // D6: 视觉/多模态 — 按模型能力处理消息内容
+    const messages = req.messages.map(m => {
+      if (typeof m.content === "string") return m;
+      if (!Array.isArray(m.content)) return m;
+
+      if (!caps.supportsVision) {
+        // 不支持视觉：只保留文本部分
+        const textOnly = m.content
+          .filter(p => p.type === "text")
+          .map(p => (p as { type: "text"; text: string }).text)
+          .join("\n");
+        return { ...m, content: textOnly };
+      }
+
+      // 支持视觉：转换为 OpenAI 格式
+      const parts = m.content.map(p => {
+        if (p.type === "text") return { type: "text", text: p.text };
+        if (p.type === "image_url") return { type: "image_url", image_url: p.image_url };
+        if (p.type === "inline_data" && p.inline_data) {
+          return {
+            type: "image_url",
+            image_url: { url: `data:${p.inline_data.mimeType};base64,${p.inline_data.data}` },
+          };
+        }
+        return p;
+      });
+      return { ...m, content: parts };
+    });
+
+    body.messages = messages;
 
     const maskedKey = req.apiKey ? `${req.apiKey.slice(0, 6)}...${req.apiKey.slice(-4)}` : "none";
     const fetchInit: RequestInit = {
@@ -138,7 +231,7 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
     const reqTimestamp = new Date().toISOString();
     console.log(`[MIMO-DEBUG] ──── REQUEST START ──── ${reqTimestamp}`);
     console.log(`[MIMO-DEBUG] provider=${this.id} url=${url}`);
-    console.log(`[MIMO-DEBUG] model=${req.modelId} maxTokens=${effectiveMaxTokens} temp=${req.temperature ?? 0.1}`);
+    console.log(`[MIMO-DEBUG] model=${req.modelId} maxTokens=${effectiveMaxTokens} temp=${temperature ?? "auto"}`);
     console.log(`[MIMO-DEBUG] apiKey=${maskedKey} messages=${req.messages.length}`);
     console.log(`[MIMO-DEBUG] signal=${req.signal ? "set" : "none"} signal.aborted=${req.signal?.aborted ?? "n/a"}`);
     console.log(`[MIMO-DEBUG] bodySize=${JSON.stringify(body).length} bytes`);
@@ -184,17 +277,33 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
     const data = (await res.json()) as Record<string, unknown>;
     const totalElapsed = Date.now() - reqStartMs;
     console.log(`[MIMO-DEBUG] ──── SUCCESS ──── totalElapsed=${totalElapsed}ms`);
-    const usage = data.usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined;
+    const usage = data.usage as {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+      completion_tokens_details?: { reasoning_tokens?: number };
+      reasoning_tokens?: number; // OpenRouter 顶层字段
+    } | undefined;
     console.log(`[MIMO-DEBUG] usage=${usage ? JSON.stringify(usage) : "none"}`);
     const choices = Array.isArray(data.choices) ? data.choices : [];
     const firstChoice = choices[0] as Record<string, unknown> | undefined;
     const message = firstChoice?.message as Record<string, unknown> | undefined;
     const text = (typeof message?.content === "string" ? message.content : "") as string;
     console.log(`[MIMO-DEBUG] choices=${choices.length} textLen=${text.length} finishReason=${firstChoice?.finish_reason}`);
+
+    // D1: 提取 thinking tokens（三层信号）
+    const thinkingTokensFromUsage = usage?.completion_tokens_details?.reasoning_tokens ?? usage?.reasoning_tokens ?? 0;
+    const reasoningContent = typeof message?.reasoning_content === "string" ? message.reasoning_content : undefined;
+    const reasoningFromMessage = typeof message?.reasoning === "string" ? message.reasoning : undefined; // OpenRouter
+    const thinkingTokens = thinkingTokensFromUsage ||
+      (reasoningContent ? 1 : 0) ||
+      (reasoningFromMessage ? 1 : 0);
+
+    learnThinkingCapability(req.modelId, thinkingTokens);
+    console.log(`[MIMO-DEBUG] thinkingTokens=${thinkingTokens} reasoningLen=${reasoningContent?.length ?? 0}`);
     console.log(`[MIMO-DEBUG] ──── REQUEST END ────`);
 
     if (!text) {
-      const reasoningContent = typeof message?.reasoning_content === "string" ? message.reasoning_content : undefined;
       logger.warn(`${this.id} returned empty or missing content in response`, {
         model: req.modelId,
         hasChoices: Array.isArray(data.choices),
@@ -220,6 +329,8 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
     return {
       text,
       ...(tokenUsage ? { tokenUsage } : {}),
+      thinkingTokens: thinkingTokens > 0 ? thinkingTokens : undefined,
+      reasoningText: reasoningContent || reasoningFromMessage || undefined,
       rawResponse: data
     };
   }

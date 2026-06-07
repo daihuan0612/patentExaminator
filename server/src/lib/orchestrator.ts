@@ -11,7 +11,34 @@ import { logger } from "./logger.js";
 import type { ChatRequest } from "../providers/ProviderAdapter.js";
 import { sanitizeText } from "../security/sanitize.js";
 import { extractJsonFromText } from "./jsonExtractor.js";
+import { getModelCapabilities } from "../providers/model-capabilities-registry.js";
+import { estimateTokens } from "./tokenEstimator.js";
 
+/**
+ * D3: 根据模型上下文窗口动态截断文本。
+ * 预留 outputTokens + systemPromptTokens 的空间。
+ */
+function truncateForModel(
+  text: string,
+  modelId: string,
+  reservedOutputTokens: number = 4096,
+  systemPromptTokens: number = 2000
+): string {
+  const caps = getModelCapabilities(modelId);
+  const maxInputTokens = caps.contextWindow - reservedOutputTokens - systemPromptTokens;
+
+  const estimatedTokens = estimateTokens(text);
+  if (estimatedTokens <= maxInputTokens) {
+    return text;
+  }
+
+  // 按比例截断，留 10% 余量
+  const ratio = maxInputTokens / estimatedTokens;
+  const targetChars = Math.floor(text.length * ratio * 0.9);
+  return text.slice(0, targetChars) + "\n[... 内容已截断以适配模型上下文窗口 ...]";
+}
+
+// 保留原始 truncate 用于无 modelId 的场景
 function truncate(text: string, maxLen: number): string {
   return text.length > maxLen ? text.slice(0, maxLen) : text;
 }
@@ -145,7 +172,7 @@ interface ClassifyDocumentsRequest {
 
 // ── Prompt 构造器 ──────────────────────────────────────
 
-function buildClaimChartPrompt(request: ClaimChartRequest): PromptParts {
+function buildClaimChartPrompt(request: ClaimChartRequest, _modelId?: string): PromptParts {
   const claimNumber = request.claimNumber ?? 1;
   const claimText = sanitizeText(request.claimText ?? "");
   const specificationText = sanitizeText(request.specificationText ?? "");
@@ -198,13 +225,13 @@ function buildClaimChartPrompt(request: ClaimChartRequest): PromptParts {
   return { system, user };
 }
 
-function buildNoveltyPrompt(request: NoveltyRequest): PromptParts {
+function buildNoveltyPrompt(request: NoveltyRequest, modelId?: string): PromptParts {
   const features = request.features ?? [];
   const referenceText = sanitizeText(request.referenceText ?? "");
   const referenceId = sanitizeText(request.referenceId ?? "");
   const claimNumber = request.claimNumber ?? 1;
   const caseId = sanitizeText(request.caseId ?? "");
-  const specExcerpt = truncate(referenceText, 8000);
+  const specExcerpt = modelId ? truncateForModel(referenceText, modelId) : truncate(referenceText, 8000);
 
   const system = [
     `你是一名专利复审辅助系统，负责在复审阶段逐特征重新评估新颖性对照。`,
@@ -251,7 +278,7 @@ function buildNoveltyPrompt(request: NoveltyRequest): PromptParts {
   return { system, user };
 }
 
-function buildInventivePrompt(request: InventiveRequest): PromptParts {
+function buildInventivePrompt(request: InventiveRequest, modelId?: string): PromptParts {
   const features = request.features ?? [];
   const availableReferences = request.availableReferences ?? [];
   const caseId = sanitizeText(request.caseId ?? "");
@@ -297,7 +324,7 @@ function buildInventivePrompt(request: InventiveRequest): PromptParts {
     ...features.map((f) => `  ${sanitizeText(f.featureCode)}: ${sanitizeText(f.description ?? "")}`),
     ``,
     `可用对比文件:`,
-    ...availableReferences.map((r) => `  ${sanitizeText(r.label)} (${sanitizeText(r.referenceId)}): ${truncate(sanitizeText(r.excerpt ?? ""), 500)}`),
+    ...availableReferences.map((r) => `  ${sanitizeText(r.label)} (${sanitizeText(r.referenceId)}): ${modelId ? truncateForModel(sanitizeText(r.excerpt ?? ""), modelId) : truncate(sanitizeText(r.excerpt ?? ""), 500)}`),
     ``,
     `用户指定最接近现有技术: ${closestPriorArtId ?? "由 AI 推荐"}`,
   ];
@@ -305,12 +332,12 @@ function buildInventivePrompt(request: InventiveRequest): PromptParts {
     userParts.push(``, `申请人答辩理由:`, applicantArguments);
   }
   if (amendedClaimText) {
-    userParts.push(``, `修改后权利要求:`, truncate(amendedClaimText, 4000));
+    userParts.push(``, `修改后权利要求:`, modelId ? truncateForModel(amendedClaimText, modelId) : truncate(amendedClaimText, 4000));
   }
   return { system, user: userParts.join("\n") };
 }
 
-function buildDefectPrompt(request: DefectRequest): PromptParts {
+function buildDefectPrompt(request: DefectRequest, modelId?: string): PromptParts {
   const claimText = sanitizeText(request.claimText ?? "");
   const specificationText = sanitizeText(request.specificationText ?? "");
   const claimFeatures = request.claimFeatures ?? [];
@@ -331,10 +358,10 @@ function buildDefectPrompt(request: DefectRequest): PromptParts {
     `案件 ID: ${caseId}`,
     ``,
     `权利要求文本:`,
-    truncate(claimText, 4000),
+    modelId ? truncateForModel(claimText, modelId) : truncate(claimText, 4000),
     ``,
     `说明书文本:`,
-    truncate(specificationText, 8000),
+    modelId ? truncateForModel(specificationText, modelId) : truncate(specificationText, 8000),
     ``,
     `技术特征:`,
     ...claimFeatures.map((f) => `  ${sanitizeText(f.featureCode)}: ${sanitizeText(f.description ?? "")}`),
@@ -417,7 +444,7 @@ const INTERPRET_TEMPLATES: Record<string, { title: string; instructions: string[
   }
 };
 
-function buildInterpretPrompt(request: InterpretRequest): PromptParts {
+function buildInterpretPrompt(request: InterpretRequest, modelId?: string): PromptParts {
   const documentType = request.documentType ?? "application";
   const fallback = INTERPRET_TEMPLATES["application"];
   if (!fallback) throw new Error("Missing INTERPRET_TEMPLATES.application");
@@ -449,13 +476,13 @@ function buildInterpretPrompt(request: InterpretRequest): PromptParts {
     relatedStr,
     "",
     "=== 文档内容 ===",
-    truncate(documentText, 12000),
+    modelId ? truncateForModel(documentText, modelId) : truncate(documentText, 12000),
   ].join("\n");
 
   return { system, user };
 }
 
-function buildOpinionAnalysisPrompt(request: OpinionAnalysisRequest): PromptParts {
+function buildOpinionAnalysisPrompt(request: OpinionAnalysisRequest, modelId?: string): PromptParts {
   const caseId = sanitizeText(request.caseId ?? "");
   const documentId = sanitizeText(request.documentId ?? "");
   const officeActionText = sanitizeText(request.officeActionText ?? "");
@@ -477,13 +504,13 @@ function buildOpinionAnalysisPrompt(request: OpinionAnalysisRequest): PromptPart
     `文档 ID: ${documentId}`,
     ``,
     `审查意见通知书文本:`,
-    truncate(officeActionText, 12000),
+    modelId ? truncateForModel(officeActionText, modelId) : truncate(officeActionText, 12000),
   ].join("\n");
 
   return { system, user };
 }
 
-function buildArgumentAnalysisPrompt(request: ArgumentAnalysisRequest): PromptParts {
+function buildArgumentAnalysisPrompt(request: ArgumentAnalysisRequest, modelId?: string): PromptParts {
   const caseId = sanitizeText(request.caseId ?? "");
   const rejectionGrounds = request.rejectionGrounds ?? [];
   const responseText = sanitizeText(request.responseText ?? "");
@@ -507,15 +534,15 @@ function buildArgumentAnalysisPrompt(request: ArgumentAnalysisRequest): PromptPa
     ...rejectionGrounds.map((g) => `  ${sanitizeText(g.code)} (${sanitizeText(g.category)}): ${sanitizeText(g.summary)}`),
     ``,
     `意见陈述书文本:`,
-    truncate(responseText, 12000),
+    modelId ? truncateForModel(responseText, modelId) : truncate(responseText, 12000),
   ];
   if (amendedClaimsText) {
-    userParts.push(``, `修改后权利要求:`, truncate(amendedClaimsText, 4000));
+    userParts.push(``, `修改后权利要求:`, modelId ? truncateForModel(amendedClaimsText, modelId) : truncate(amendedClaimsText, 4000));
   }
   return { system, user: userParts.join("\n") };
 }
 
-function buildReexamDraftPrompt(request: ReexamDraftRequest): PromptParts {
+function buildReexamDraftPrompt(request: ReexamDraftRequest, modelId?: string): PromptParts {
   const caseId = sanitizeText(request.caseId ?? "");
   const claimNumber = request.claimNumber ?? 1;
   const rejectionGrounds = request.rejectionGrounds ?? [];
@@ -547,13 +574,13 @@ function buildReexamDraftPrompt(request: ReexamDraftRequest): PromptParts {
     `答辩映射:`,
     ...argumentMappings.map((m) => `  ${sanitizeText(m.rejectionGroundCode)}: ${sanitizeText(m.argumentSummary)} [${sanitizeText(m.confidence)}]`),
   ];
-  if (noveltyResults) userParts.push(``, `新颖性复核:`, truncate(noveltyResults, 4000));
-  if (inventiveResults) userParts.push(``, `创造性复核:`, truncate(inventiveResults, 4000));
-  if (defectResults) userParts.push(``, `缺陷复查:`, truncate(defectResults, 2000));
+  if (noveltyResults) userParts.push(``, `新颖性复核:`, modelId ? truncateForModel(noveltyResults, modelId) : truncate(noveltyResults, 4000));
+  if (inventiveResults) userParts.push(``, `创造性复核:`, modelId ? truncateForModel(inventiveResults, modelId) : truncate(inventiveResults, 4000));
+  if (defectResults) userParts.push(``, `缺陷复查:`, modelId ? truncateForModel(defectResults, modelId) : truncate(defectResults, 2000));
   return { system, user: userParts.join("\n") };
 }
 
-function buildSummaryPrompt(request: SummaryRequest): PromptParts {
+function buildSummaryPrompt(request: SummaryRequest, modelId?: string): PromptParts {
   const caseBaseline = sanitizeText(request.caseBaseline ?? "");
   const confirmedFeatures = sanitizeText(request.confirmedFeatures ?? "");
   const reviewedNoveltyComparisons = sanitizeText(request.reviewedNoveltyComparisons ?? "");
@@ -574,19 +601,19 @@ function buildSummaryPrompt(request: SummaryRequest): PromptParts {
     `案件基线: ${caseBaseline}`,
     ``,
     `Claim Chart:`,
-    truncate(confirmedFeatures, 4000),
+    modelId ? truncateForModel(confirmedFeatures, modelId) : truncate(confirmedFeatures, 4000),
     ``,
     `新颖性对照:`,
-    truncate(reviewedNoveltyComparisons, 4000),
+    modelId ? truncateForModel(reviewedNoveltyComparisons, modelId) : truncate(reviewedNoveltyComparisons, 4000),
     ``,
     `创造性分析:`,
-    truncate(inventiveAnalysis, 4000),
+    modelId ? truncateForModel(inventiveAnalysis, modelId) : truncate(inventiveAnalysis, 4000),
   ].join("\n");
 
   return { system, user };
 }
 
-function buildTranslatePrompt(request: TranslateRequest): PromptParts {
+function buildTranslatePrompt(request: TranslateRequest, modelId?: string): PromptParts {
   const documentText = sanitizeText(request.documentText ?? "");
   const targetLang = sanitizeText(request.targetLang ?? "中文");
 
@@ -607,7 +634,7 @@ function buildTranslatePrompt(request: TranslateRequest): PromptParts {
   const user = [
     `## 输入文档`,
     ``,
-    truncate(documentText, 12000),
+    modelId ? truncateForModel(documentText, modelId) : truncate(documentText, 12000),
   ].join("\n");
 
   return { system, user };
@@ -875,37 +902,37 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
     let promptParts: PromptParts;
     switch (req.agent) {
       case "claim-chart":
-        promptParts = buildClaimChartPrompt(req.request);
+        promptParts = buildClaimChartPrompt(req.request, req.modelId);
         break;
       case "novelty":
-        promptParts = buildNoveltyPrompt(req.request);
+        promptParts = buildNoveltyPrompt(req.request, req.modelId);
         break;
       case "inventive":
-        promptParts = buildInventivePrompt(req.request);
+        promptParts = buildInventivePrompt(req.request, req.modelId);
         break;
       case "defects":
-        promptParts = buildDefectPrompt(req.request);
+        promptParts = buildDefectPrompt(req.request, req.modelId);
         break;
       case "chat":
         promptParts = buildChatPrompt(req.request);
         break;
       case "interpret":
-        promptParts = buildInterpretPrompt(req.request);
+        promptParts = buildInterpretPrompt(req.request, req.modelId);
         break;
       case "opinion-analysis":
-        promptParts = buildOpinionAnalysisPrompt(req.request);
+        promptParts = buildOpinionAnalysisPrompt(req.request, req.modelId);
         break;
       case "argument-analysis":
-        promptParts = buildArgumentAnalysisPrompt(req.request);
+        promptParts = buildArgumentAnalysisPrompt(req.request, req.modelId);
         break;
       case "reexam-draft":
-        promptParts = buildReexamDraftPrompt(req.request);
+        promptParts = buildReexamDraftPrompt(req.request, req.modelId);
         break;
       case "summary":
-        promptParts = buildSummaryPrompt(req.request);
+        promptParts = buildSummaryPrompt(req.request, req.modelId);
         break;
       case "translate":
-        promptParts = buildTranslatePrompt(req.request);
+        promptParts = buildTranslatePrompt(req.request, req.modelId);
         break;
       case "extract-case-fields":
         promptParts = buildExtractCaseFieldsPrompt(req.request);
@@ -956,6 +983,25 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
     const HEAVY_AGENTS = new Set(["inventive", "novelty", "defects", "claim-chart", "opinion-analysis", "argument-analysis"]);
     const agentTimeoutMs = HEAVY_AGENTS.has(req.agent) ? HEAVY_AGENT_TIMEOUT_MS : undefined;
 
+    // D2: 各 agent 的期望 temperature（与 DESIGN.md §6.4 对齐）
+    const TEMPERATURE_BY_AGENT: Record<string, number> = {
+      "claim-chart": 0,
+      "novelty": 0,
+      "inventive": 0.2,
+      "interpret": 0.3,
+      "draft": 0.3,
+      "chat": 0.5,
+      "summary": 0,
+      "classify-documents": 0,
+      "extract-case-fields": 0,
+      "opinion-analysis": 0,
+      "argument-analysis": 0,
+      "reexam-draft": 0.2,
+      "defects": 0,
+      "translate": 0,
+    };
+    const agentTemperature = TEMPERATURE_BY_AGENT[req.agent] ?? 0;
+
     logger.info(`[Orchestrator] 发送 AI 请求: system=${promptParts.system.length} 字符, user=${enhancedUserPrompt.length} 字符, ${citations.length} 条知识引用已注入`);
     const aiResponse = await callInternalGateway({
       agent: req.agent,
@@ -968,6 +1014,7 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
       enableModelFallback: req.enableModelFallback,
       providerBaseUrls: req.providerBaseUrls,
       maxTokens: effectiveMaxTokens,
+      temperature: agentTemperature,
       signal: req.signal,
       apiKey: req.apiKey,
       timeoutMs: agentTimeoutMs,
@@ -1129,6 +1176,7 @@ interface InternalGatewayRequest {
   enableModelFallback?: Record<string, boolean> | undefined;
   providerBaseUrls?: Record<string, string> | undefined;
   maxTokens?: number | undefined;
+  temperature?: number | undefined;
   signal?: AbortSignal | undefined;
   apiKey?: string | undefined;
   timeoutMs?: number | undefined;
@@ -1162,6 +1210,7 @@ async function callInternalGateway(req: InternalGatewayRequest): Promise<Interna
     ],
     apiKey: "",
     ...(req.maxTokens !== undefined && { maxTokens: req.maxTokens }),
+    ...(req.temperature !== undefined && { temperature: req.temperature }),
     ...(req.signal !== undefined && { signal: req.signal }),
     ...(req.timeoutMs !== undefined && { timeoutMs: req.timeoutMs }),
   };

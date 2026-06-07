@@ -3,7 +3,8 @@
 
 import type { ProviderId } from "@shared/types/agents";
 import type { ProviderAdapter, ChatRequest, ChatResponse } from "./ProviderAdapter.js";
-import { resolveMaxTokens } from "./ProviderAdapter.js";
+import { resolveMaxTokens, learnThinkingCapability } from "./ProviderAdapter.js";
+import { getModelCapabilities } from "./model-capabilities-registry.js";
 
 const BEDROCK_OPENAI_COMPAT_BASE_URL = "https://bedrock-mantle.us-east-1.api.aws/v1";
 
@@ -57,17 +58,29 @@ export class BedrockAdapter implements ProviderAdapter {
   async chat(req: ChatRequest): Promise<ChatResponse> {
     const url = `${req.baseUrl ?? this.baseUrl}/chat/completions`;
 
+    // D2: temperature 自适应
+    const caps = getModelCapabilities(req.modelId);
+    let temperature = req.temperature;
+    if (!caps.temperature.supported) {
+      temperature = undefined;
+    } else if (temperature !== undefined) {
+      const [min, max] = caps.temperature.range;
+      temperature = Math.max(min, Math.min(max, temperature));
+    }
+
     // Build OpenAI-compatible request body
-    const body = {
+    const body: Record<string, unknown> = {
       model: req.modelId,
       messages: req.messages.map(m => ({
         role: m.role,
         content: m.content
       })),
-      temperature: req.temperature ?? 0.7,
       max_tokens: resolveMaxTokens(req.modelId, req.maxTokens),
       stream: false
     };
+    if (temperature !== undefined) {
+      body.temperature = temperature;
+    }
 
     try {
       const res = await fetch(url, {
@@ -89,13 +102,14 @@ export class BedrockAdapter implements ProviderAdapter {
 
       const data = await res.json() as {
         choices: Array<{
-          message: { content: string };
+          message: { content: string; reasoning_content?: string };
           finish_reason?: string;
         }>;
         usage?: {
           prompt_tokens: number;
           completion_tokens: number;
           total_tokens: number;
+          completion_tokens_details?: { reasoning_tokens?: number };
         };
       };
 
@@ -108,9 +122,17 @@ export class BedrockAdapter implements ProviderAdapter {
           }
         : undefined;
 
+      // D1: 提取 thinking tokens
+      const reasoningContent = data.choices?.[0]?.message?.reasoning_content;
+      const thinkingTokensFromUsage = data.usage?.completion_tokens_details?.reasoning_tokens ?? 0;
+      const thinkingTokens = thinkingTokensFromUsage || (reasoningContent ? 1 : 0);
+      learnThinkingCapability(req.modelId, thinkingTokens);
+
       return {
         text,
         ...(usage ? { tokenUsage: usage } : {}),
+        thinkingTokens: thinkingTokens > 0 ? thinkingTokens : undefined,
+        reasoningText: reasoningContent || undefined,
         rawResponse: data
       };
     } catch (error) {

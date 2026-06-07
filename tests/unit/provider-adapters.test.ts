@@ -10,7 +10,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ChatRequest } from "@server/providers/ProviderAdapter.js";
-import { OpenAICompatibleAdapter, resolveMaxTokens } from "@server/providers/ProviderAdapter.js";
+import { OpenAICompatibleAdapter, resolveMaxTokens, isReasoningModel, learnThinkingCapability, clearThinkingCache } from "@server/providers/ProviderAdapter.js";
+import { getModelCapabilities } from "@server/providers/model-capabilities-registry.js";
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -247,7 +248,8 @@ describe("OpenAICompatibleAdapter.listModels()", () => {
 
 describe("resolveMaxTokens", () => {
   it("returns requested maxTokens for normal models", () => {
-    expect(resolveMaxTokens("gemini-2.0-flash", 4096)).toBe(4096);
+    // Use a model not matched by reasoning regex (no gemini, mimo, reasoner, etc.)
+    expect(resolveMaxTokens("qwen-turbo", 4096)).toBe(4096);
   });
 
   it("returns 4x for reasoning models (mimo)", () => {
@@ -264,7 +266,8 @@ describe("resolveMaxTokens", () => {
   });
 
   it("defaults to 4096 when no maxTokens specified", () => {
-    expect(resolveMaxTokens("gemini-2.0-flash")).toBe(4096);
+    // gemini-2.0-flash matches gemini-\d regex → 4x (by design: over-allocate > under-allocate)
+    expect(resolveMaxTokens("gemini-2.0-flash")).toBe(16384);
   });
 
   it("defaults to 16384 for reasoning model when no maxTokens specified", () => {
@@ -390,5 +393,152 @@ describe("BedrockAdapter.chat()", () => {
     const { BedrockAdapter } = await import("@server/providers/bedrock.js");
     const adapter = new BedrockAdapter();
     await expect(adapter.chat(makeChatRequest())).rejects.toThrow(/429/);
+  });
+});
+
+// ──────────────────────────────────────────────────
+// 6. learnThinkingCapability + isReasoningModel cache
+// ──────────────────────────────────────────────────
+
+describe("learnThinkingCapability + isReasoningModel cache", () => {
+  beforeEach(() => clearThinkingCache());
+
+  it("caches model as thinking when thinkingTokens > 0", () => {
+    expect(isReasoningModel("some-new-model-v1")).toBe(false);
+    learnThinkingCapability("some-new-model-v1", 500);
+    expect(isReasoningModel("some-new-model-v1")).toBe(true);
+  });
+
+  it("does not cache when thinkingTokens is 0 or undefined", () => {
+    learnThinkingCapability("gpt-4o", 0);
+    expect(isReasoningModel("gpt-4o")).toBe(false);
+
+    learnThinkingCapability("gpt-4o", undefined);
+    expect(isReasoningModel("gpt-4o")).toBe(false);
+  });
+
+  it("cache takes priority over static capabilities and regex", () => {
+    // Use a model NOT matched by regex and NOT in static capabilities
+    expect(isReasoningModel("totally-unknown-model-v1")).toBe(false);
+    learnThinkingCapability("totally-unknown-model-v1", 100);
+    expect(isReasoningModel("totally-unknown-model-v1")).toBe(true);
+  });
+
+  it("clearThinkingCache resets all cached entries", () => {
+    learnThinkingCapability("model-a", 100);
+    learnThinkingCapability("model-b", 200);
+    expect(isReasoningModel("model-a")).toBe(true);
+    clearThinkingCache();
+    // After clear, falls back to static capabilities / regex
+    expect(isReasoningModel("model-a")).toBe(false);
+  });
+});
+
+// ──────────────────────────────────────────────────
+// 7. resolveMaxTokens with cache
+// ──────────────────────────────────────────────────
+
+describe("resolveMaxTokens with cache", () => {
+  beforeEach(() => clearThinkingCache());
+
+  it("returns 4x for cached thinking model", () => {
+    learnThinkingCapability("unknown-model-xyz", 100);
+    expect(resolveMaxTokens("unknown-model-xyz", 1024)).toBe(4096);
+  });
+
+  it("returns base for non-thinking model", () => {
+    expect(resolveMaxTokens("gpt-4o", 1024)).toBe(1024);
+  });
+});
+
+// ──────────────────────────────────────────────────
+// 8. ModelCapabilities registry
+// ──────────────────────────────────────────────────
+
+describe("getModelCapabilities", () => {
+  it("returns reasoning capabilities for gemini-2.5 models", () => {
+    const caps = getModelCapabilities("gemini-2.5-flash");
+    expect(caps.isReasoning).toBe(true);
+    expect(caps.contextWindow).toBe(1_048_576);
+    expect(caps.supportsVision).toBe(true);
+    expect(caps.systemPromptMode).toBe("parameter");
+  });
+
+  it("returns reasoning capabilities for mimo-v2 models", () => {
+    const caps = getModelCapabilities("mimo-v2.5-pro");
+    expect(caps.isReasoning).toBe(true);
+    expect(caps.contextWindow).toBe(131_072);
+    expect(caps.supportsVision).toBe(false);
+  });
+
+  it("returns non-reasoning for gemini-2.0 models", () => {
+    const caps = getModelCapabilities("gemini-2.0-flash");
+    expect(caps.isReasoning).toBe(false);
+  });
+
+  it("matches OpenRouter prefixed models (longest prefix wins)", () => {
+    const caps = getModelCapabilities("anthropic/claude-opus-4-8");
+    expect(caps.isReasoning).toBe(true);
+    expect(caps.contextWindow).toBe(200_000);
+  });
+
+  it("returns default caps for unknown models", () => {
+    const caps = getModelCapabilities("totally-unknown-model");
+    expect(caps.isReasoning).toBe(false);
+    expect(caps.contextWindow).toBe(128_000);
+    expect(caps.temperature.supported).toBe(true);
+  });
+
+  it("temperature range varies by model", () => {
+    const gemini = getModelCapabilities("gemini-2.5-flash");
+    expect(gemini.temperature.range).toEqual([0, 2]);
+
+    const mimo = getModelCapabilities("mimo-v2.5-pro");
+    expect(mimo.temperature.range).toEqual([0, 1]);
+
+    const deepseekReasoner = getModelCapabilities("deepseek-reasoner");
+    expect(deepseekReasoner.temperature.supported).toBe(false);
+  });
+
+  it("structured output support varies by model", () => {
+    const gemini = getModelCapabilities("gemini-2.5-flash");
+    expect(gemini.supportsStructuredOutput).toBe(true);
+
+    const mimo = getModelCapabilities("mimo-v2.5-pro");
+    expect(mimo.supportsStructuredOutput).toBe(false);
+  });
+});
+
+// ──────────────────────────────────────────────────
+// 9. Extended regex coverage
+// ──────────────────────────────────────────────────
+
+describe("isReasoningModel extended regex", () => {
+  beforeEach(() => clearThinkingCache());
+
+  it("matches deepseek-v4 models", () => {
+    expect(isReasoningModel("deepseek-v4-flash-free")).toBe(true);
+  });
+
+  it("matches kimi-k2 models", () => {
+    expect(isReasoningModel("kimi-k2.6")).toBe(true);
+  });
+
+  it("matches glm-5 models", () => {
+    expect(isReasoningModel("glm-5")).toBe(true);
+    expect(isReasoningModel("glm-5.1")).toBe(true);
+  });
+
+  it("matches gpt-5 models", () => {
+    expect(isReasoningModel("openai/gpt-5.5")).toBe(true);
+  });
+
+  it("matches doubao models", () => {
+    expect(isReasoningModel("doubao-1.5-pro-32k")).toBe(true);
+  });
+
+  it("matches all gemini-N models (not just 2.5/3.5)", () => {
+    expect(isReasoningModel("gemini-3.1-flash-lite-preview")).toBe(true);
+    expect(isReasoningModel("gemini-4.0-pro")).toBe(true);
   });
 });

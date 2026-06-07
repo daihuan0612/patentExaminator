@@ -1,5 +1,7 @@
 import type { ProviderId } from "@shared/types/agents";
 import type { ProviderAdapter, ChatRequest, ChatResponse } from "./ProviderAdapter.js";
+import { isReasoningModel, learnThinkingCapability, resolveMaxTokens } from "./ProviderAdapter.js";
+import { logger } from "../lib/logger.js";
 import { KimiAdapter } from "./kimi.js";
 import { GlmAdapter } from "./glm.js";
 import { MinimaxAdapter } from "./minimax.js";
@@ -110,6 +112,33 @@ export class ProviderRegistry {
           try {
             const result = await this.executeWithRetry(adapter, buildReq(req, { modelId }));
             attempts.push(...result.attempts);
+
+            // L3 截断检测：输出极少且模型未知 → 标记为 thinking 并重试
+            const resp = result.response;
+            const isTruncated = resp.text.length < 50 &&
+              !resp.error &&
+              !isReasoningModel(modelId) &&
+              resp.tokenUsage != null &&
+              resp.tokenUsage.output < 100;
+
+            if (isTruncated) {
+              logger.warn(`[ModelAdapt] Possible truncation detected for ${modelId}: output=${resp.tokenUsage?.output} tokens, textLen=${resp.text.length}. Marking as thinking model and retrying.`);
+              learnThinkingCapability(modelId, 1);
+              const retryReq = buildReq(req, {
+                modelId,
+                maxTokens: resolveMaxTokens(modelId, req.maxTokens)
+              });
+              try {
+                const retryResult = await this.executeWithRetry(adapter, retryReq);
+                attempts.push(...retryResult.attempts);
+                return { response: retryResult.response, attempts };
+              } catch (retryError) {
+                // 重试失败，返回原始响应（至少有一些内容）
+                logger.warn(`[ModelAdapt] Retry also failed for ${modelId}, returning original response`);
+                return { response: resp, attempts };
+              }
+            }
+
             return { response: result.response, attempts };
           } catch (error) {
             const errInfo = classifyError(error);
@@ -136,6 +165,31 @@ export class ProviderRegistry {
       try {
         const result = await this.executeWithRetry(adapter, buildReq(req, {}));
         attempts.push(...result.attempts);
+
+        // L3 截断检测（非模型 fallback 路径）
+        const resp = result.response;
+        const isTruncated = resp.text.length < 50 &&
+          !resp.error &&
+          !isReasoningModel(req.modelId) &&
+          resp.tokenUsage != null &&
+          resp.tokenUsage.output < 100;
+
+        if (isTruncated) {
+          logger.warn(`[ModelAdapt] Possible truncation detected for ${req.modelId}: output=${resp.tokenUsage?.output} tokens, textLen=${resp.text.length}. Marking as thinking model and retrying.`);
+          learnThinkingCapability(req.modelId, 1);
+          const retryReq = buildReq(req, {
+            maxTokens: resolveMaxTokens(req.modelId, req.maxTokens)
+          });
+          try {
+            const retryResult = await this.executeWithRetry(adapter, retryReq);
+            attempts.push(...retryResult.attempts);
+            return { response: retryResult.response, attempts };
+          } catch {
+            logger.warn(`[ModelAdapt] Retry also failed for ${req.modelId}, returning original response`);
+            return { response: resp, attempts };
+          }
+        }
+
         return { response: result.response, attempts };
       } catch (error) {
         const errInfo = classifyError(error);
