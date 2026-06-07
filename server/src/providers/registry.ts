@@ -177,7 +177,7 @@ export class ProviderRegistry {
 
       try {
         const timeoutController = new AbortController();
-        const timeout = setTimeout(() => timeoutController.abort(), TIMEOUT_MS);
+        const timeout = setTimeout(() => timeoutController.abort(), req.timeoutMs ?? TIMEOUT_MS);
 
         if (clientSignal?.aborted) {
           throw new Error("Request aborted by client");

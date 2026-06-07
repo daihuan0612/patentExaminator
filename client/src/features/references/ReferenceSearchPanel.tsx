@@ -204,7 +204,7 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
         for (const c of res.candidates) {
           if (seen.has(c.publicationNumber)) continue;
           seen.add(c.publicationNumber);
-          merged.push(candidateToReference(c, caseId ?? ""));
+          merged.push(candidateToReference(c, caseId ?? "", baselineDate));
           if (merged.length >= maxResults) break;
         }
         if (merged.length >= maxResults) break;
@@ -534,7 +534,9 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
   );
 }
 
-function candidateToReference(candidate: SearchReferencesCandidate, caseId: string): ReferenceDocument {
+function candidateToReference(candidate: SearchReferencesCandidate, caseId: string, baselineDate?: string): ReferenceDocument {
+  const publicationDate = candidate.publicationDate;
+  const timelineStatus = classifyReferenceDate(baselineDate, publicationDate, "low");
   const ref: ReferenceDocument = {
     id: `candidate-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     caseId,
@@ -546,8 +548,9 @@ function candidateToReference(candidate: SearchReferencesCandidate, caseId: stri
     textIndex: { pages: [], paragraphs: [], lineMap: [] },
     title: candidate.title,
     publicationNumber: candidate.publicationNumber,
+    ...(publicationDate ? { publicationDate } : {}),
     publicationDateConfidence: "low",
-    timelineStatus: "needs-publication-date",
+    timelineStatus,
     summary: candidate.summary,
     source: "ai-search",
     candidateStatus: "pending",
@@ -555,7 +558,6 @@ function candidateToReference(candidate: SearchReferencesCandidate, caseId: stri
     aiRecommendationReason: candidate.recommendationReason,
     createdAt: new Date().toISOString()
   };
-  if (candidate.publicationDate) ref.publicationDate = candidate.publicationDate;
   if (candidate.sourceUrl) ref.sourceUrl = candidate.sourceUrl;
   return ref;
 }

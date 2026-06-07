@@ -53,10 +53,17 @@ describe("orchestrator — agent routing", () => {
 
   for (const agent of agents) {
     it(`routes "${agent}" to correct prompt builder`, async () => {
+      // claim-chart 需要有效的 features 才能通过验证
+      if (agent === "claim-chart") {
+        vi.mocked(registry.runWithFallback).mockResolvedValueOnce({
+          response: { text: JSON.stringify({ claimNumber: 1, features: [{ featureCode: "A", description: "test feature", specificationCitations: [], citationStatus: "needs-review" }] }), tokenUsage: { input: 10, output: 5, total: 15 } },
+          attempts: [{ providerId: "gemini", ok: true }]
+        });
+      }
       const result = await runAgent({
         agent,
         caseId: "test-case",
-        request: { caseId: "test-case" },
+        request: agent === "claim-chart" ? { caseId: "test-case", claimText: "test claim", claimNumber: 1, specificationText: "" } : { caseId: "test-case" },
         providerPreference: ["gemini"],
         modelId: "gemini-2.5-flash",
         apiKey: "test-key",
@@ -337,7 +344,7 @@ describe("orchestrator — error handling", () => {
     expect(result.error?.message).toContain("Network down");
   });
 
-  it("returns error when gateway returns malformed JSON string", async () => {
+  it("returns error when claim-chart gateway returns malformed JSON string", async () => {
     (registry.runWithFallback as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       response: { text: "not-json{{", tokenUsage: { input: 10, output: 5, total: 15 } },
       attempts: [{ providerId: "gemini", ok: true }]
@@ -352,9 +359,10 @@ describe("orchestrator — error handling", () => {
       apiKey: "key",
     });
 
-    // orchestrator should still return ok=true — JSON parsing happens downstream
-    expect(result.ok).toBe(true);
-    expect(typeof result.output).toBe("string");
+    // claim-chart 要求有效 JSON + features，malformed JSON 应返回错误
+    expect(result.ok).toBe(false);
+    expect(result.error?.type).toBe("ai-output");
+    expect(result.error?.message).toContain("JSON");
   });
 
   it("handles missing request fields gracefully", async () => {

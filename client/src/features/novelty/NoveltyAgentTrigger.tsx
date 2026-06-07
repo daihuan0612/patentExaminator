@@ -118,6 +118,10 @@ export function NoveltyAgentTrigger({
     setLoading(true);
     setError(null);
     try {
+      // AI 搜索的文献没有 extractedText，用 summary + recommendationReason 降级
+      const referenceText = ref.extractedText?.trim()
+        || [ref.summary, ref.aiRecommendationReason].filter(Boolean).join("\n\n")
+        || "";
       const request: NoveltyRequest = {
         caseId,
         claimNumber,
@@ -126,7 +130,7 @@ export function NoveltyAgentTrigger({
           description: f.description
         })),
         referenceId: selectedRefId,
-        referenceText: ref.extractedText,
+        referenceText,
         ...(applicantArguments ? { applicantArguments } : {}),
         ...(amendedClaimText ? { amendedClaimText } : {})
       };

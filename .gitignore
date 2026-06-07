@@ -65,3 +65,7 @@ docs/国家知识产权局*.pdf
 docs/URL在线网页知识库.txt
 docs/rag-finetune-plan.md
 docs/persistence-test-plan.md
+bug-repro-context.md
+bug-repro-log.md
+bug-repro-report.md
+samples/led-heatsink/复审请求书.pdf

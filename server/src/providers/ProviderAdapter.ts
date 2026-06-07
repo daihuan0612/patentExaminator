@@ -32,6 +32,8 @@ export interface ChatRequest {
   apiKey: string;
   signal?: AbortSignal;
   baseUrl?: string;
+  /** Per-request timeout override (ms). Falls back to registry default if omitted. */
+  timeoutMs?: number;
 }
 
 export interface ChatResponse {
