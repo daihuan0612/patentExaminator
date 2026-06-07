@@ -10,9 +10,9 @@ vi.mock("@client/lib/serverReady", () => ({
   clearServerReadyCache: vi.fn()
 }));
 
-vi.mock("@client/lib/idbWriteGuard", () => ({
-  idbWriteGuard: vi.fn((store: string) => (error: unknown) => {
-    console.error(`[idbWriteGuard] ${store}:`, error);
+vi.mock("@client/lib/dbWriteGuard", () => ({
+  dbWriteGuard: vi.fn((store: string) => (error: unknown) => {
+    console.error(`[dbWriteGuard] ${store}:`, error);
   })
 }));
 

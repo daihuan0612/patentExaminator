@@ -52,7 +52,7 @@ export async function loadPresetCase(): Promise<string> {
     isFirstLoad = true;
   }
 
-  // 1. Write to IndexedDB
+  // 1. Write to server DB
   await createCase(theCase);
   await createDocument(data.applicationDoc);
   if (data.officeActionDoc) {
@@ -85,7 +85,7 @@ export async function loadPresetCase(): Promise<string> {
     for (const msg of data.chatMessages) {
       await createMessage(msg);
     }
-    // Use load* methods since data was already written to IndexedDB above
+    // Use load* methods since data was already written to DB above
     useChatStore.getState().loadSessions(data.chatSessions);
     useChatStore.getState().loadMessages(data.chatMessages);
     useChatStore.getState().setActiveSessionId(data.chatSessions[0]?.id ?? null);
@@ -104,7 +104,7 @@ export async function loadPresetCase(): Promise<string> {
         allMessages.push(...msgs);
       } catch (e) { log("[presetLoader] getMessagesBySessionId failed:", e); }
     }
-    // Use load* methods since data was already written to IndexedDB above
+    // Use load* methods since data was already written to DB above
     useChatStore.getState().loadSessions(existingSessions);
     useChatStore.getState().loadMessages(allMessages);
     useChatStore.getState().setActiveSessionId(existingSessions[0]?.id ?? null);
@@ -125,7 +125,7 @@ export async function loadPresetCase(): Promise<string> {
       data.referenceDocs as unknown as ReferenceDocument[]
     );
   } else {
-    // Load existing references from IndexedDB to preserve user uploads
+    // Load existing references from DB to preserve user uploads
     let existingRefs: ReferenceDocument[] = [];
     try {
       const allDocs = await readDocumentsByCaseId(theCase.id);
@@ -140,7 +140,7 @@ export async function loadPresetCase(): Promise<string> {
   }
   useClaimsStore.getState().setClaimNodes(data.claimNodes);
   useClaimsStore.getState().setClaimFeatures(data.claimFeatures);
-  // Use load* methods since data was already written to IndexedDB above
+  // Use load* methods since data was already written to DB above
   useNoveltyStore.getState().loadComparisons(data.noveltyComparisons);
   useInventiveStore.getState().loadAnalyses([data.inventiveAnalysis]);
   useDefectsStore.getState().loadDefects(data.defectCheck);

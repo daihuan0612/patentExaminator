@@ -434,14 +434,14 @@ export function OpinionComparisonWrapper() {
     (d) => d.caseId === caseId && d.role === "application" && d.fileName.includes("修改")
   );
 
-  // Load opinion data from IndexedDB on mount
+  // Load opinion data from server DB on mount
   useEffect(() => {
     if (!caseId) return;
     const id = caseId;
 
     async function loadOpinionData() {
       try {
-        // Only load from IndexedDB if not already in memory store
+        // Only load from DB if not already in memory store
         const storedAnalysis = await readOpinionAnalysis(id);
         if (storedAnalysis && !officeActionAnalysis) {
           setOfficeActionAnalysis(storedAnalysis);
@@ -452,7 +452,7 @@ export function OpinionComparisonWrapper() {
           setArgumentMappings(storedMappings);
         }
       } catch (err) {
-        debugOpinionLog("Failed to load from IndexedDB:", err);
+        debugOpinionLog("Failed to load from DB:", err);
       }
     }
     
@@ -536,7 +536,7 @@ export function OpinionComparisonWrapper() {
         };
         setOfficeActionAnalysis(analysis);
         updateWorkflowState("opinion-analyzed");
-        // Persist to IndexedDB
+        // Persist to server DB
         saveOpinionAnalysis(analysis).catch((err) => {
           debugOpinionLog("Failed to save opinion analysis:", err);
         });
@@ -558,7 +558,7 @@ export function OpinionComparisonWrapper() {
         setArgumentMappings(mappings);
         if (result?.unmappedGrounds) setUnmappedGrounds(result.unmappedGrounds);
         updateWorkflowState("argument-mapped");
-        // Persist to IndexedDB
+        // Persist to server DB
         saveArgumentMappings(mappings).catch((err) => {
           debugOpinionLog("Failed to save argument mappings:", err);
         });

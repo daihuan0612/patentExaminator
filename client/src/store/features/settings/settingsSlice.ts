@@ -6,7 +6,7 @@ import { DEFAULT_KNOWLEDGE_CONFIG } from "@shared/types/knowledge";
 import { getById, create as dbCreate, patch as dbPatch } from "../../../lib/repos";
 import { waitForServerReady } from "../../../lib/serverReady";
 import { createLogger } from "../../../lib/logger";
-import { idbWriteGuard } from "../../../lib/idbWriteGuard";
+import { dbWriteGuard } from "../../../lib/dbWriteGuard";
 
 const log = createLogger("SettingsSlice");
 
@@ -83,7 +83,7 @@ async function readSettings(caller: string): Promise<AppSettings> {
 function writeSettings(settings: AppSettings, caller: string): void {
   dbCreate("settings", { ...settings, id: SETTINGS_ID }, caller).catch((e) => {
     log("Server write failed:", e);
-    idbWriteGuard("settings")(e);
+    dbWriteGuard("settings")(e);
   });
 }
 
@@ -91,7 +91,7 @@ function writeSettings(settings: AppSettings, caller: string): void {
 function patchSettings(partial: Partial<AppSettings>, caller: string): void {
   dbPatch("settings", SETTINGS_ID, partial, caller).catch((e) => {
     log("Server patch failed:", e);
-    idbWriteGuard("settings")(e);
+    dbWriteGuard("settings")(e);
   });
 }
 
@@ -178,7 +178,7 @@ export const createSettingsSlice = (
           log("Provider key sync partially failed:", result.failedProviders);
           _get().setSyncStatus({ error: result.failedProviders.map((p) => `${p.providerId}: ${p.error}`).join(", ") });
         }
-      }).catch(idbWriteGuard("settings"));
+      }).catch(dbWriteGuard("settings"));
     }
   },
   updateMode: (mode) => {
@@ -191,7 +191,7 @@ export const createSettingsSlice = (
           if (!result.success) {
             log("Provider key sync partially failed:", result.failedProviders);
           }
-        }).catch(idbWriteGuard("settings"));
+        }).catch(dbWriteGuard("settings"));
       }
       return { settings: next };
     });
@@ -230,7 +230,7 @@ export const createSettingsSlice = (
           if (!result.success) {
             log("Provider key sync partially failed:", result.failedProviders);
           }
-        }).catch(idbWriteGuard("settings"));
+        }).catch(dbWriteGuard("settings"));
       }
     } catch (e) {
       log("Failed to load settings from DB:", e);

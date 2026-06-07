@@ -34,7 +34,7 @@ export const createInterpretSlice = (
         interpretSummaries: { ...prev.interpretSummaries, [caseId]: nextSummaries }
       };
     });
-    // Persist to IndexedDB (async, fire-and-forget)
+    // Persist to server DB (async, fire-and-forget)
     saveInterpretSummaries(caseId, nextSummaries).catch((err) => {
       log(`Failed to save interpret summaries for case ${caseId}:`, err);
     });
@@ -51,7 +51,7 @@ export const createInterpretSlice = (
       delete next[caseId];
       return { interpretSummaries: next };
     });
-    // Delete from IndexedDB (async, fire-and-forget)
+    // Delete from server DB (async, fire-and-forget)
     deleteInterpretSummaries(caseId).catch((err) => {
       log(`Failed to delete interpret summaries for case ${caseId}:`, err);
     });

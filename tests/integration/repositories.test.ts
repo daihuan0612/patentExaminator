@@ -4,7 +4,6 @@
  * 验证 SQLite sync_data 表的 CRUD 操作正确性。
  * 使用内存数据库隔离，不访问生产数据库。
  *
- * B-038 后数据层从 IndexedDB 迁移到 SQLite（syncDb.ts），
  * 这些测试验证底层持久化操作，与 server/src/routes/data.ts 使用相同 SQL 模式。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";

@@ -3,7 +3,6 @@
  *
  * 测试目标：验证 SQLite 持久化层的完整 CRUD 逻辑链路。
  *
- * B-038 后数据层从 IndexedDB 迁移到 SQLite（syncDb.ts），
  * 每条链路覆盖：Create → Read → Update → Delete → Readback 验证。
  * 使用内存数据库隔离，不访问生产数据库。
  */

@@ -213,7 +213,7 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
       setSearchStep("done");
       updateWorkflowState("references-ready");
 
-      // 持久化到 IndexedDB
+      // 持久化到 server DB
       const sessionData = {
         id: searchSessionId ?? `search-${caseId}-${Date.now()}`,
         caseId: caseId ?? "",

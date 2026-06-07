@@ -46,7 +46,7 @@ export const createClaimsSlice = (
 
   addClaimNode: (node) => {
     set((prev) => ({ claimNodes: [...prev.claimNodes, node] }));
-    // Persist to IndexedDB (async, fire-and-forget)
+    // Persist to server DB (async, fire-and-forget)
     createClaimNode(node).catch((err) => {
       log(`Failed to save claim node ${node.id}:`, err);
     });
@@ -54,7 +54,7 @@ export const createClaimsSlice = (
 
   removeClaimNode: (id) => {
     set((prev) => ({ claimNodes: prev.claimNodes.filter((n) => n.id !== id) }));
-    // Delete from IndexedDB (async, fire-and-forget)
+    // Delete from server DB (async, fire-and-forget)
     deleteClaimNode(id).catch((err) => {
       log(`Failed to delete claim node ${id}:`, err);
     });
@@ -62,7 +62,7 @@ export const createClaimsSlice = (
 
   setClaimFeatures: (claimFeatures, caseId) => {
     set(() => ({ claimFeatures }));
-    // Persist to IndexedDB (async, fire-and-forget)
+    // Persist to server DB (async, fire-and-forget)
     // First clear existing features for this case, then save new ones
     if (caseId) {
       deleteClaimFeaturesByCaseId(caseId)
@@ -81,7 +81,7 @@ export const createClaimsSlice = (
 
   addClaimFeature: (feature) => {
     set((prev) => ({ claimFeatures: [...prev.claimFeatures, feature] }));
-    // Persist to IndexedDB (async, fire-and-forget)
+    // Persist to server DB (async, fire-and-forget)
     createClaimFeature(feature).catch((err) => {
       log(`Failed to save claim feature ${feature.id}:`, err);
     });
@@ -91,7 +91,7 @@ export const createClaimsSlice = (
     set((prev) => ({
       claimFeatures: prev.claimFeatures.map((f) => (f.id === feature.id ? feature : f))
     }));
-    // Persist to IndexedDB (async, fire-and-forget)
+    // Persist to server DB (async, fire-and-forget)
     updateClaimFeature(feature).catch((err) => {
       log(`Failed to update claim feature ${feature.id}:`, err);
     });
@@ -99,7 +99,7 @@ export const createClaimsSlice = (
 
   removeClaimFeature: (id) => {
     set((prev) => ({ claimFeatures: prev.claimFeatures.filter((f) => f.id !== id) }));
-    // Delete from IndexedDB (async, fire-and-forget)
+    // Delete from server DB (async, fire-and-forget)
     deleteClaimFeature(id).catch((err) => {
       log(`Failed to delete claim feature ${id}:`, err);
     });
@@ -109,7 +109,7 @@ export const createClaimsSlice = (
 
   clearClaimFeatures: (caseId) => {
     set((prev) => ({ claimFeatures: prev.claimFeatures.filter((f) => !f.id.startsWith(caseId)) }));
-    // Delete from IndexedDB (async, fire-and-forget)
+    // Delete from server DB (async, fire-and-forget)
     deleteClaimFeaturesByCaseId(caseId).catch((err) => {
       log(`Failed to clear claim features for case ${caseId}:`, err);
     });

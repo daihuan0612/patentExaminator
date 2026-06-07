@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { PatentCase, CaseWorkflowState } from "@shared/types/domain";
 import { updateCase } from "../../../lib/repos";
-import { idbWriteGuard } from "../../../lib/idbWriteGuard";
+import { dbWriteGuard } from "../../../lib/dbWriteGuard";
 
 export interface CaseSlice {
   currentCase: PatentCase | null;
@@ -24,7 +24,7 @@ export const createCaseSlice = (
 
   setCurrentCase: (c) => {
     set(() => ({ currentCase: c }));
-    if (c) updateCase(c).catch(idbWriteGuard("case"));
+    if (c) updateCase(c).catch(dbWriteGuard("case"));
   },
   setCases: (cases) => set(() => ({ cases })),
   setLoading: (v) => set(() => ({ isLoading: v })),
@@ -32,7 +32,7 @@ export const createCaseSlice = (
     set((prev) => {
       if (prev.currentCase) {
         const updated = { ...prev.currentCase, workflowState: state, updatedAt: new Date().toISOString() };
-        updateCase(updated).catch(idbWriteGuard("case"));
+        updateCase(updated).catch(dbWriteGuard("case"));
         return { currentCase: updated };
       }
       return { currentCase: null };

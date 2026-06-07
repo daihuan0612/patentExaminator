@@ -6,7 +6,8 @@ import { AppShell } from "@client/components/AppShell";
 import { ModeBanner } from "@client/components/ModeBanner";
 import { NewCasePage } from "@client/features/case/NewCasePage";
 
-// Mock repos (IndexedDB + caseRepo in a single mock — Vitest takes the last vi.mock per module)
+// Mock repos (repos + caseRepo in a single mock — Vitest takes the last vi.mock per module)
+
 vi.mock("@client/lib/repos", () => ({
   getDB: vi.fn().mockResolvedValue({
     get: vi.fn().mockResolvedValue(null),

@@ -17,9 +17,9 @@ vi.mock("@client/lib/serverReady", () => ({
   clearServerReadyCache: vi.fn()
 }));
 
-// Mock idbWriteGuard
-vi.mock("@client/lib/idbWriteGuard", () => ({
-  idbWriteGuard: vi.fn(() => vi.fn())
+// Mock dbWriteGuard
+vi.mock("@client/lib/dbWriteGuard", () => ({
+  dbWriteGuard: vi.fn(() => vi.fn())
 }));
 
 const mockFetch = vi.fn();

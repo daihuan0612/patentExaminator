@@ -33,7 +33,7 @@ export const createDraftSlice = (
     }));
   },
   loadReexamDraft: (caseId, draft) => {
-    // Load from DB without re-saving to IndexedDB
+    // Load from DB without re-saving
     set((prev) => ({
       reexamDrafts: { ...prev.reexamDrafts, [caseId]: draft }
     }));
@@ -45,7 +45,7 @@ export const createDraftSlice = (
     }));
   },
   loadSummary: (caseId, summary) => {
-    // Load from DB without re-saving to IndexedDB
+    // Load from DB without re-saving
     set((prev) => ({
       summaries: { ...prev.summaries, [caseId]: summary }
     }));

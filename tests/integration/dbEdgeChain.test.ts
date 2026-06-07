@@ -6,7 +6,6 @@
  *   - Opinion/Draft/Interpret Store 纯状态管理
  *   - CRUD 边缘场景（并发/重复键/空数据/部分更新）
  *
- * B-038 后数据层从 IndexedDB 迁移到 SQLite。
  * 持久化测试使用内存数据库隔离。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";

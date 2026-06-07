@@ -102,7 +102,7 @@ export {
   testRetrieverCodeExists,
   testPromptInjectorCodeExists,
   testTypeDefinitions,
-  testIndexedDbSchema,
+  testKnowledgeDbSchema,
   testAgentIntegration,
   testSettingsUI,
   testKnowledgeRepo,

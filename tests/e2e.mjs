@@ -120,7 +120,7 @@ import {
   testRetrieverCodeExists,
   testPromptInjectorCodeExists,
   testTypeDefinitions,
-  testIndexedDbSchema,
+  testKnowledgeDbSchema,
   testAgentIntegration,
   testSettingsUI,
   testKnowledgeRepo,
@@ -526,7 +526,7 @@ async function main() {
       await maybe(testRetrieverCodeExists);
       await maybe(testPromptInjectorCodeExists);
       await maybe(testTypeDefinitions);
-      await maybe(testIndexedDbSchema);
+      await maybe(testKnowledgeDbSchema);
       await maybe(testAgentIntegration);
       await maybe(testSettingsUI);
       await maybe(testKnowledgeRepo);
@@ -566,7 +566,7 @@ async function main() {
       await maybe(testFullPipelineMock_G2);
       await maybe(testFullPipelineMock_Reexam_G1);
 
-      // DB Logic-Chain tests (Store → Repo → IndexedDB, no UI)
+      // DB Logic-Chain tests (Store → Repo → SQLite, no UI)
       setGroup("db");
       console.log("\n--- DB Logic-Chain ---");
       await maybe(runDbLogicChainTests);

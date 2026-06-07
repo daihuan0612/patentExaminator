@@ -149,8 +149,7 @@ export async function testTypeDefinitions() {
 
 // ── T-RAG-014: 数据持久化验证 ──────────────────────────────────────
 
-export async function testIndexedDbSchema() {
-  // B-038 迁移后，知识库数据已移至服务端 SQLite
+export async function testKnowledgeDbSchema() {
   // 验证 knowledgeDb.ts 包含知识库相关的 CRUD 操作
   const knowledgeDbPath = path.join(SERVER_SRC, "lib", "knowledgeDb.ts");
   assert(fileExists(knowledgeDbPath), "knowledgeDb.ts not found");

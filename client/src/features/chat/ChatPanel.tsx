@@ -73,14 +73,14 @@ export function ChatPanel() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef(true);
 
-  // Load sessions + messages from IndexedDB on mount / caseId change
+  // Load sessions + messages from server DB on mount / caseId change
   useEffect(() => {
     log("useEffect triggered, caseId:", caseId);
     if (!caseId) return;
     let cancelled = false;
     (async () => {
       try {
-        log("Loading sessions from IndexedDB for caseId:", caseId);
+        log("Loading sessions from DB for caseId:", caseId);
         // First, get all sessions
         const storedSessions = await getSessionsByCaseId(caseId);
         log("Loaded sessions:", storedSessions.length);
@@ -102,8 +102,8 @@ export function ChatPanel() {
           log("Called loadMessages");
         }
       } catch (error) {
-        log('Failed to load chat history from IndexedDB', error);
-        // Fallback: use in-memory store only if IndexedDB fails
+        log('Failed to load chat history from DB', error);
+        // Fallback: use in-memory store only if DB fails
       }
     })();
     return () => { 
@@ -158,7 +158,7 @@ export function ChatPanel() {
   if (!currentCase) {
     log("Early return: currentCase is null - this may cause chat history not to load!");
     // Note: We still return null, but the useEffect should have already run
-    // to load chat sessions from IndexedDB
+    // to load chat sessions from DB
     return null;
   }
 
@@ -178,7 +178,7 @@ export function ChatPanel() {
     setActiveSessionId(session.id);
     try { 
       await createSession(session); 
-      log("Session saved to IndexedDB:", session.id);
+      log("Session saved to DB:", session.id);
     } catch (e) { 
       log("createSession error:", e);
     }
@@ -214,7 +214,7 @@ export function ChatPanel() {
       setActiveSessionId(session.id);
       try { 
         await createSession(session); 
-        log("Session saved to IndexedDB:", session.id);
+        log("Session saved to DB:", session.id);
       } catch (e) { 
         log("createSession error:", e);
       }
@@ -236,7 +236,7 @@ export function ChatPanel() {
     addMessage(userMsg);
     try { 
       await createMessage(userMsg); 
-      log("User message saved to IndexedDB:", userMsg.id);
+      log("User message saved to DB:", userMsg.id);
     } catch (e) { 
       log("createMessage error:", e);
     }
@@ -286,7 +286,7 @@ export function ChatPanel() {
       addMessage(assistantMsg);
       try { 
         await createMessage(assistantMsg); 
-        log("Assistant message saved to IndexedDB:", assistantMsg.id);
+        log("Assistant message saved to DB:", assistantMsg.id);
       } catch (e) { 
         log("createMessage error:", e);
       }

@@ -30,7 +30,7 @@ import {
 } from "../store";
 
 /**
- * Load a case and all its associated data from IndexedDB into Zustand stores.
+ * Load a case and all its associated data from server DB into Zustand stores.
  * Returns the PatentCase if found, or null if the caseId doesn't exist.
  */
 export async function loadCaseById(caseId: string) {
@@ -38,7 +38,7 @@ export async function loadCaseById(caseId: string) {
   
   const theCase = await readCaseById(caseId);
   if (!theCase) {
-    log("Case not found in IndexedDB:", caseId);
+    log("Case not found in DB:", caseId);
     return null;
   }
   log("Case found:", theCase.id, theCase.title);
@@ -93,7 +93,7 @@ export async function loadCaseById(caseId: string) {
   }
   log("Total chat messages loaded:", allMessages.length);
 
-  // Hydrate Zustand stores using load* methods to avoid re-saving to IndexedDB
+  // Hydrate Zustand stores using load* methods to avoid re-saving to DB
   log("Hydrating Zustand stores...");
   useCaseStore.getState().setCurrentCase(theCase);
   useDocumentsStore.getState().setDocuments(docs);
@@ -101,7 +101,7 @@ export async function loadCaseById(caseId: string) {
   useClaimsStore.getState().setClaimNodes(nodes);
   useClaimsStore.getState().loadClaimFeatures(features);
   
-  // Use load* methods to avoid re-saving to IndexedDB
+  // Use load* methods to avoid re-saving to DB
   useNoveltyStore.getState().loadComparisons(novelty);
   useInventiveStore.getState().loadAnalyses(inventive);
   useDefectsStore.getState().loadDefects(defects);

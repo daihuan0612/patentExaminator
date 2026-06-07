@@ -19,8 +19,8 @@ vi.mock("@client/lib/serverReady", () => ({
 }));
 
 const guardedErrors: Array<{ store: string; error: unknown }> = [];
-vi.mock("@client/lib/idbWriteGuard", () => ({
-  idbWriteGuard: vi.fn((store: string) => (error: unknown) => {
+vi.mock("@client/lib/dbWriteGuard", () => ({
+  dbWriteGuard: vi.fn((store: string) => (error: unknown) => {
     guardedErrors.push({ store, error });
   })
 }));
@@ -465,7 +465,7 @@ describe("持久化 — Client 完整链路", () => {
   // ══════════════════════════════════════════════════════════════
 
   describe("14. writeSettings 失败传播", () => {
-    it("POST 失败 → idbWriteGuard 记录 → 用户有感知", async () => {
+    it("POST 失败 → dbWriteGuard 记录 → 用户有感知", async () => {
       mockFetch.mockImplementation((url: string) => {
         if (typeof url === "string" && url.includes("/api/data/settings")) return Promise.reject(new Error("Network error"));
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) });

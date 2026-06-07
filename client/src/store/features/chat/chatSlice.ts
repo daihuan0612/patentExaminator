@@ -51,7 +51,7 @@ export const createChatSlice = (
     set(() => ({ sessions }));
   },
   loadSessions: (sessions) => {
-    // Load from DB without re-saving to IndexedDB
+    // Load from DB without re-saving
     log("loadSessions called with", sessions.length, "sessions");
     set(() => ({ sessions }));
   },
@@ -90,7 +90,7 @@ export const createChatSlice = (
     set(() => ({ messages }));
   },
   loadMessages: (messages) => {
-    // Load from DB without re-saving to IndexedDB
+    // Load from DB without re-saving
     log("loadMessages called with", messages.length, "messages");
     set(() => ({ messages }));
   },

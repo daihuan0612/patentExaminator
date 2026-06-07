@@ -33,14 +33,14 @@ export const createNoveltySlice = (
 
   setComparisons: (comparisons) => {
     debugNoveltySliceLog("setComparisons:", { count: comparisons.length, ids: comparisons.map(c => c.id) });
-    // Persist each comparison to IndexedDB
+    // Persist each comparison to server DB
     for (const comp of comparisons) {
       createNovelty(comp).catch((e) => debugNoveltySliceLog("[NoveltySlice] createNovelty error:", e));
     }
     return set(() => ({ comparisons }));
   },
   loadComparisons: (comparisons) => {
-    // Load from DB without re-saving to IndexedDB
+    // Load from DB without re-saving
     debugNoveltySliceLog("loadComparisons:", { count: comparisons.length, ids: comparisons.map(c => c.id) });
     return set(() => ({ comparisons }));
   },

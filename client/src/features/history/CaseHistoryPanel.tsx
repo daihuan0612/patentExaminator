@@ -29,13 +29,13 @@ export function CaseHistoryPanel() {
     };
   }, []);
 
-  // Load all cases from IndexedDB on mount
+  // Load all cases from server DB on mount
   useEffect(() => {
     (async () => {
       try {
         const all = await readAllCases();
         setCases(all);
-      } catch { /* IndexedDB unavailable */ }
+      } catch { /* DB unavailable */ }
     })();
   }, [setCases]);
 

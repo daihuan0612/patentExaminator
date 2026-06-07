@@ -122,7 +122,7 @@ export function OpinionComparisonPanel({
       ? grounds.filter((g) => !mappingByCode.has(g.code)).map((g) => g.code)
       : []);
 
-  // Sync initial results when they become available (e.g., loaded from IndexedDB after mount)
+  // Sync initial results when they become available (e.g., loaded from DB after mount)
   useEffect(() => {
     if (initialOpinionResult && !opinionResult) {
       setOpinionResult(initialOpinionResult);

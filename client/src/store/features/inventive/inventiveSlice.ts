@@ -32,14 +32,14 @@ export const createInventiveSlice = (
 
   setAnalyses: (analyses) => {
     log("setAnalyses:", analyses.map(a => ({ id: a.id, closestPriorArtId: a.closestPriorArtId })));
-    // Persist each analysis to IndexedDB
+    // Persist each analysis to server DB
     for (const analysis of analyses) {
       createInventive(analysis).catch((e) => log("[InventiveSlice] createInventive error:", e));
     }
     set(() => ({ analyses }));
   },
   loadAnalyses: (analyses) => {
-    // Load from DB without re-saving to IndexedDB
+    // Load from DB without re-saving
     log("loadAnalyses:", analyses.map(a => ({ id: a.id, closestPriorArtId: a.closestPriorArtId })));
     set(() => ({ analyses }));
   },

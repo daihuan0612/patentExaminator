@@ -33,7 +33,7 @@ export interface KnowledgeSource {
   size: number;
   /** 文件 SHA-256 hash（用于去重） */
   fileHash?: string;
-  /** 原始文件在 IndexedDB 中的 blob key（file 类型） */
+  /** 原始文件的 blob key（file 类型） */
   blobKey?: string;
   /** URL 来源的原始地址 */
   sourceUrl?: string;

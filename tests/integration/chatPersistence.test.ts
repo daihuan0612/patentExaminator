@@ -4,7 +4,6 @@
  * 测试聊天历史持久化场景，验证 SQLite 持久化层正确存储和检索聊天数据。
  * 模拟页面刷新场景：写入数据 → 清空内存 → 从 DB 恢复。
  *
- * B-038 后数据层从 IndexedDB 迁移到 SQLite。
  * 使用内存数据库隔离，不访问生产数据库。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";

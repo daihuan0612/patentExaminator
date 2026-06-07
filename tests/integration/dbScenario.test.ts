@@ -7,7 +7,6 @@
  *   Bug 21: 数据保存后读取不一致
  *   Bug 22: 缺陷数据保存后丢失/不更新
  *
- * B-038 后数据层从 IndexedDB 迁移到 SQLite。
  * 使用内存数据库隔离，直接测试 sync_data CRUD 操作。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";

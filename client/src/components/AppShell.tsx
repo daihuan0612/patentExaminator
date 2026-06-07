@@ -57,7 +57,7 @@ export function AppShell({ children }: AppShellProps) {
     };
   }, []);
 
-  // Auto-restore all case data from IndexedDB on page load/navigation
+  // Auto-restore all case data from server DB on page load/navigation
   // Solves bg-11 systemically — defect/novelty/inventive/draft results disappearing after refresh
   useEffect(() => {
     if (!caseId || caseId === "new") return;

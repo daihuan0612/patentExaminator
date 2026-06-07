@@ -83,7 +83,7 @@ export function InventiveStepPanel({
     () => analysis?.examinerResponse ?? ""
   );
 
-  // Sync local state when analysis is loaded from IndexedDB
+  // Sync local state when analysis is loaded from DB
   // analysis?.id is intentional: we only want to sync when analysis ID changes, not on every render
   useEffect(() => {
     if (!analysis) return;
@@ -229,12 +229,12 @@ if (!isMountedRef.current || controller.signal.aborted) return;
       motivationEvidenceCount: updatedAnalysis.motivationEvidence.length
     });
     updateAnalysis(updatedAnalysis);
-    // Persist to IndexedDB
+    // Persist to server DB
     try {
       await updateInventive(updatedAnalysis);
-      log("handleSaveResponse: persisted to IndexedDB");
+      log("handleSaveResponse: persisted to DB");
     } catch (e) {
-      log("handleSaveResponse: failed to persist to IndexedDB", e);
+      log("handleSaveResponse: failed to persist to DB", e);
     }
     log("[InventiveStepPanel] handleSaveResponse: updateAnalysis called");
   };
@@ -260,12 +260,12 @@ if (!isMountedRef.current || controller.signal.aborted) return;
     });
     const updatedAnalysis = { ...analysis, motivationEvidence: updated };
     updateAnalysis(updatedAnalysis);
-    // Persist to IndexedDB
+    // Persist to server DB
     try {
       await updateInventive(updatedAnalysis);
-      log("handleUpdateEvidence: persisted to IndexedDB");
+      log("handleUpdateEvidence: persisted to DB");
     } catch (e) {
-      log("handleUpdateEvidence: failed to persist to IndexedDB", e);
+      log("handleUpdateEvidence: failed to persist to DB", e);
     }
     log("[InventiveStepPanel] handleUpdateEvidence: updateAnalysis called");
   };

@@ -107,7 +107,7 @@ export function CaseSetupPage() {
     mode: "onChange"
   });
 
-  // Load existing case and documents from IndexedDB
+  // Load existing case and documents from server DB
   useEffect(() => {
     if (!caseId) return;
     let cancelled = false;
@@ -133,7 +133,7 @@ export function CaseSetupPage() {
         }
         setDocuments(docs);
       } catch (e) {
-        log("Failed to load case data from IndexedDB:", e);
+        log("Failed to load case data from DB:", e);
       }
     })();
     return () => { cancelled = true; };
@@ -181,7 +181,7 @@ export function CaseSetupPage() {
     }
   };
 
-  // Debounced auto-save to IndexedDB (400ms)
+  // Debounced auto-save to server DB (400ms)
   const watchAll = watch();
   useEffect(() => {
     if (!caseId) return;
@@ -547,11 +547,11 @@ export function CaseSetupPage() {
         role: classification.role
       };
       
-      // 保存到 IndexedDB（使用 put 操作，如果已存在则更新）
+      // 保存到 server DB
       await createDocument(updatedDoc);
     }
     
-    // 分类完成后，重新从 IndexedDB 加载所有文档，确保 store 与数据库同步
+    // 分类完成后，重新从 server DB 加载所有文档，确保 store 与数据库同步
     const allDocs = await readDocumentsByCaseId(caseId ?? "");
     setDocuments(allDocs);
   };
