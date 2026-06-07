@@ -22,19 +22,15 @@ function renderWithCitations(text: string, citations: CitationInfo[]) {
   while ((match = regex.exec(text)) !== null) {
     const num = parseInt(match[1], 10);
     if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
-    const cite = citations[num - 1];
-    if (num >= 1 && num <= citations.length && cite) {
-      const label = cite.article ? `${cite.source} ${cite.article}` : cite.source;
+    if (num >= 1 && num <= citations.length) {
       parts.push(
-        <a
+        <sup
           key={`cite-${match.index}`}
           className="chat-bubble__inline-cite"
-          href={`/settings?tab=knowledge`}
-          title={`${label} — 点击查看知识库`}
-          onClick={(e) => { e.stopPropagation(); }}
+          title={citations[num - 1]?.source ?? ""}
         >
           [{num}]
-        </a>
+        </sup>
       );
     } else {
       parts.push(match[0]);
@@ -106,14 +102,7 @@ export function ChatBubble({ message, onAction }: ChatBubbleProps) {
             >
               <span className="chat-bubble__citation-num">[{i + 1}]</span>
               <div className="chat-bubble__citation-body">
-                <a
-                  className="chat-bubble__citation-source"
-                  href={`/settings?tab=knowledge`}
-                  title="点击查看知识库"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {c.source}{c.article ? ` ${c.article}` : ""}
-                </a>
+                <span className="chat-bubble__citation-source">{c.source}{c.article ? ` ${c.article}` : ""}</span>
                 <span className="chat-bubble__citation-excerpt">{c.excerpt}</span>
               </div>
             </div>

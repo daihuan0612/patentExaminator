@@ -3596,14 +3596,9 @@
 }
 
 .chat-bubble__citation-source {
-  color: var(--pex-color-primary);
+  color: var(--text-primary, #333);
   font-weight: 500;
   font-size: 0.78rem;
-  text-decoration: none;
-}
-
-.chat-bubble__citation-source:hover {
-  text-decoration: underline;
 }
 
 .chat-bubble__citation-excerpt {
