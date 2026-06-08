@@ -539,7 +539,7 @@ async function trackTokenUsage(
 // ── Provider 错误追踪 ───────────────────────────────
 
 async function trackProviderErrors(
-  attempts: Array<{ providerId: string; ok?: boolean; errorCode?: string }> | undefined,
+  attempts: Array<{ providerId: string; ok?: boolean; errorCode?: string; message?: string }> | undefined,
   agent: string,
   caseId: string
 ): Promise<void> {
@@ -552,7 +552,7 @@ async function trackProviderErrors(
       store.addProviderError({
         providerId: a.providerId as ProviderId,
         errorCode: a.errorCode ?? "unknown",
-        message: `Provider ${a.providerId} failed: ${a.errorCode ?? "unknown error"}`,
+        message: a.message ?? `Provider ${a.providerId} failed: ${a.errorCode ?? "unknown error"}`,
         timestamp: new Date().toISOString(),
         read: false,
         agent,
@@ -638,7 +638,7 @@ export async function agentRun<T>(
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({ error: { message: res.statusText } }));
     const msg = errorBody.error?.message ?? `Gateway error: ${res.status}`;
-    const attempts = errorBody.attempts as Array<{ providerId: string; errorCode?: string }> | undefined;
+    const attempts = errorBody.attempts as Array<{ providerId: string; errorCode?: string; message?: string }> | undefined;
     await trackProviderErrors(attempts, agent, id);
     const errorType = classifyGatewayError(res.status, errorBody, attempts);
     const detail = attempts?.length

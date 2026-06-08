@@ -26,6 +26,7 @@ export interface AttemptRecord {
   providerId: ProviderId;
   ok: boolean;
   errorCode?: string;
+  message?: string;
 }
 
 export class ProviderRegistry {
@@ -76,7 +77,7 @@ export class ProviderRegistry {
       const providerId = pid as ProviderId;
       const adapter = this.adapters.get(pid);
       if (!adapter) {
-        attempts.push({ providerId, ok: false, errorCode: "adapter-not-found" });
+        attempts.push({ providerId, ok: false, errorCode: "adapter-not-found", message: `Provider adapter not found: ${pid}` });
         continue;
       }
 
@@ -144,7 +145,7 @@ export class ProviderRegistry {
             const errInfo = classifyError(error);
             const inner = (error as Error & { attempts?: AttemptRecord[] }).attempts;
             if (inner) attempts.push(...inner);
-            else attempts.push({ providerId, ok: false, errorCode: errInfo.code });
+            else attempts.push({ providerId, ok: false, errorCode: errInfo.code, message: errInfo.message });
             if (errInfo.code === "auth-failed") {
               return { response: buildErrorResponse(errInfo), attempts };
             }
@@ -253,7 +254,7 @@ export class ProviderRegistry {
       } catch (error) {
         lastError = error;
         lastErrInfo = classifyError(error);
-        attempts.push({ providerId: adapter.id as ProviderId, ok: false, errorCode: lastErrInfo.code });
+        attempts.push({ providerId: adapter.id as ProviderId, ok: false, errorCode: lastErrInfo.code, message: lastErrInfo.message });
 
         // Client disconnection — don't waste retries
         if (clientSignal?.aborted) {

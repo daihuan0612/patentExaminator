@@ -81,6 +81,9 @@ agentRouter.post("/agent/run", express.json({ limit: "10mb" }), async (req, res)
       const status = result.error?.type === "unsupported" ? 501
         : result.error?.type === "auth" ? 401
         : result.error?.type === "ai-output" ? 200  // AI 输出问题用 200 + ok:false，前端统一处理
+        : result.error?.code === "quota-exceeded" ? 429
+        : result.error?.code === "auth-failed" ? 401
+        : result.error?.type === "ai-error" ? 502
         : 500;
       res.status(status).json(result);
       return;

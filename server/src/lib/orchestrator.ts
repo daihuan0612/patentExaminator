@@ -71,7 +71,7 @@ export interface AgentRunResponse {
   output?: unknown;
   tokenUsage?: { input: number; output: number; total: number } | undefined;
   attempts?: Array<{ providerId: string; ok: boolean; errorCode?: string }> | undefined;
-  error?: { type: string; message: string } | undefined;
+  error?: { type: string; message: string; code?: string } | undefined;
   knowledgeCitations?: Array<{ source: string; sourceId?: string; article?: string; score: number; excerpt: string }> | undefined;
 }
 
@@ -1020,6 +1020,20 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
       timeoutMs: agentTimeoutMs,
     });
 
+    // LLM 调用失败（如 429/quota-exceeded）— 直接返回错误，让客户端 trackProviderErrors 记录
+    if (aiResponse.error) {
+      return {
+        ok: false,
+        error: {
+          type: "ai-error",
+          code: aiResponse.error.code,
+          message: aiResponse.error.message,
+        },
+        tokenUsage: aiResponse.tokenUsage,
+        attempts: aiResponse.attempts,
+      };
+    }
+
     // 解析 AI 返回的 JSON
     let output: unknown = aiResponse.output;
     if (typeof output === "string") {
@@ -1185,7 +1199,8 @@ interface InternalGatewayRequest {
 interface InternalGatewayResponse {
   output: unknown;
   tokenUsage?: { input: number; output: number; total: number } | undefined;
-  attempts?: Array<{ providerId: string; ok: boolean; errorCode?: string }> | undefined;
+  attempts?: Array<{ providerId: string; ok: boolean; errorCode?: string; message?: string }> | undefined;
+  error?: { code: string; message: string; retryable: boolean } | undefined;
 }
 
 async function callInternalGateway(req: InternalGatewayRequest): Promise<InternalGatewayResponse> {
@@ -1235,5 +1250,6 @@ async function callInternalGateway(req: InternalGatewayRequest): Promise<Interna
     output: result.response.text,
     tokenUsage: result.response.tokenUsage,
     attempts: result.attempts,
+    error: result.response.error,
   };
 }
