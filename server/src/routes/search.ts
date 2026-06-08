@@ -537,6 +537,8 @@ searchRouter.post("/search-references", async (req, res) => {
       return candidate;
     });
 
+    candidates.sort((a, b) => b.relevanceScore - a.relevanceScore);
+
     logger.info("Search references completed", {
       caseId: request.caseId,
       query: searchQuery,
@@ -1096,6 +1098,8 @@ searchRouter.post("/search-with-terms", async (req, res) => {
     if (searchSummary.providerResults?.[0]) {
       searchSummary.providerResults[0].candidateCount = candidates.length;
     }
+
+    candidates.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
     res.json({ ok: true, candidates, searchQuery, searchSummary, attempts: filterAttempts } satisfies SearchReferencesResponse);
   } catch (error) {

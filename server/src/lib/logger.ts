@@ -24,7 +24,11 @@ function formatMessage(level: LogLevel, message: string, meta?: Record<string, u
   const mi = pad2(now.getMinutes());
   const s = pad2(now.getSeconds());
   const ms = String(now.getMilliseconds()).padStart(3, "0");
-  const timestamp = `${y}-${mo}-${d}T${h}:${mi}:${s}.${ms}`;
+  const offsetMin = now.getTimezoneOffset();
+  const sign = offsetMin <= 0 ? "+" : "-";
+  const absMin = Math.abs(offsetMin);
+  const tz = `${sign}${pad2(Math.floor(absMin / 60))}:${pad2(absMin % 60)}`;
+  const timestamp = `${y}-${mo}-${d} ${h}:${mi}:${s}.${ms} ${tz}`;
   const metaStr = meta ? ` ${JSON.stringify(meta)}` : "";
   return `[${timestamp}] ${level.toUpperCase()} ${message}${metaStr}`;
 }

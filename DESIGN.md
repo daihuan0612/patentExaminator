@@ -8,6 +8,7 @@
 
 | 版本 | 日期 | 变更摘要 | 影响范围 | 关联 commit |
 |------|------|---------|----------|-------------|
+| v0.1.0-r48 | 2026-06-08 | bug7+bug8: logger 时间戳添加时区偏移（+HH:MM）；文献检索结果按 relevanceScore 降序排序 | logger.ts, search.ts | — |
 | v0.1.0-r47 | 2026-06-08 | bug5 补充: doubao-seed-2.0+ / DeepSeek V4 按 provider 严格对齐官方文档 — 新增 §5.4.1 Provider 官方模型规格（DeepSeek 官方 API、火山引擎、豆包 Seed 三大 provider 的完整参数表）；registry 拆分火山引擎/DeepSeek 官方前缀（deepseek-v4-pro-260425 vs deepseek-v4-pro）；doubao.ts 新增 16 个 seed 模型 ID + 3 个火山 DeepSeek 模型；deepseek.ts 移除火山引擎专属 ID；AgentsAssignmentPanel 补充 doubao provider；5 文件修改 | DESIGN.md §5.4.1, model-capabilities-registry.ts, doubao.ts, deepseek.ts, modelCatalog.ts, AgentsAssignmentPanel.tsx | — |
 | v0.1.0-r46 | 2026-06-07 | bug5: 模型自适应框架 — ModelCapabilities 统一能力声明接口+注册表（6 维度：maxTokens/thinking tokens 三层防御、temperature 自适应、上下文窗口动态截断、structured output 降级、系统提示处理、视觉能力声明）；ChatResponse 新增 thinkingTokens/reasoningText；ChatRequest 新增 responseFormat；orchestrator temperature 传递 + truncateForModel；3 新文件 + 7 修改文件 | ProviderAdapter.ts, gemini.ts, bedrock.ts, registry.ts, orchestrator.ts, ModelCapabilities.ts(新建), model-capabilities-registry.ts(新建), tokenEstimator.ts(新建), provider-adapters.test.ts, registry.test.ts | — |
 | v0.1.0-r45 | 2026-06-06 | bug3: 数据库操作日志扩展到所有 store — 移除 data.ts 中 `store === "settings"` 守卫，所有 CRUD 操作（GET/CREATE/UPDATE/DELETE/DELETE_ALL）均记录审计日志；auditLog.ts 日志文件重命名为 db-audit.log | data.ts, auditLog.ts | — |
