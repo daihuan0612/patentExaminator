@@ -249,7 +249,15 @@ export function ProvidersConfigPanel() {
         const defaultId = models.includes(provider.defaultModelId)
           ? provider.defaultModelId
           : models[0] ?? "";
-        const fallbacks = [defaultId, ...models.filter((m) => m !== defaultId)];
+        // 保留用户已配置的 fallback 顺序，只移除不可用的、添加新发现的
+        const existingFallbacks = provider.modelFallbacks ?? [];
+        const modelSet = new Set(models);
+        // 1. 保留用户配置中仍然可用的模型（按原顺序）
+        const preserved = existingFallbacks.filter((m) => modelSet.has(m) && m !== defaultId);
+        // 2. 添加新发现的模型（不在用户配置中的）
+        const preservedSet = new Set([defaultId, ...preserved]);
+        const newModels = models.filter((m) => !preservedSet.has(m));
+        const fallbacks = [defaultId, ...preserved, ...newModels];
         updateProvider(id, { modelIds: models, defaultModelId: defaultId, modelFallbacks: fallbacks });
       }
     } catch (error) {

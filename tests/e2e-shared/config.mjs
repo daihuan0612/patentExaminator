@@ -44,10 +44,10 @@ export const API_KEY_NAMES = {
   reranker: "siliconflow_Key",
 };
 
-/** 默认模型 ID */
+/** 默认模型 ID（按数据库配置） */
 export const DEFAULT_MODEL_IDS = {
-  gemini: "gemini-3.1-flash-lite-preview",
-  mimo: "mimo-v2.5",
+  gemini: "gemini-3.5-flash",
+  mimo: "mimo-v2.5-pro",
   openrouter: "z-ai/glm-4.5-air:free",
 };
 
@@ -66,17 +66,19 @@ export const PROVIDER_FALLBACK_CHAIN = [
 
 // ── Fallback 模型链条 ────────────────────────────────────────────────
 
-/** Gemini fallback 模型列表 */
+/** Gemini fallback 模型列表（按数据库配置顺序） */
 export const GEMINI_FALLBACK_MODELS = [
+  "gemini-3.5-flash",
+  "gemini-3.1-flash-lite",
   "gemini-3.1-flash-lite-preview",
-  "gemini-2.5-flash-lite",
-  "gemini-2.0-flash-lite",
   "gemini-3-flash-preview",
   "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
   "gemini-2.0-flash",
-  "gemini-3.1-pro-preview",
-  "gemini-3-pro-preview",
+  "gemini-2.0-flash-lite",
   "gemini-2.5-pro",
+  "gemini-3-pro-preview",
+  "gemini-3.1-pro-preview",
 ];
 
 /** OpenRouter fallback 模型列表（带标签） */
