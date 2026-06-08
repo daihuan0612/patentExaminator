@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { setApiKey } from "../security/keyStore.js";
 import { registry } from "../providers/registry.js";
+import { getModelCatalog } from "../providers/model-capabilities-registry.js";
 import { settingsProviderInputSchema, settingsModelsQuerySchema, storeNameSchema } from "../../../shared/src/schemas/api-input.schema.js";
 import { validateExternalUrl, BlockedUrlError } from "../lib/urlValidation.js";
 
@@ -29,6 +30,11 @@ settingsRouter.put("/settings/providers/:providerId", (req, res) => {
 
 // B-026: DELETE /settings/providers/:providerId 端点已删除（死代码）
 // B-026: GET /settings/providers/:providerId 端点已删除（死代码）
+
+// bug9: 模型目录 — 返回所有 provider 的模型列表 + 能力元数据（无需 API Key）
+settingsRouter.get("/providers/models", (_req, res) => {
+  res.json(getModelCatalog());
+});
 
 // List available models for a provider
 settingsRouter.get("/providers/:providerId/models", async (req, res) => {

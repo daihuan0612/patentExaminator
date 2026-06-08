@@ -29,7 +29,16 @@ export interface ModelCapabilities {
 
   /** 系统提示传递方式 */
   systemPromptMode: "message" | "parameter" | "none";
-  // "message" = OpenAI 风格 system role message
-  // "parameter" = Gemini 风格 systemInstruction 参数
-  // "none" = 不支持系统提示
+
+  /** 用户可见的推荐语 */
+  recommendation?: string;
+
+  /** 每分钟请求数限制 */
+  rpm?: number;
+
+  /** 每天请求数限制 */
+  rpd?: number;
+
+  /** 每分钟 token 数限制 */
+  tpm?: string;
 }

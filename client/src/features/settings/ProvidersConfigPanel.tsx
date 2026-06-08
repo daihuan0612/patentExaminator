@@ -3,7 +3,7 @@ import type { ProviderConnection, ProviderId } from "@shared/types/agents";
 import { PRESET_MODEL_PROVIDERS } from "@shared/types/agents";
 import { useSettingsStore } from "../../store";
 import { fetchModels } from "../../lib/api";
-import { DEFAULT_MODELS, getModelMeta } from "../../lib/modelCatalog";
+import { useModelCatalog, getModelMeta, getModelIds } from "../../lib/modelCatalog";
 import { ProviderErrorBox } from "./ProviderErrorBox";
 import { createLogger } from "../../lib/logger";
 
@@ -55,6 +55,7 @@ function saveProviderOrder(order: ProviderId[]) {
 
 export function ProvidersConfigPanel() {
   const { settings, setSettings } = useSettingsStore();
+  const modelCatalog = useModelCatalog();
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [keyInput, setKeyInput] = useState("");
   const [loadingModels, setLoadingModels] = useState<string | null>(null);
@@ -100,7 +101,7 @@ export function ProvidersConfigPanel() {
   const ensureProvider = (id: ProviderId): ProviderConnection => {
     const existing = getProvider(id);
     if (existing) return existing;
-    const models = DEFAULT_MODELS[id as ProviderId].map((model: { id: string }) => model.id);
+    const models = getModelIds(id, modelCatalog);
     return {
       providerId: id,
       apiKeyRef: "",
@@ -124,7 +125,7 @@ export function ProvidersConfigPanel() {
     } else {
       const preset = PRESET_MODEL_PROVIDERS.find((p) => p.id === id);
       if (!preset) return;
-      const models = DEFAULT_MODELS[id as ProviderId].map((model: { id: string }) => model.id);
+      const models = getModelIds(id as ProviderId, modelCatalog);
       const conn: ProviderConnection = {
         providerId: id as ProviderId,
         apiKeyRef: "",
@@ -292,7 +293,7 @@ export function ProvidersConfigPanel() {
           const error = modelError[preset.id];
           const fallbackList = provider.modelFallbacks ?? provider.modelIds;
           const modelMetaMap = new Map(
-            fallbackList.map((id) => [id, getModelMeta(preset.id, id)])
+            fallbackList.map((id) => [id, getModelMeta(preset.id, id, modelCatalog)])
           );
           const isExpanded = expandedProviders[preset.id] ?? false;
           return (

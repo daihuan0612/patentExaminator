@@ -11,6 +11,11 @@ export interface ModelInfo {
   tpm?: string;
   inputTokenLimit?: number;
   outputTokenLimit?: number;
+  contextWindow?: number;
+  maxOutputTokens?: number;
+  isReasoning?: boolean;
+  supportsVision?: boolean;
+  supportsStructuredOutput?: boolean;
 }
 
 export interface ProviderConnection {

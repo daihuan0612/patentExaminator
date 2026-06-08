@@ -539,7 +539,7 @@ describe("getModelCapabilities", () => {
   it("doubao-seed-character is non-reasoning", () => {
     const caps = getModelCapabilities("doubao-seed-character-251128");
     expect(caps.isReasoning).toBe(false);
-    expect(caps.contextWindow).toBe(131_072);
+    expect(caps.contextWindow).toBe(98_304);
     expect(caps.supportsVision).toBe(false);
   });
 

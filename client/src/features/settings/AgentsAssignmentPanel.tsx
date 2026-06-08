@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import type { AgentAssignment, ProviderId } from "@shared/types/agents";
 import { useSettingsStore } from "../../store";
-import { getModelMeta } from "../../lib/modelCatalog";
+import { useModelCatalog, getModelMeta } from "../../lib/modelCatalog";
 
 const AGENT_OPTIONS = [
   { id: "extract-case-fields", name: "案件信息提取", desc: "从专利文档自动提取基本信息" },
@@ -36,6 +36,7 @@ const PROVIDER_NAMES: Record<ProviderId, string> = {
 
 export function AgentsAssignmentPanel() {
   const { settings, setSettings } = useSettingsStore();
+  const modelCatalog = useModelCatalog();
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [dropdownAbove, setDropdownAbove] = useState(false);
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
@@ -115,7 +116,7 @@ export function AgentsAssignmentPanel() {
     if (!searchQuery) return models;
     const q = searchQuery.toLowerCase();
     return models.filter((m) => {
-      const meta = getModelMeta(providerId, m);
+      const meta = getModelMeta(providerId, m, modelCatalog);
       return m.toLowerCase().includes(q) || (meta?.recommendation ?? "").toLowerCase().includes(q);
     });
   };
@@ -253,7 +254,7 @@ export function AgentsAssignmentPanel() {
                             )}
 
                             {isExpanded && otherModels.map((model) => {
-                              const meta = getModelMeta(p.providerId, model);
+                              const meta = getModelMeta(p.providerId, model, modelCatalog);
                               const rec = meta?.recommendation ? ` [${meta.recommendation}]` : "";
                               return (
                                 <button
