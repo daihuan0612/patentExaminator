@@ -265,6 +265,7 @@ export interface SearchReferencesResponse {
   searchQuery?: string;
   searchSummary?: SearchSummary;
   error?: string;
+  attempts?: Array<{ providerId: string; ok?: boolean; errorCode?: string; message?: string }>;
 }
 
 /** nf-7: Step 1 — 仅提取检索词 */
@@ -282,6 +283,7 @@ export interface ExtractSearchTermsResponse {
   queries: string[];
   featureCount: number;
   error?: string;
+  attempts?: Array<{ providerId: string; ok?: boolean; errorCode?: string; message?: string }>;
 }
 
 /** nf-7: Step 2 — 用用户编辑后的检索词搜索 */

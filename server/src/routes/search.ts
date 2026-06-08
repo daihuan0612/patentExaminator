@@ -192,7 +192,8 @@ searchRouter.post("/search-references", async (req, res) => {
       res.status(502).json({
         ok: false,
         candidates: [],
-        error: "AI 提取检索词失败，请稍后重试。"
+        error: "AI 提取检索词失败，请稍后重试。",
+        attempts: extractAttempts,
       } satisfies SearchReferencesResponse);
       return;
     }
@@ -202,7 +203,8 @@ searchRouter.post("/search-references", async (req, res) => {
       res.status(502).json({
         ok: false,
         candidates: [],
-        error: "AI 返回空内容，可能 API Key 无效或配额已用完。请检查 LLM 设置。"
+        error: "AI 返回空内容，可能 API Key 无效或配额已用完。请检查 LLM 设置。",
+        attempts: extractAttempts,
       } satisfies SearchReferencesResponse);
       return;
     }
@@ -407,6 +409,7 @@ searchRouter.post("/search-references", async (req, res) => {
     };
 
     let filterRes: ChatResponse;
+    let filterAttempts: Array<{ providerId: string; ok: boolean; errorCode?: string; message?: string }> | undefined;
     try {
       const result = await registry.runWithFallback(
         availableProviders as string[],
@@ -418,6 +421,7 @@ searchRouter.post("/search-references", async (req, res) => {
         Object.fromEntries(providerKeys) as Partial<Record<string, string>>
       );
       filterRes = result.response;
+      filterAttempts = result.attempts;
     } catch (filterErr) {
       logger.warn("LLM filter failed, returning raw search results", { error: String(filterErr) });
       const fallbackCandidates: SearchReferencesCandidate[] = searchRes.results
@@ -440,7 +444,8 @@ searchRouter.post("/search-references", async (req, res) => {
         ok: false,
         candidates: [],
         searchQuery,
-        error: "AI 筛选结果失败，请稍后重试。"
+        error: "AI 筛选结果失败，请稍后重试。",
+        attempts: filterAttempts,
       } satisfies SearchReferencesResponse);
       return;
     }
@@ -451,7 +456,8 @@ searchRouter.post("/search-references", async (req, res) => {
         ok: false,
         candidates: [],
         searchQuery,
-        error: "AI 筛选文献返回空内容，请稍后重试。"
+        error: "AI 筛选文献返回空内容，请稍后重试。",
+        attempts: filterAttempts,
       } satisfies SearchReferencesResponse);
       return;
     }
@@ -542,7 +548,8 @@ searchRouter.post("/search-references", async (req, res) => {
       ok: true,
       candidates,
       searchQuery,
-      searchSummary
+      searchSummary,
+      attempts: filterAttempts
     } satisfies SearchReferencesResponse);
   } catch (error) {
     logger.error("Search references error", { error: String(error) });
@@ -666,7 +673,7 @@ searchRouter.post("/extract-search-terms", async (req, res) => {
       signal: controller.signal,
     };
 
-    const { response: extractRes } = await registry.runWithFallback(
+    const { response: extractRes, attempts: extractAttempts } = await registry.runWithFallback(
       availableProviders as string[],
       extractReq,
       undefined,
@@ -682,7 +689,8 @@ searchRouter.post("/extract-search-terms", async (req, res) => {
         ok: false,
         queries: [],
         featureCount: request.features.length,
-        error: "AI 提取检索词失败，请稍后重试。"
+        error: "AI 提取检索词失败，请稍后重试。",
+        attempts: extractAttempts,
       } satisfies ExtractSearchTermsResponse);
       return;
     }
@@ -726,7 +734,8 @@ searchRouter.post("/extract-search-terms", async (req, res) => {
     res.json({
       ok: true,
       queries: searchQueries,
-      featureCount: request.features.length
+      featureCount: request.features.length,
+      attempts: extractAttempts
     } satisfies ExtractSearchTermsResponse);
   } catch (error) {
     logger.error("Extract search terms error", { error: String(error) });
@@ -1005,6 +1014,7 @@ searchRouter.post("/search-with-terms", async (req, res) => {
     };
 
     let filterRes: ChatResponse;
+    let filterAttempts: Array<{ providerId: string; ok: boolean; errorCode?: string; message?: string }> | undefined;
     try {
       const result = await registry.runWithFallback(
         availableProviders as string[], filterReq, undefined,
@@ -1014,6 +1024,7 @@ searchRouter.post("/search-with-terms", async (req, res) => {
         Object.fromEntries(providerKeys) as Partial<Record<string, string>>
       );
       filterRes = result.response;
+      filterAttempts = result.attempts;
     } catch (filterErr) {
       // LLM 超时或失败 — 返回原始搜索结果（不过滤），避免整个检索失败
       logger.warn("LLM filter failed, returning raw search results", { error: String(filterErr) });
@@ -1032,7 +1043,7 @@ searchRouter.post("/search-with-terms", async (req, res) => {
     }
 
     if (filterRes.error || !filterRes.text?.trim()) {
-      // LLM 返回错误 — 同样降级为原始搜索结果
+      // LLM 返回错误 — 降级为原始搜索结果，但附带 attempts 让客户端记录错误
       logger.warn("LLM filter returned error, degrading to raw results", { error: filterRes.error });
       const fallbackCandidates: SearchReferencesCandidate[] = searchRes.results
         .slice(0, request.maxResults)
@@ -1044,7 +1055,7 @@ searchRouter.post("/search-with-terms", async (req, res) => {
           recommendationReason: "原始搜索结果（AI 筛选失败）",
           sourceUrl: r.url,
         }));
-      res.json({ ok: true, candidates: fallbackCandidates, searchQuery, searchSummary } satisfies SearchReferencesResponse);
+      res.json({ ok: true, candidates: fallbackCandidates, searchQuery, searchSummary, attempts: filterAttempts } satisfies SearchReferencesResponse);
       return;
     }
 
@@ -1086,7 +1097,7 @@ searchRouter.post("/search-with-terms", async (req, res) => {
       searchSummary.providerResults[0].candidateCount = candidates.length;
     }
 
-    res.json({ ok: true, candidates, searchQuery, searchSummary } satisfies SearchReferencesResponse);
+    res.json({ ok: true, candidates, searchQuery, searchSummary, attempts: filterAttempts } satisfies SearchReferencesResponse);
   } catch (error) {
     logger.error("Search with terms error", { error: String(error) });
     const status = error instanceof BlockedUrlError ? 400 : 500;

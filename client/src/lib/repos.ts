@@ -678,6 +678,11 @@ export async function agentRun<T>(
     await trackTokenUsage(id, agent, body.modelId ?? "unknown", data.tokenUsage, data.attempts?.[0]?.providerId ?? "unknown");
   }
 
+  // Track provider errors (even when overall request succeeded via fallback)
+  if (data.attempts) {
+    await trackProviderErrors(data.attempts, agent, id);
+  }
+
   // Update knowledge citations
   if (data.knowledgeCitations) {
     lastKnowledgeCitations = data.knowledgeCitations;
@@ -695,7 +700,9 @@ export async function extractSearchTerms(
   settings: AppSettings,
   options?: AgentRunOptions
 ): Promise<ExtractSearchTermsResponse> {
-  return postJson<ExtractSearchTermsResponse>("/api/extract-search-terms", buildSearchBase(request, settings, "search-references", options));
+  const result = await postJson<ExtractSearchTermsResponse>("/api/extract-search-terms", buildSearchBase(request, settings, "search-references", options));
+  await trackProviderErrors(result.attempts, "search-references", request.caseId);
+  return result;
 }
 
 /** 用检索词搜索 — 调用 /api/search-with-terms */
@@ -704,7 +711,7 @@ export async function searchWithTerms(
   settings: AppSettings,
   options?: AgentRunOptions
 ): Promise<SearchReferencesResponse> {
-  return postJson<SearchReferencesResponse>("/api/search-with-terms", {
+  const result = await postJson<SearchReferencesResponse>("/api/search-with-terms", {
     ...buildSearchBase(request, settings, "search-references", options),
     searchQueries: request.searchQueries,
     maxResults: request.maxResults ?? 5,
@@ -712,6 +719,8 @@ export async function searchWithTerms(
     searchApiKey: request.searchApiKey,
     searchBaseUrl: request.searchBaseUrl,
   });
+  await trackProviderErrors(result.attempts, "search-references", request.caseId);
+  return result;
 }
 
 // ── 内部 helpers ─────────────────────────────────────
