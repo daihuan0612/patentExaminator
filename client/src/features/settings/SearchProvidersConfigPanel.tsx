@@ -120,34 +120,6 @@ export function SearchProvidersConfigPanel() {
         配置专利文献搜索 API。AI 检索候选文献时会调用这些服务。搜索服务列表由系统预置，不可自行添加。
       </p>
 
-      {/* NF1: Web Search Tool Calling 开关 */}
-      <div className="provider-card" style={{ marginBottom: 16, border: "1px solid var(--color-border, #e0e0e0)", borderRadius: 8, padding: "12px 16px" }}>
-        <div className="provider-card__header">
-          <div>
-            <strong>🔍 Chat 联网搜索</strong>
-            <span className="provider-card__desc" style={{ marginLeft: 8 }}>
-              启用后，Chat Agent 可自动搜索互联网获取最新信息（需要至少启用一个搜索服务）
-            </span>
-          </div>
-          <div className="provider-card__actions">
-            <label className="toggle-label">
-              <input
-                type="checkbox"
-                checked={settings.webSearch?.enabled ?? false}
-                onChange={() => {
-                  setSettings({
-                    ...settings,
-                    webSearch: { enabled: !(settings.webSearch?.enabled ?? false) },
-                  });
-                }}
-                data-testid="toggle-web-search"
-              />
-              启用
-            </label>
-          </div>
-        </div>
-      </div>
-
       <div className="provider-cards">
         {PRESET_SEARCH_PROVIDERS.map((preset) => {
           const provider = ensureSearchProvider(preset.id);
