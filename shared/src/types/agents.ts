@@ -77,6 +77,8 @@ export interface AppSettings {
   knowledge?: KnowledgeConfig;
   /** nf-9: 知识库独立 API Provider 配置 */
   knowledgeProviders?: KnowledgeProviderConnection[];
+  /** NF1: Web Search Tool Calling 配置 */
+  webSearch?: { enabled: boolean };
 }
 
 export interface PresetModelProvider {

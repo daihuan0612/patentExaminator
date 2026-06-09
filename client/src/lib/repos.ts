@@ -606,6 +606,8 @@ export async function agentRun<T>(
     ...(embProvider ? { knowledgeEmbedding: { baseUrl: embProvider.baseUrl, apiKey: embProvider.apiKeyRef, modelId: embProvider.modelId } } : {}),
     ...(rerankerProvider ? { knowledgeReranker: { baseUrl: rerankerProvider.baseUrl, apiKey: rerankerProvider.apiKeyRef, modelId: rerankerProvider.modelId } } : {}),
     ...(settings.mode === "mock" ? { mock: true } : {}),
+    // NF1: Web Search Tool Calling（仅 chat agent 有效）
+    ...(agent === "chat" && settings.webSearch?.enabled ? { webSearchEnabled: true } : {}),
   };
 
   log("Calling agent gateway", { agent, providerPreference, modelId: body.modelId, caseId: id });
