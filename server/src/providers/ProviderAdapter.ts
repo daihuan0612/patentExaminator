@@ -257,6 +257,8 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
     });
 
     body.messages = messages;
+    body.stream = true;
+    body.stream_options = { include_usage: true };
 
     const maskedKey = req.apiKey ? `${req.apiKey.slice(0, 6)}...${req.apiKey.slice(-4)}` : "none";
     const fetchInit: RequestInit = {
@@ -269,13 +271,16 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
       signal: req.signal ?? null
     };
 
-    const reqTimestamp = new Date().toISOString();
-    console.log(`[MIMO-DEBUG] ──── REQUEST START ──── ${reqTimestamp}`);
-    console.log(`[MIMO-DEBUG] provider=${this.id} url=${url}`);
-    console.log(`[MIMO-DEBUG] model=${req.modelId} maxTokens=${effectiveMaxTokens} temp=${temperature ?? "auto"}`);
-    console.log(`[MIMO-DEBUG] apiKey=${maskedKey} messages=${req.messages.length}`);
-    console.log(`[MIMO-DEBUG] signal=${req.signal ? "set" : "none"} signal.aborted=${req.signal?.aborted ?? "n/a"}`);
-    console.log(`[MIMO-DEBUG] bodySize=${JSON.stringify(body).length} bytes`);
+    const now = new Date();
+    const pad2 = (n: number) => n < 10 ? `0${n}` : String(n);
+    const reqTimestamp = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())} ${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}.${String(now.getMilliseconds()).padStart(3, "0")}`;
+    const tag = this.id.toUpperCase();
+    console.log(`[${tag}] ──── REQUEST START ──── ${reqTimestamp}`);
+    console.log(`[${tag}] provider=${this.id} url=${url}`);
+    console.log(`[${tag}] model=${req.modelId} maxTokens=${effectiveMaxTokens} temp=${temperature ?? "auto"}`);
+    console.log(`[${tag}] apiKey=${maskedKey} messages=${req.messages.length}`);
+    console.log(`[${tag}] signal=${req.signal ? "set" : "none"} signal.aborted=${req.signal?.aborted ?? "n/a"}`);
+    console.log(`[${tag}] bodySize=${JSON.stringify(body).length} bytes`);
     const reqStartMs = Date.now();
 
     let res: Response;
@@ -289,35 +294,104 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
       const errCause = fetchErr instanceof Error && fetchErr.cause
         ? `cause={name=${(fetchErr.cause as Error)?.name} message=${(fetchErr.cause as Error)?.message} code=${(fetchErr.cause as NodeJS.ErrnoException)?.code}}`
         : "cause=none";
-      console.log(`[MIMO-DEBUG] ──── FETCH ERROR ──── elapsed=${elapsed}ms`);
-      console.log(`[MIMO-DEBUG] name=${errName} code=${errCode} message=${errMsg}`);
-      console.log(`[MIMO-DEBUG] ${errCause}`);
-      console.log(`[MIMO-DEBUG] stack=${fetchErr instanceof Error ? fetchErr.stack?.split("\n").slice(0, 5).join(" | ") : "no stack"}`);
+      console.log(`[${tag}] ──── FETCH ERROR ──── elapsed=${elapsed}ms`);
+      console.log(`[${tag}] name=${errName} code=${errCode} message=${errMsg}`);
+      console.log(`[${tag}] ${errCause}`);
+      console.log(`[${tag}] stack=${fetchErr instanceof Error ? fetchErr.stack?.split("\n").slice(0, 5).join(" | ") : "no stack"}`);
       throw fetchErr;
     }
 
     const elapsed = Date.now() - reqStartMs;
-    console.log(`[MIMO-DEBUG] ──── RESPONSE ──── elapsed=${elapsed}ms`);
-    console.log(`[MIMO-DEBUG] status=${res.status} statusText=${res.statusText}`);
+    console.log(`[${tag}] ──── RESPONSE ──── elapsed=${elapsed}ms`);
+    console.log(`[${tag}] status=${res.status} statusText=${res.statusText}`);
     const resHeaders: Record<string, string> = {};
     res.headers.forEach((v, k) => { resHeaders[k] = v; });
-    console.log(`[MIMO-DEBUG] responseHeaders=${JSON.stringify(resHeaders)}`);
+    console.log(`[${tag}] responseHeaders=${JSON.stringify(resHeaders)}`);
     const contentLength = res.headers.get("content-length");
     const contentType = res.headers.get("content-type");
-    console.log(`[MIMO-DEBUG] contentLength=${contentLength} contentType=${contentType}`);
+    console.log(`[${tag}] contentLength=${contentLength} contentType=${contentType}`);
 
     if (!res.ok) {
       const errorBody = await res.text().catch(() => "");
-      console.log(`[MIMO-DEBUG] ──── HTTP ERROR ──── status=${res.status} body=${errorBody.slice(0, 500)}`);
-      const error = new Error(`Provider ${this.id} returned ${res.status}: ${errorBody}`);
-      (error as Error & { status: number; providerId: ProviderId }).status = res.status;
-      (error as Error & { status: number; providerId: ProviderId }).providerId = this.id;
-      throw error;
+      console.log(`[${tag}] ──── HTTP ERROR ──── status=${res.status} body=${errorBody.slice(0, 500)}`);
+
+      // 容错：stream/stream_options 不被支持时，去掉后重试（回退到非 streaming）
+      if (res.status === 400 && (body.stream_options || body.stream)) {
+        console.log(`[${tag}] streaming may not be supported, retrying as non-streaming`);
+        delete body.stream_options;
+        delete body.stream;
+        fetchInit.body = JSON.stringify(body);
+        try {
+          res = await fetch(url, fetchInit);
+        } catch (retryErr) {
+          const error = new Error(`Provider ${this.id} returned 400 (retry also failed): ${errorBody}`);
+          (error as Error & { status: number; providerId: ProviderId }).status = 400;
+          (error as Error & { status: number; providerId: ProviderId }).providerId = this.id;
+          throw error;
+        }
+        if (!res.ok) {
+          const retryBody = await res.text().catch(() => "");
+          const error = new Error(`Provider ${this.id} returned ${res.status} after retry: ${retryBody}`);
+          (error as Error & { status: number; providerId: ProviderId }).status = res.status;
+          (error as Error & { status: number; providerId: ProviderId }).providerId = this.id;
+          throw error;
+        }
+        // retry 成功，继续往下走（读取 response body）
+      } else {
+        const error = new Error(`Provider ${this.id} returned ${res.status}: ${errorBody}`);
+        (error as Error & { status: number; providerId: ProviderId }).status = res.status;
+        (error as Error & { status: number; providerId: ProviderId }).providerId = this.id;
+        throw error;
+      }
     }
 
-    const data = (await res.json()) as Record<string, unknown>;
+    // 读取完整响应体（兼容 streaming SSE 和普通 JSON）
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error("Response body is null");
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let firstChunkTime = 0;
+    let chunkCount = 0;
+
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!firstChunkTime) {
+        firstChunkTime = Date.now() - reqStartMs;
+        console.log(`[${tag}] ──── FIRST CHUNK ──── TTFB=${firstChunkTime}ms (response headers at ${elapsed}ms)`);
+      }
+      chunkCount++;
+      buffer += decoder.decode(value, { stream: true });
+    }
+
     const totalElapsed = Date.now() - reqStartMs;
-    console.log(`[MIMO-DEBUG] ──── SUCCESS ──── totalElapsed=${totalElapsed}ms`);
+    console.log(`[${tag}] ──── STREAM DONE ──── chunks=${chunkCount} totalElapsed=${totalElapsed}ms`);
+
+    // 解析：SSE 格式（data: {...}）或普通 JSON
+    // stream_options={include_usage:true} 时，最终 chunk 是 choices:[] + usage
+    // 需要分开保存：data（最后 chunk，含 usage）和 lastContentChunk（最后有 choices 的 chunk）
+    let data: Record<string, unknown> = {};
+    let lastContentChunk: Record<string, unknown> | undefined;
+    const isSSE = buffer.trimStart().startsWith("data: ");
+    if (isSSE) {
+      for (const line of buffer.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data: ")) continue;
+        const payload = trimmed.slice(6);
+        if (payload === "[DONE]") continue;
+        try {
+          const chunk = JSON.parse(payload) as Record<string, unknown>;
+          data = chunk;
+          const c = chunk.choices as unknown[] | undefined;
+          if (c && c.length > 0) lastContentChunk = chunk;
+        } catch { /* skip */ }
+      }
+    } else {
+      try { data = JSON.parse(buffer) as Record<string, unknown>; lastContentChunk = data; } catch { /* will be caught below */ }
+    }
+
+    console.log(`[${tag}] ──── SUCCESS ──── totalElapsed=${totalElapsed}ms`);
+    // usage 从 data（最后一个 chunk）取，choices 从 lastContentChunk（最后有内容的 chunk）取
     const usage = data.usage as {
       prompt_tokens?: number;
       completion_tokens?: number;
@@ -325,16 +399,36 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
       completion_tokens_details?: { reasoning_tokens?: number };
       reasoning_tokens?: number; // OpenRouter 顶层字段
     } | undefined;
-    console.log(`[MIMO-DEBUG] usage=${usage ? JSON.stringify(usage) : "none"}`);
-    const choices = Array.isArray(data.choices) ? data.choices : [];
+    console.log(`[${tag}] usage=${usage ? JSON.stringify(usage) : "none"}`);
+    const source = lastContentChunk ?? data;
+    const choices = Array.isArray(source.choices) ? source.choices : [];
     const firstChoice = choices[0] as Record<string, unknown> | undefined;
     const message = firstChoice?.message as Record<string, unknown> | undefined;
-    const text = (typeof message?.content === "string" ? message.content : "") as string;
-    console.log(`[MIMO-DEBUG] choices=${choices.length} textLen=${text.length} finishReason=${firstChoice?.finish_reason}`);
+
+    // 拼接完整文本：SSE 从 delta 累加，普通 JSON 直接取 message.content
+    let text = "";
+    let reasoningContent = "";
+    if (isSSE) {
+      for (const line of buffer.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data: ")) continue;
+        const payload = trimmed.slice(6);
+        if (payload === "[DONE]") continue;
+        try {
+          const chunk = JSON.parse(payload) as Record<string, unknown>;
+          const delta = (chunk.choices as Array<Record<string, unknown>>)?.[0]?.delta as Record<string, unknown> | undefined;
+          if (typeof delta?.content === "string") text += delta.content;
+          if (typeof delta?.reasoning_content === "string") reasoningContent += delta.reasoning_content;
+        } catch { /* skip */ }
+      }
+    }
+    if (!text && typeof message?.content === "string") text = message.content;
+    if (!reasoningContent && typeof message?.reasoning_content === "string") reasoningContent = message.reasoning_content;
+    console.log(`[${tag}] choices=${choices.length} textLen=${text.length} finishReason=${firstChoice?.finish_reason}`);
 
     // D1: 提取 thinking tokens（四层信号）
     const thinkingTokensFromUsage = usage?.completion_tokens_details?.reasoning_tokens ?? usage?.reasoning_tokens ?? 0;
-    const reasoningContent = typeof message?.reasoning_content === "string" ? message.reasoning_content : undefined;
+    // reasoningContent 已从流式 chunks 累加（line 373）
     const reasoningFromMessage = typeof message?.reasoning === "string" ? message.reasoning : undefined; // OpenRouter
     // OpenRouter Claude: reasoning_details 数组，每项有 type="text" 和 text 字段
     const reasoningDetails = Array.isArray(message?.reasoning_details)
@@ -349,8 +443,8 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
       (reasoningDetails ? 1 : 0);
 
     learnThinkingCapability(req.modelId, thinkingTokens);
-    console.log(`[MIMO-DEBUG] thinkingTokens=${thinkingTokens} reasoningLen=${reasoningContent?.length ?? 0}`);
-    console.log(`[MIMO-DEBUG] ──── REQUEST END ────`);
+    console.log(`[${tag}] thinkingTokens=${thinkingTokens} reasoningLen=${reasoningContent?.length ?? 0}`);
+    console.log(`[${tag}] ──── REQUEST END ────`);
 
     if (!text) {
       logger.warn(`${this.id} returned empty or missing content in response`, {

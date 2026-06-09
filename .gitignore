@@ -5,6 +5,7 @@ dist/
 
 # Test artifacts
 test-results/
+tests/logs/
 playwright-report/
 blob-report/
 

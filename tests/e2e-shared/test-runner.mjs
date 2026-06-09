@@ -9,6 +9,8 @@
 
 let results = [];
 let currentSuiteName = "";
+let groupTimings = [];
+let currentGroupStart = 0;
 
 // ── 测试运行器 ──────────────────────────────────────────────────────
 
@@ -17,6 +19,7 @@ let currentSuiteName = "";
  */
 export function resetResults() {
   results = [];
+  groupTimings = [];
 }
 
 /**
@@ -48,7 +51,13 @@ export function log(test, pass, detail = "", options = {}) {
     console.log(`       at: ${stack}`);
   }
 
-  results.push({ test: `${prefix}${test}`, pass, detail, skipped: options.skipped || false });
+  results.push({
+    test: `${prefix}${test}`,
+    pass,
+    detail,
+    skipped: options.skipped || false,
+    duration: options.duration ?? 0,
+  });
 }
 
 /**
@@ -59,12 +68,12 @@ export async function runTest(name, fn) {
   try {
     await fn();
     const duration = Date.now() - start;
-    log(name, true, `${duration}ms`);
+    log(name, true, `${duration}ms`, { duration });
     return true;
   } catch (err) {
     const duration = Date.now() - start;
     const errorMessage = err.message || String(err);
-    log(name, false, errorMessage);
+    log(name, false, errorMessage, { duration });
     return false;
   }
 }
@@ -200,6 +209,56 @@ export function assertMinLength(arr, minLength, message) {
       message || `Expected array length >= ${minLength}, got ${arr.length}`
     );
   }
+}
+
+// ── 分组计时 ────────────────────────────────────────────────────────
+
+/**
+ * 开始一个测试分组计时
+ */
+export function startGroup(name) {
+  currentGroupStart = Date.now();
+}
+
+/**
+ * 结束当前测试分组计时
+ */
+export function endGroup(name) {
+  const duration = Date.now() - currentGroupStart;
+  groupTimings.push({ name, duration });
+}
+
+/**
+ * 打印最慢的 N 个测试
+ */
+export function printSlowTests(n = 10) {
+  const timed = results.filter((r) => r.duration > 0 && !r.skipped);
+  if (timed.length === 0) return;
+
+  const sorted = [...timed].sort((a, b) => b.duration - a.duration);
+  const top = sorted.slice(0, n);
+
+  console.log(`\n─── Top ${Math.min(n, top.length)} Slowest Tests ───`);
+  for (const r of top) {
+    const bar = "█".repeat(Math.min(Math.round(r.duration / 500), 40));
+    console.log(`  ${String(r.duration).padStart(6)}ms ${bar} ${r.test}`);
+  }
+}
+
+/**
+ * 打印分组耗时
+ */
+export function printGroupTimings() {
+  if (groupTimings.length === 0) return;
+
+  console.log(`\n─── Group Timings ───`);
+  const total = groupTimings.reduce((sum, g) => sum + g.duration, 0);
+  for (const g of groupTimings) {
+    const pct = ((g.duration / total) * 100).toFixed(0);
+    const bar = "█".repeat(Math.min(Math.round(g.duration / 1000), 40));
+    console.log(`  ${String(g.duration).padStart(6)}ms (${pct.padStart(3)}%) ${bar} ${g.name}`);
+  }
+  console.log(`  ${String(total).padStart(6)}ms        TOTAL`);
 }
 
 // ── 进度显示 ────────────────────────────────────────────────────────

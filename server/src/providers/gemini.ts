@@ -103,7 +103,9 @@ export class GeminiAdapter implements ProviderAdapter {
     const url = `${base}/models/${req.modelId}:generateContent`;
 
     const maskedKey = req.apiKey ? `${req.apiKey.slice(0, 6)}...${req.apiKey.slice(-4)}` : "none";
-    const reqTimestamp = new Date().toISOString();
+    const _now = new Date();
+    const _pad2 = (n: number) => n < 10 ? `0${n}` : String(n);
+    const reqTimestamp = `${_now.getFullYear()}-${_pad2(_now.getMonth() + 1)}-${_pad2(_now.getDate())} ${_pad2(_now.getHours())}:${_pad2(_now.getMinutes())}:${_pad2(_now.getSeconds())}.${String(_now.getMilliseconds()).padStart(3, "0")}`;
     const effectiveMaxTokens = resolveMaxTokens(req.modelId, req.maxTokens);
     console.log(`[GEMINI-DEBUG] ──── REQUEST START ──── ${reqTimestamp}`);
     console.log(`[GEMINI-DEBUG] provider=gemini url=${url}`);

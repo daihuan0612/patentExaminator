@@ -6,7 +6,7 @@
  * 环境变量指向临时目录，实现与 app 生产数据库完全隔离。
  */
 import { spawn } from "child_process";
-import { mkdtempSync, rmSync, mkdirSync, openSync, closeSync, readFileSync } from "fs";
+import { mkdtempSync, rmSync, mkdirSync, openSync, closeSync, readFileSync, existsSync, readdirSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { fileURLToPath } from "url";
@@ -37,12 +37,27 @@ export async function startIsolatedServer() {
   const syncDbPath = join(dataDir, "patent-examiner.db");
   const knowledgeDbPath = join(dataDir, "knowledge.db");
 
+  // 2. 子进程 stdout/stderr 重定向到持久化日志目录
+  const logDir = join(PROJECT_ROOT, "tests", "logs");
+  mkdirSync(logDir, { recursive: true });
+
+  // 清理非当天的旧日志
+  const todayPrefix = new Date().toISOString().slice(0, 10); // "2026-06-09"
+  try {
+    for (const file of readdirSync(logDir)) {
+      if (file.startsWith("e2e-") && file.endsWith(".log") && !file.includes(todayPrefix)) {
+        rmSync(join(logDir, file));
+      }
+    }
+  } catch {}
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const serverLogPath = join(logDir, `e2e-${timestamp}.log`);
+  const serverLogFd = openSync(serverLogPath, "w");
+
   console.log(`[server-lifecycle] Starting isolated server on port ${port}`);
   console.log(`[server-lifecycle] Temp dir: ${tmpDir}`);
-
-  // 2. 子进程 stdout/stderr 重定向到临时日志文件（避免 Claude Code tasks 目录 ENOSPC）
-  const serverLogPath = join(tmpDir, "server.log");
-  const serverLogFd = openSync(serverLogPath, "w");
+  console.log(`[server-lifecycle] Server log: ${serverLogPath}`);
 
   // 2. Spawn server 子进程
   console.log(`[server-lifecycle] Parent TEST_BASE=${process.env.TEST_BASE ?? "(unset)"}`);
@@ -89,7 +104,7 @@ export async function startIsolatedServer() {
 
     if (attempt === HEALTH_CHECK_MAX_ATTEMPTS) {
       // 清理并报错
-      await doCleanup(child, tmpDir);
+      await doCleanup(child, tmpDir, serverLogPath);
       throw new Error(
         `[server-lifecycle] Server failed to start after ${HEALTH_CHECK_MAX_ATTEMPTS} attempts`
       );
@@ -100,7 +115,7 @@ export async function startIsolatedServer() {
 
   // 4. 返回 cleanup 函数
   const cleanup = async () => {
-    await doCleanup(child, tmpDir);
+    await doCleanup(child, tmpDir, serverLogPath);
     activeServer = null;
   };
 
@@ -108,9 +123,9 @@ export async function startIsolatedServer() {
 }
 
 /**
- * 清理：kill 子进程 + 删除临时目录
+ * 清理：kill 子进程 + 删除临时数据目录（保留日志）
  */
-async function doCleanup(child, tmpDir) {
+async function doCleanup(child, tmpDir, serverLogPath) {
   // Kill 子进程
   if (child && !child.killed) {
     child.kill("SIGTERM");
@@ -136,12 +151,17 @@ async function doCleanup(child, tmpDir) {
     }
   } catch {}
 
-  // 删除临时目录
+  // 删除临时数据目录（保留日志在 tests/logs/）
   try {
     rmSync(tmpDir, { recursive: true, force: true });
     console.log(`[server-lifecycle] Cleaned up temp dir: ${tmpDir}`);
   } catch (err) {
     console.error(`[server-lifecycle] Failed to clean temp dir: ${err.message}`);
+  }
+
+  // 输出日志路径供排查
+  if (serverLogPath && existsSync(serverLogPath)) {
+    console.log(`[server-lifecycle] Server log preserved: ${serverLogPath}`);
   }
 }
 
@@ -163,7 +183,7 @@ export function dumpServerLog() {
   } catch {}
 }
 
-// 崩溃清理：确保进程退出时清理子进程和临时文件
+// 崩溃清理：确保进程退出时清理子进程和临时数据（保留日志）
 function registerCleanupHandlers() {
   const cleanup = () => {
     if (activeServer) {
@@ -174,6 +194,7 @@ function registerCleanupHandlers() {
       try {
         if (serverLogFd) closeSync(serverLogFd);
       } catch {}
+      // 只删临时数据目录，日志已持久化到 tests/logs/
       try {
         rmSync(tmpDir, { recursive: true, force: true });
       } catch {}

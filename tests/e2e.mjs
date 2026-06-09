@@ -38,6 +38,10 @@ import {
   printSummary,
   allPassed,
   log,
+  startGroup,
+  endGroup,
+  printSlowTests,
+  printGroupTimings,
 } from "./e2e-shared/index.mjs";
 import { startIsolatedServer, dumpServerLog } from "./e2e-shared/server-lifecycle.mjs";
 
@@ -342,8 +346,12 @@ async function main() {
   // --only / --auto filter
   // currentGroup 由 setGroup() 设置，用于 --auto 模式
   let currentGroup = "";
+  let groupStarted = false;
   function setGroup(group) {
+    if (groupStarted) endGroup(currentGroup);
     currentGroup = group;
+    startGroup(group);
+    groupStarted = true;
   }
 
   // 带超时的测试执行器（用于 real mode）
@@ -359,6 +367,13 @@ async function main() {
       log(fn.name, false, err.message);
       return null;
     }
+  }
+
+  // 判断测试是否会被 maybe 跳过（与 maybe 相同的过滤逻辑）
+  function willRun(fn) {
+    if (onlyPattern) return fn.name.toLowerCase().includes(onlyPattern);
+    if (doAuto && autoGroups) return autoGroups.includes(currentGroup);
+    return true;
   }
 
   // 运行所有 real mode 测试（数据驱动）
@@ -378,8 +393,12 @@ async function main() {
       testRealTokenUsageReturned,
     ];
     for (const fn of realAgentTests) {
-      await withTimeout(() => maybe(fn));
-      await delay(AI_RATE_LIMIT_DELAY);
+      if (willRun(fn)) {
+        await withTimeout(() => maybe(fn));
+        await delay(AI_RATE_LIMIT_DELAY);
+      } else {
+        maybe(fn); // skip + log
+      }
     }
 
     console.log("\n--- EPO Search ---");
@@ -598,7 +617,11 @@ async function main() {
   }
 
   // ── Summary ──
+  // 结束最后一个分组计时
+  if (groupStarted) endGroup(currentGroup);
   const duration = Date.now() - startTime;
+  printGroupTimings();
+  printSlowTests(10);
   printSummary(duration);
 
   process.exit(allPassed() ? 0 : 1);

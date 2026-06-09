@@ -31,7 +31,8 @@ export class DoubaoAdapter extends OpenAICompatibleAdapter {
       "doubao-1-5-pro-32k-250115",
       "doubao-1-5-lite-32k-250115",
       "doubao-1-5-vision-pro-32k-250115",
-      // ── 火山引擎托管的 DeepSeek 模型（同一 API 端点）──
+      // ── 火山引擎托管的第三方模型（同一 API 端点）──
+      "glm-4-7-251222",
       "deepseek-v4-pro-260425",
       "deepseek-v4-flash-260425",
       "deepseek-v3-2-251201",

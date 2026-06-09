@@ -152,6 +152,7 @@ export class ProviderRegistry {
           }
         }
         // All model fallbacks failed, try next provider
+        logger.warn(`[Registry] All models failed for provider=${providerId}, trying next provider`);
         continue;
       }
 
@@ -255,6 +256,11 @@ export class ProviderRegistry {
         lastError = error;
         lastErrInfo = classifyError(error);
         attempts.push({ providerId: adapter.id as ProviderId, ok: false, errorCode: lastErrInfo.code, message: lastErrInfo.message });
+
+        if (lastErrInfo.code === "timeout") {
+          const timeoutMs = req.timeoutMs ?? TIMEOUT_MS;
+          logger.warn(`[Registry] ${adapter.id} attempt ${attempt + 1}/${MAX_RETRIES + 1} timed out after ${timeoutMs}ms, model=${req.modelId ?? "default"}`);
+        }
 
         // Client disconnection — don't waste retries
         if (clientSignal?.aborted) {
