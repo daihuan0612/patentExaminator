@@ -209,6 +209,8 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
         }
         if (merged.length >= maxResults) break;
       }
+      // 全局按 relevanceScore 降序排序（多 provider 合并后必须重新排序）
+      merged.sort((a, b) => (b.aiRelevanceScore ?? 0) - (a.aiRelevanceScore ?? 0));
       setCandidates(merged);
       setSearchStep("done");
       updateWorkflowState("references-ready");
