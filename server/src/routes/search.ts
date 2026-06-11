@@ -7,6 +7,7 @@ import { logger } from "../lib/logger.js";
 import { extractJsonFromText } from "../lib/jsonExtractor.js";
 import { sanitizeText } from "../security/sanitize.js";
 import { validateExternalUrl, validateProviderBaseUrls, BlockedUrlError } from "../lib/urlValidation.js";
+import { metricsCollector } from "../lib/metricsCollector.js";
 import type { SearchReferencesResponse, SearchReferencesCandidate, SearchSummary, ExtractSearchTermsResponse } from "@shared/types/api";
 import type { ChatRequest, ChatResponse } from "../providers/ProviderAdapter.js";
 
@@ -136,6 +137,47 @@ searchRouter.post("/search-references", async (req, res) => {
   };
   req.socket?.on("close", onSocketClose);
 
+  const startTime = Date.now();
+  let searchResultCount = 0;
+  let searchSuccess = false;
+  let searchErrorType = "";
+  let searchErrorCode = "";
+  let refFirstProvider: string | undefined;
+
+  const recordSearchMetrics = (overrides?: { errorType?: string; errorCode?: string }) => {
+    try {
+      metricsCollector.record({
+        agent: "reference-search",
+        caseId: request.caseId,
+        providerId: refFirstProvider ?? "",
+        modelId: request.modelId,
+        searchProvider: searchProviderId,
+        rerankerType: "",
+        embeddingModel: "",
+        durationMs: Date.now() - startTime,
+        ttftMs: 0,
+        toolRounds: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        thinkingTokens: 0,
+        ragCitationCount: 0,
+        topCitationScore: 0,
+        webSearchCount: searchResultCount,
+        webTopScore: 0,
+        fusionTopScore: 0,
+        groundingScore: -1,
+        groundingVerdict: "",
+        removedClaimsCount: 0,
+        success: searchSuccess,
+        errorType: overrides?.errorType ?? searchErrorType,
+        errorCode: overrides?.errorCode ?? searchErrorCode,
+        timingsJson: JSON.stringify({ totalMs: Date.now() - startTime }),
+        attemptsJson: "[]",
+      });
+    } catch { /* fire-and-forget */ }
+  };
+
   try {
     // Step 1: Use LLM to extract multiple short search queries from claims
     const featureText = request.features.map((f) => `${f.featureCode}: ${f.description}`).join("\n");
@@ -156,10 +198,10 @@ searchRouter.post("/search-references", async (req, res) => {
       `请严格输出 JSON 格式 {"queries":["查询1","查询2",...]}，不要输出其他内容：`
     );
 
-    const firstProvider = availableProviders[0];
-    if (!firstProvider) throw new Error("No LLM providers available");
-    const apiKey = providerKeys.get(firstProvider);
-    if (!apiKey) throw new Error(`No API key for provider ${firstProvider}`);
+    refFirstProvider = availableProviders[0];
+    if (!refFirstProvider) throw new Error("No LLM providers available");
+    const apiKey = providerKeys.get(refFirstProvider);
+    if (!apiKey) throw new Error(`No API key for provider ${refFirstProvider}`);
 
     const extractReq: ChatRequest = {
       modelId: request.modelId,
@@ -181,6 +223,8 @@ searchRouter.post("/search-references", async (req, res) => {
 
     if (extractRes.error) {
       logger.error("LLM extract search terms failed", { error: extractRes.error, attempts: extractAttempts });
+      searchErrorType = "llm-extract-error";
+      recordSearchMetrics();
       res.status(502).json({
         ok: false,
         candidates: [],
@@ -192,6 +236,8 @@ searchRouter.post("/search-references", async (req, res) => {
 
     if (!extractRes.text || !extractRes.text.trim()) {
       logger.error("LLM extract returned empty text", { attempts: extractAttempts });
+      searchErrorType = "llm-extract-empty";
+      recordSearchMetrics();
       res.status(502).json({
         ok: false,
         candidates: [],
@@ -340,7 +386,10 @@ searchRouter.post("/search-references", async (req, res) => {
       queries: searchQueries
     };
 
+    searchResultCount = searchRes.results.length;
     if (searchRes.results.length === 0) {
+      searchSuccess = true;
+      recordSearchMetrics();
       res.json({
         ok: true,
         candidates: [],
@@ -426,12 +475,17 @@ searchRouter.post("/search-references", async (req, res) => {
           recommendationReason: "原始搜索结果（AI 筛选超时）",
           sourceUrl: r.url,
         }));
+      searchSuccess = true;
+      searchErrorType = "llm-filter-timeout";
+      recordSearchMetrics();
       res.json({ ok: true, candidates: fallbackCandidates, searchQuery } satisfies SearchReferencesResponse);
       return;
     }
 
     if (filterRes.error) {
       logger.error("LLM filter results failed", { error: filterRes.error });
+      searchErrorType = "llm-filter-error";
+      recordSearchMetrics();
       res.status(502).json({
         ok: false,
         candidates: [],
@@ -444,6 +498,8 @@ searchRouter.post("/search-references", async (req, res) => {
 
     if (!filterRes.text || !filterRes.text.trim()) {
       logger.error("LLM filter returned empty text", { searchQuery });
+      searchErrorType = "llm-empty-response";
+      recordSearchMetrics();
       res.status(502).json({
         ok: false,
         candidates: [],
@@ -538,6 +594,8 @@ searchRouter.post("/search-references", async (req, res) => {
       candidates: candidates.length
     });
 
+    searchSuccess = true;
+    recordSearchMetrics();
     res.json({
       ok: true,
       candidates,
@@ -547,6 +605,9 @@ searchRouter.post("/search-references", async (req, res) => {
     } satisfies SearchReferencesResponse);
   } catch (error) {
     logger.error("Search references error", { error: String(error) });
+    searchErrorType = error instanceof BlockedUrlError ? "blocked-url" : "search-error";
+    searchErrorCode = String(error);
+    recordSearchMetrics({ errorType: searchErrorType, errorCode: searchErrorCode });
     const status = error instanceof BlockedUrlError ? 400 : 500;
     const message = error instanceof BlockedUrlError ? error.message : "检索失败，请稍后重试";
     res.status(status).json({
@@ -859,6 +920,49 @@ searchRouter.post("/search-with-terms", async (req, res) => {
   };
   req.socket?.on("close", onSocketClose);
 
+  const startTime = Date.now();
+  let searchResultCount = 0;
+  let searchSuccess = false;
+  let searchErrorType = "";
+  let searchErrorCode = "";
+
+  /** 记录搜索指标（fire-and-forget） */
+  const recordSearchMetrics = (overrides?: { errorType?: string; errorCode?: string }) => {
+    try {
+      metricsCollector.record({
+        agent: "reference-search",
+        caseId: request.caseId,
+        providerId: firstProvider ?? "",
+        modelId: request.modelId,
+        searchProvider: searchProviderId,
+        rerankerType: "",
+        embeddingModel: "",
+        durationMs: Date.now() - startTime,
+        ttftMs: 0,
+        toolRounds: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        thinkingTokens: 0,
+        ragCitationCount: 0,
+        topCitationScore: 0,
+        webSearchCount: searchResultCount,
+        webTopScore: 0,
+        fusionTopScore: 0,
+        groundingScore: -1,
+        groundingVerdict: "",
+        removedClaimsCount: 0,
+        success: searchSuccess,
+        errorType: overrides?.errorType ?? searchErrorType,
+        errorCode: overrides?.errorCode ?? searchErrorCode,
+        timingsJson: JSON.stringify({ totalMs: Date.now() - startTime }),
+        attemptsJson: "[]",
+      });
+    } catch { /* fire-and-forget */ }
+  };
+
+  let firstProvider: string | undefined;
+
   try {
     let searchQueries = [...request.searchQueries];
 
@@ -938,7 +1042,10 @@ searchRouter.post("/search-with-terms", async (req, res) => {
       providerResults: [providerResultCount]
     };
 
+    searchResultCount = searchRes.results.length;
     if (searchRes.results.length === 0) {
+      searchSuccess = true;
+      recordSearchMetrics();
       res.json({
         ok: true,
         candidates: [],
@@ -988,7 +1095,7 @@ searchRouter.post("/search-with-terms", async (req, res) => {
       `- 如果没有专利文献，返回空数组 []`
     );
 
-    const firstProvider = availableProviders[0];
+    firstProvider = availableProviders[0];
     if (!firstProvider) throw new Error("No LLM providers available");
     const apiKey = providerKeys.get(firstProvider);
     if (!apiKey) throw new Error(`No API key for provider ${firstProvider}`);
@@ -1025,6 +1132,9 @@ searchRouter.post("/search-with-terms", async (req, res) => {
           recommendationReason: "原始搜索结果（AI 筛选超时）",
           sourceUrl: r.url,
         }));
+      searchSuccess = true; // partial success: raw results returned
+      searchErrorType = "llm-filter-timeout";
+      recordSearchMetrics();
       res.json({ ok: true, candidates: fallbackCandidates, searchQuery, searchSummary } satisfies SearchReferencesResponse);
       return;
     }
@@ -1042,6 +1152,9 @@ searchRouter.post("/search-with-terms", async (req, res) => {
           recommendationReason: "原始搜索结果（AI 筛选失败）",
           sourceUrl: r.url,
         }));
+      searchSuccess = true; // partial success: raw results returned
+      searchErrorType = "llm-filter-error";
+      recordSearchMetrics();
       res.json({ ok: true, candidates: fallbackCandidates, searchQuery, searchSummary, attempts: filterAttempts } satisfies SearchReferencesResponse);
       return;
     }
@@ -1086,9 +1199,14 @@ searchRouter.post("/search-with-terms", async (req, res) => {
 
     candidates.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
+    searchSuccess = true;
+    recordSearchMetrics();
     res.json({ ok: true, candidates, searchQuery, searchSummary, attempts: filterAttempts } satisfies SearchReferencesResponse);
   } catch (error) {
     logger.error("Search with terms error", { error: String(error) });
+    searchErrorType = error instanceof BlockedUrlError ? "blocked-url" : "search-error";
+    searchErrorCode = String(error);
+    recordSearchMetrics({ errorType: searchErrorType, errorCode: searchErrorCode });
     const status = error instanceof BlockedUrlError ? 400 : 500;
     const message = error instanceof BlockedUrlError ? error.message : "检索失败，请稍后重试";
     res.status(status).json({

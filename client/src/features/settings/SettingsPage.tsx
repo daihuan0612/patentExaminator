@@ -4,8 +4,9 @@ import { ProvidersConfigPanel } from "./ProvidersConfigPanel";
 import { AgentsAssignmentPanel } from "./AgentsAssignmentPanel";
 import { SearchProvidersConfigPanel } from "./SearchProvidersConfigPanel";
 import { KnowledgeConfigPanel } from "./KnowledgeConfigPanel";
+import { MetricsDashboard } from "./MetricsDashboard";
 
-type Tab = "providers" | "agents" | "search" | "knowledge";
+type Tab = "providers" | "agents" | "search" | "knowledge" | "metrics";
 
 const TAB_KEY = "patent-examiner-settings-tab";
 
@@ -14,7 +15,7 @@ export function SettingsPage() {
   const tabFromUrl = searchParams.get("tab") as Tab | null;
 
   const [tab, setTab] = useState<Tab>(() => {
-    if (tabFromUrl && ["providers", "agents", "search", "knowledge"].includes(tabFromUrl)) return tabFromUrl;
+    if (tabFromUrl && ["providers", "agents", "search", "knowledge", "metrics"].includes(tabFromUrl)) return tabFromUrl;
     const saved = localStorage.getItem(TAB_KEY);
     return (saved as Tab) ?? "providers";
   });
@@ -76,6 +77,14 @@ export function SettingsPage() {
         >
           知识库
         </button>
+        <button
+          type="button"
+          className={`settings-tab ${tab === "metrics" ? "settings-tab--active" : ""}`}
+          onClick={() => handleTabChange("metrics")}
+          data-testid="tab-metrics"
+        >
+          指标
+        </button>
       </div>
 
       <div className="settings-content">
@@ -83,6 +92,7 @@ export function SettingsPage() {
         {tab === "agents" && <AgentsAssignmentPanel />}
         {tab === "search" && <SearchProvidersConfigPanel />}
         {tab === "knowledge" && <KnowledgeConfigPanel />}
+        {tab === "metrics" && <MetricsDashboard />}
       </div>
     </div>
   );

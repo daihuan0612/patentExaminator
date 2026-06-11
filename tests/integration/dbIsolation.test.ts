@@ -298,7 +298,7 @@ describe("§七.4 createMemoryDb 隔离验证", () => {
 describe("§七.5 Store 名称准确性", () => {
   const ALL_STORES = [
     "cases", "documents", "claimNodes", "claimCharts", "novelty",
-    "inventive", "chatMessages", "feedback", "settings", "textIndex",
+    "inventive", "chatMessages", "settings", "textIndex",
     "ocrCache", "interpretSummaries", "defects", "chatSessions",
     "opinionAnalyses", "argumentMappings", "reexamDrafts", "summaries",
     "runMarkers", "searchSessions",
@@ -335,7 +335,7 @@ describe("§七.5 Store 名称准确性", () => {
 
   it("TC-7.5.3: beforeEach 清理列表与 DESIGN.md §11 一致", () => {
     // 验证 ALL_STORES 列表完整性
-    expect(ALL_STORES.length).toBe(20);
+    expect(ALL_STORES.length).toBe(19);
     expect(ALL_STORES).toContain("runMarkers"); // 历史 bug bg-43
     expect(ALL_STORES).toContain("searchSessions"); // 历史 bug bg-43
     expect(ALL_STORES).toContain("ocrCache");

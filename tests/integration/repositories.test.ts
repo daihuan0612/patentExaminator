@@ -101,15 +101,6 @@ const testInventive = {
   legalCaution: "以上为候选事实整理，不构成创造性法律结论。",
 };
 
-const testFeedback = {
-  id: "fb-1",
-  caseId: "case-1",
-  subjectType: "claim-chart",
-  subjectId: "chart-1",
-  verdict: "like",
-  createdAt: "2023-03-15T00:00:00.000Z",
-};
-
 // ═══════════════════════════════════════════════════════════════
 // Cases CRUD
 // ═══════════════════════════════════════════════════════════════
@@ -255,26 +246,6 @@ describe("inventiveRepo (SQLite)", () => {
 
     dbDelete(db, "inventive", testInventive.id);
     all = dbQuery(db, "inventive", "caseId", "case-1");
-    expect(all).toHaveLength(0);
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════
-// Feedback CRUD
-// ═══════════════════════════════════════════════════════════════
-
-describe("feedbackRepo (SQLite)", () => {
-  it("create → readByCaseId → update → delete", () => {
-    dbCreate(db, "feedback", testFeedback.id, testFeedback);
-    let all = dbQuery(db, "feedback", "caseId", "case-1");
-    expect(all).toHaveLength(1);
-
-    dbUpdate(db, "feedback", testFeedback.id, { ...testFeedback, verdict: "dislike" });
-    all = dbQuery(db, "feedback", "caseId", "case-1");
-    expect(all[0]!.verdict).toBe("dislike");
-
-    dbDelete(db, "feedback", testFeedback.id);
-    all = dbQuery(db, "feedback", "caseId", "case-1");
     expect(all).toHaveLength(0);
   });
 });

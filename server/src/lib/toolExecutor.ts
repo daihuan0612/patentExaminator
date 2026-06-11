@@ -56,6 +56,12 @@ interface ToolExecutorOutput {
   mergedCitations: Array<{ title: string; url: string; snippet: string; engine: string }>;
   /** 工具调用轮次 */
   toolRounds: number;
+  /** 首 token 延迟（第一轮 LLM 调用耗时） */
+  ttftMs: number;
+  /** Web 结果在融合重排中的最高 reranker 分数 */
+  webTopScore: number;
+  /** 融合重排后全部结果的最高 reranker 分数 */
+  fusionTopScore: number;
 }
 
 /**
@@ -102,6 +108,7 @@ export async function executeWithTools(input: ToolExecutorInput): Promise<ToolEx
   let toolRounds = 0;
   let finalAnswer = "";
   let tools: ToolDefinition[] = [];
+  let ttftMs = 0;
 
   // 预加载 MCP tools（默认启动搜索，不依赖 LLM 判断）
   try {
@@ -110,23 +117,31 @@ export async function executeWithTools(input: ToolExecutorInput): Promise<ToolEx
   } catch (err) {
     logger.warn(`[ToolExecutor] MCP tools unavailable, falling back to plain LLM: ${err}`);
     // MCP 不可用时直接调 LLM（不带 tools）
+    const fallbackStart = Date.now();
     const fallbackResult = await callLLM({ messages });
     return {
       answer: fallbackResult.text || "",
       webSearchCitations: [],
       mergedCitations: [],
       toolRounds: 0,
+      ttftMs: Date.now() - fallbackStart,
+      webTopScore: 0,
+      fusionTopScore: 0,
     };
   }
 
   if (tools.length === 0) {
     logger.warn(`[ToolExecutor] No MCP tools registered, falling back to plain LLM`);
+    const fallbackStart = Date.now();
     const fallbackResult = await callLLM({ messages });
     return {
       answer: fallbackResult.text || "",
       webSearchCitations: [],
       mergedCitations: [],
       toolRounds: 0,
+      ttftMs: Date.now() - fallbackStart,
+      webTopScore: 0,
+      fusionTopScore: 0,
     };
   }
 
@@ -134,12 +149,18 @@ export async function executeWithTools(input: ToolExecutorInput): Promise<ToolEx
     // 第 1 轮强制搜索，后续轮次 LLM 自主判断
     const toolChoice = round === 0 ? "required" : "auto";
     logger.info(`[ToolExecutor] LLM call #${round + 1} (with tools, tool_choice=${toolChoice})`);
+    const llmStart = Date.now();
 
     const result = await callLLM({
       messages,
       tools,
       tool_choice: toolChoice,
     });
+
+    // TTFT = 第一轮 LLM 调用的耗时（非 streaming 下等于完整响应时间）
+    if (round === 0) {
+      ttftMs = Date.now() - llmStart;
+    }
 
     if (result.error) {
       logger.warn(`[ToolExecutor] LLM error in round ${round + 1}: ${result.error.message}`);
@@ -205,15 +226,16 @@ export async function executeWithTools(input: ToolExecutorInput): Promise<ToolEx
   // Step 3: 跨源融合排序（先融合，再 re-inject）
   const totalCandidates = ragCitations.length + webSearchResults.length;
   logger.info(`[ToolExecutor] 跨源融合: RAG=${ragCitations.length} + Web=${webSearchResults.length} = ${totalCandidates} 候选`);
-  const citations = totalCandidates > 0
+  const fuseResult = totalCandidates > 0
     ? await fuseAndRank(query, ragCitations, webSearchResults, rerankerConfig)
-    : [];
+    : { citations: [] as FusedCitation[], webTopScore: 0, fusionTopScore: 0 };
+  const { citations, webTopScore, fusionTopScore } = fuseResult;
 
   // Step 4: 注入 Top-K 文档后调 LLM（不带 tools），强制要求引用标注
   // 全部结果（RAG + Web）按 reranker 相关性统一编号 [1]-[N]
   // 即使 LLM 在 tool loop 中已返回直接回答，仍需 re-inject 以确保 [N] 引用标记
   if (toolRounds > 0 && citations.length > 0) {
-    logger.info(`[ToolExecutor] Re-inject: injecting ${citations.length} docs (unified ranking), final call without tools`);
+    logger.info(`[ToolExecutor] Re-inject: injecting ${citations.length} docs (${countSources(citations)}), final call without tools`);
     const docsSection = citations
       .map((c, i) => {
         const link = c.url ? `[${c.title}](${c.url})` : c.title;
@@ -278,10 +300,19 @@ export async function executeWithTools(input: ToolExecutorInput): Promise<ToolEx
     webSearchCitations: citations.filter((c) => c.engine !== "rag"),
     mergedCitations: citations,
     toolRounds,
+    ttftMs,
+    webTopScore,
+    fusionTopScore,
   };
 }
 
 // ── 跨源融合排序 ──────────────────────────────────────
+
+/** 统计 citations 中 RAG 和 Web 的数量 */
+function countSources(citations: Array<{ engine: string }>): string {
+  const rag = citations.filter(c => c.engine === "rag").length;
+  return `RAG=${rag}, Web=${citations.length - rag}`;
+}
 
 interface FusedCitation {
   title: string;
@@ -300,7 +331,7 @@ async function fuseAndRank(
   ragCitations: Array<{ source: string; score: number; excerpt: string }>,
   webResults: Array<{ title: string; url: string; snippet: string; engine: string }>,
   rerankerConfig?: { baseUrl: string; apiKey: string; modelId: string }
-): Promise<FusedCitation[]> {
+): Promise<{ citations: FusedCitation[]; webTopScore: number; fusionTopScore: number }> {
   // Web Search 去重
   const seen = new Set<string>();
   const uniqueWeb: FusedCitation[] = [];
@@ -310,6 +341,9 @@ async function fuseAndRank(
       seen.add(key);
       uniqueWeb.push(r);
     }
+  }
+  if (uniqueWeb.length < webResults.length) {
+    logger.info(`[Rerank] Web 去重: ${webResults.length} → ${uniqueWeb.length} (去掉 ${webResults.length - uniqueWeb.length} 个重复 URL)`);
   }
 
   // RAG 结果转为统一格式
@@ -322,7 +356,8 @@ async function fuseAndRank(
 
   // 合并所有结果
   const allResults = [...ragAsFused, ...uniqueWeb];
-  const TOP_K = 10;
+  logger.info(`[Rerank] 融合输入: ${countSources(allResults)} = ${allResults.length} 候选`);
+  const TOP_K = 5;
 
   // 转为 reranker 输入格式（base score 统一为 0，让 reranker 完全自主判断相关性）
   const rerankInput = allResults.map((r, i) => ({
@@ -348,12 +383,17 @@ async function fuseAndRank(
       });
       if (res.ok) {
         const data = await res.json() as { results: Array<{ index: number; relevance_score: number }> };
+        const fusionTopScore = data.results.length > 0 ? data.results[0].relevance_score : 0;
+        // Web top score: 最高分的 web 结果（engine !== "rag"）
+        const webResult = data.results.find((r) => r.index >= 0 && r.index < allResults.length && allResults[r.index]?.engine !== "rag");
+        const webTopScore = webResult?.relevance_score ?? 0;
         const reranked = data.results
           .filter((r) => r.index >= 0 && r.index < allResults.length)
           .map((r) => allResults[r.index])
-          .filter(Boolean);
-        logger.info(`[Rerank] 远程 Rerank 完成: ${reranked.length} 结果`);
-        return reranked.slice(0, TOP_K);
+          .filter((c): c is FusedCitation => !!c);
+        const finalCitations = reranked.slice(0, TOP_K);
+        logger.info(`[Rerank] 远程 Rerank 完成: ${reranked.length} → top${TOP_K}=${finalCitations.length} (${countSources(finalCitations)}), fusionTop=${fusionTopScore.toFixed(4)}, webTop=${webTopScore.toFixed(4)}`);
+        return { citations: finalCitations, webTopScore, fusionTopScore };
       }
       logger.warn(`[Rerank] 远程 Rerank 失败 (${res.status})，降级到本地`);
     } catch (err) {
@@ -366,11 +406,16 @@ async function fuseAndRank(
     const { crossEncoderRerank } = await import("./reranker.js");
     const reranked = await crossEncoderRerank(rerankInput, query);
     if (reranked.length > 0) {
-      logger.info(`[Rerank] Cross-encoder 完成: ${reranked.length} 结果`);
-      return reranked
-        .slice(0, TOP_K)
-        .map((r) => allResults[parseInt(r.chunkId.replace("fusion_", ""))])
-        .filter(Boolean);
+      const fusionTopScore = reranked[0]?.score ?? 0;
+      const webEntry = reranked.find((r) => { const idx = parseInt(r.chunkId.replace("fusion_", "")); return idx >= 0 && idx < allResults.length && allResults[idx]?.engine !== "rag"; });
+      const webTopScore = webEntry?.score ?? 0;
+      const crossCitations = reranked.slice(0, TOP_K).map((r) => allResults[parseInt(r.chunkId.replace("fusion_", ""))]).filter((c): c is FusedCitation => !!c);
+      logger.info(`[Rerank] Cross-encoder 完成: ${reranked.length} → top${TOP_K}=${crossCitations.length} (${countSources(crossCitations)}), fusionTop=${fusionTopScore.toFixed(4)}, webTop=${webTopScore.toFixed(4)}`);
+      return {
+        citations: crossCitations,
+        webTopScore,
+        fusionTopScore,
+      };
     }
   } catch (err) {
     logger.warn(`[Rerank] Cross-encoder 失败，降级到启发式: ${err}`);
@@ -380,14 +425,20 @@ async function fuseAndRank(
   try {
     const { localRerank } = await import("./reranker.js");
     const reranked = localRerank(rerankInput, query);
-    return reranked
-      .slice(0, TOP_K)
-      .map((r) => allResults[parseInt(r.chunkId.replace("fusion_", ""))])
-      .filter(Boolean);
+    const fusionTopScore = reranked[0]?.score ?? 0;
+    const webEntry = reranked.find((r) => { const idx = parseInt(r.chunkId.replace("fusion_", "")); return idx >= 0 && idx < allResults.length && allResults[idx]?.engine !== "rag"; });
+    const webTopScore = webEntry?.score ?? 0;
+    const localCitations = reranked.slice(0, TOP_K).map((r) => allResults[parseInt(r.chunkId.replace("fusion_", ""))]).filter((c): c is FusedCitation => !!c);
+    logger.info(`[Rerank] 本地启发式 完成: ${reranked.length} → top${TOP_K}=${localCitations.length} (${countSources(localCitations)}), fusionTop=${fusionTopScore.toFixed(4)}, webTop=${webTopScore.toFixed(4)}`);
+    return {
+      citations: localCitations,
+      webTopScore,
+      fusionTopScore,
+    };
   } catch (err) {
     logger.warn(`[Rerank] 所有 reranker 失败，按引擎优先级排序: ${err}`);
     const enginePriority: Record<string, number> = { google: 0, bing: 1, baidu: 2, unknown: 3, rag: -1 };
     allResults.sort((a, b) => (enginePriority[a.engine] ?? 3) - (enginePriority[b.engine] ?? 3));
-    return allResults.slice(0, TOP_K);
+    return { citations: allResults.slice(0, TOP_K), webTopScore: 0, fusionTopScore: 0 };
   }
 }

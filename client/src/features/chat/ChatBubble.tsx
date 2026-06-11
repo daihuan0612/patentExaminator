@@ -90,16 +90,6 @@ export function ChatBubble({ message, onAction }: ChatBubbleProps) {
           </button>
         </div>
       )}
-      {(message.groundedness || message.mergedCitations?.length) && (
-        <div className="quality-badge" data-testid="quality-badge">
-          {message.groundedness?.verdict === 'pass' && <span className="quality-badge__grounded quality-badge__pass">✅ 已验证</span>}
-          {message.groundedness?.verdict === 'partial' && <span className="quality-badge__grounded quality-badge__partial">⚠️ 部分有据</span>}
-          {message.groundedness?.verdict === 'fail' && <span className="quality-badge__grounded quality-badge__fail">❌ 无据声明已过滤</span>}
-          {message.mergedCitations?.length > 0 && (
-            <span className="quality-badge__citations">引用 {message.mergedCitations.length} 条来源</span>
-          )}
-        </div>
-      )}
       {isAssistant && citations.length > 0 && (
         <div className="chat-bubble__citations">
           <div className="chat-bubble__citations-header">参考文档</div>

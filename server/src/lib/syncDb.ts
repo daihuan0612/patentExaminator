@@ -48,10 +48,87 @@ export function getSyncDb(): Database.Database {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS metrics_runs (
+      id            TEXT PRIMARY KEY,
+      timestamp     TEXT NOT NULL DEFAULT (datetime('now')),
+      agent         TEXT NOT NULL,
+      case_id       TEXT NOT NULL DEFAULT '',
+      provider_id   TEXT NOT NULL,
+      model_id      TEXT NOT NULL,
+      search_provider TEXT DEFAULT '',
+      reranker_type TEXT DEFAULT '',
+      embedding_model TEXT DEFAULT '',
+      duration_ms   INTEGER NOT NULL DEFAULT 0,
+      ttft_ms       INTEGER DEFAULT 0,
+      tool_rounds   INTEGER DEFAULT 0,
+      input_tokens  INTEGER DEFAULT 0,
+      output_tokens INTEGER DEFAULT 0,
+      total_tokens  INTEGER DEFAULT 0,
+      thinking_tokens INTEGER DEFAULT 0,
+      rag_citation_count INTEGER DEFAULT 0,
+      top_citation_score REAL DEFAULT 0,
+      web_top_score REAL DEFAULT 0,
+      fusion_top_score REAL DEFAULT 0,
+      web_search_count INTEGER DEFAULT 0,
+      web_search_rounds INTEGER DEFAULT 0,
+      grounding_score REAL DEFAULT -1,
+      grounding_verdict TEXT DEFAULT '',
+      removed_claims_count INTEGER DEFAULT 0,
+      success       INTEGER NOT NULL DEFAULT 1,
+      error_type    TEXT DEFAULT '',
+      error_code    TEXT DEFAULT '',
+      attempts_json TEXT DEFAULT '[]',
+      timings_json  TEXT DEFAULT '{}',
+      user_feedback TEXT DEFAULT '',
+      experiment_id TEXT DEFAULT '',
+      variant       TEXT DEFAULT ''
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_metrics_timestamp ON metrics_runs(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_metrics_agent ON metrics_runs(agent);
+    CREATE INDEX IF NOT EXISTS idx_metrics_model ON metrics_runs(provider_id, model_id);
+
+    CREATE TABLE IF NOT EXISTS metrics_golden_set (
+      id            TEXT PRIMARY KEY,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      agent         TEXT NOT NULL,
+      query         TEXT NOT NULL,
+      expected_answer TEXT NOT NULL,
+      expected_sources TEXT DEFAULT '[]',
+      expected_articles TEXT DEFAULT '[]',
+      category      TEXT DEFAULT '',
+      difficulty    TEXT DEFAULT 'medium',
+      generated_by  TEXT DEFAULT ''
+    );
+
+    CREATE TABLE IF NOT EXISTS metrics_golden_runs (
+      id            TEXT PRIMARY KEY,
+      golden_id     TEXT NOT NULL REFERENCES metrics_golden_set(id),
+      run_id        TEXT,
+      timestamp     TEXT NOT NULL DEFAULT (datetime('now')),
+      config_json   TEXT NOT NULL,
+      recall_at_k   REAL DEFAULT 0,
+      mrr           REAL DEFAULT 0,
+      ndcg_at_k     REAL DEFAULT 0,
+      faithfulness  REAL DEFAULT 0,
+      groundedness  REAL DEFAULT 0,
+      actual_answer TEXT DEFAULT '',
+      actual_sources TEXT DEFAULT '[]'
+    );
   `);
 
   logger.info(`Sync database initialized at ${DB_PATH}`);
   return db;
+}
+
+/**
+ * 获取 metrics 数据库实例
+ * 返回与 getSyncDb() 相同的 SQLite 连接（所有表在同一个数据库中），
+ * 但提供独立的语义名称以便 metrics 代码中更清晰地表达意图
+ */
+export function getMetricsDb(): Database.Database {
+  return getSyncDb();
 }
 
 /** 获取最后同步时间 */
@@ -148,7 +225,7 @@ export function closeSyncDb(): void {
 export function resetSyncDbForTesting(customPath?: string): void {
   if (db) {
     db.close();
-    db = null;
+    db = null; // 同时重置 metrics 表（与 sync 表共享同一连接）
   }
   if (customPath !== undefined) {
     // 覆盖模块级 DB_PATH（通过 monkey-patch）

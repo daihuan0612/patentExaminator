@@ -127,7 +127,7 @@ beforeEach(async () => {
     "cases", "documents", "claimNodes", "claimCharts",
     "novelty", "inventive", "defects", "chatSessions", "chatMessages",
     "opinionAnalyses", "argumentMappings", "reexamDrafts", "summaries",
-    "interpretSummaries", "feedback", "settings", "ocrCache", "textIndex"
+    "interpretSummaries", "settings", "ocrCache", "textIndex"
   ];
   await Promise.all(stores.map((store) => fetch(`/api/data/${store}`, { method: "DELETE" })));
 });

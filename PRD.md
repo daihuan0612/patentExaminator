@@ -1,6 +1,6 @@
 # 专利复审 AI 助手 — 产品需求文档 (PRD)
 
-<p align="right">2026-05，wukun2005@gmail.com</p>
+<p align="right">2026-06-10 更新，wukun2005@gmail.com</p>
 
 ---
 
@@ -651,8 +651,61 @@ gantt
 - **运行时：** Node.js（轻量，内网单机可运行）
 - **API 网关：** 代理转发各 AI Provider 请求；脱敏拦截层在此实现（用户启用时生效，见 §7.1）
 - **文档解析：** PDF → 文本（pdfjs-dist）；DOCX → 文本（mammoth）；OCR（后端 Node.js Tesseract，详见 Design ADR-006）
-- **向量检索（RAG）：** 法规知识库 RAG 系统（v0.2.0 已实现），全部运行在服务端。支持混合检索（语义 + BM25 RRF 融合）+ 三级重排序（远程 API → 本地 cross-encoder → 启发式）+ 法条知识图谱扩展。Embedding 为可选远程 API，无配置时降级纯 BM25。详见 `server/src/routes/knowledge.ts`、`server/src/lib/`
+- **RAG 管线：** 法规知识库 RAG 系统（v0.2.0 已实现），全部运行在服务端。详见 §12.4
+- **Web Search MCP Server：** 基于 Model Context Protocol 的搜索服务，SerpAPI 多引擎 fallback（Google → Bing → Baidu），LLM 自主判断是否调用（Tool Calling），跨源融合排序（RAG + Web Search 统一 reranker）
+- **Groundedness Detection：** LLM-as-Judge 验证生成回答是否忠实于检索文档，自动过滤幻觉声明，fail 时触发重新生成
 - **加密：** API Key 默认仅保存在 server 进程内存；可选持久化时使用用户主密码 + PBKDF2 派生密钥 + AES-256-GCM 加密至 `data/keystore.enc`；浏览器端不持久保存任何 API Key 明文/密文（详见 Dev Plan §8.10）
+
+### 12.4 RAG 管线架构
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        RAG 管线（5 阶段）                                │
+│                                                                         │
+│  ① Query Expansion        ② Embedding Search      ③ Hybrid Search     │
+│  ┌─────────────────┐      ┌─────────────────┐     ┌─────────────────┐  │
+│  │ 跨语言映射       │      │ 远程 Embedding   │     │ Multi-Query     │  │
+│  │ (中→英术语)      │──▶   │ API 生成向量     │     │ 生成多个子查询   │  │
+│  │ 法律同义词       │      │ cosine similarity│     │ BM25 + 向量     │  │
+│  │ 法条知识图谱     │      │ 动态阈值过滤     │     │ RRF 融合(k=60)  │  │
+│  └─────────────────┘      └─────────────────┘     └─────────────────┘  │
+│                                                         │               │
+│  ④ Reranking (三层降级)              ⑤ Parent-Child 注入               │
+│  ┌─────────────────────────┐         ┌─────────────────────────────┐   │
+│  │ 远程 Reranker API       │         │ 检索用 child chunk（精准）   │   │
+│  │   ↓ 降级                │──▶      │ 注入用 parent chunk（完整）  │   │
+│  │ Cross-Encoder           │         │ [1] [2] ... 编号格式         │   │
+│  │ (bge-reranker-base)     │         │ MMR 多样性排序 (λ=0.7)      │   │
+│  │   ↓ 降级                │         └─────────────────────────────┘   │
+│  │ 启发式加权 (5 信号)     │                                           │
+│  └─────────────────────────┘                                           │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Web Search MCP + Groundedness                        │
+│                                                                         │
+│  Tool Loop (≤3 轮)          Cross-Source Fusion        Groundedness    │
+│  ┌─────────────────┐       ┌─────────────────────┐   ┌──────────────┐ │
+│  │ LLM 自主判断     │       │ RAG citations        │   │ LLM-as-Judge │ │
+│  │ → web_search    │──▶    │ + Web Search results │──▶│ 句子级验证    │ │
+│  │ SerpAPI fallback│       │ 统一 reranker 排序   │   │ 过滤幻觉声明  │ │
+│  │ Google/Bing/BD  │       │ 引擎优先级兜底       │   │ fail→重新生成 │ │
+│  └─────────────────┘       └─────────────────────┘   └──────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Chunking 策略：**
+
+| 文档类型 | 切分策略 | 说明 |
+|---------|---------|------|
+| 法律/法规/司法解释 | 按"第X条" | 长条按"款"拆分（Parent-Child），短条合并 |
+| 审查指南 | 按"第X节" / X.X.X 标题 | 保留章节层级元数据 |
+| 案例 | 按段落 | 保留段落完整性 |
+
+- 最小 100 字符，最大 1500 字符；表格整体保留不拆分
+- 中文分词：jieba-wasm + 37 个法律专用词典
+- Parent-Child 模式：子 chunk 精准检索，父 chunk 完整上下文注入
 
 ### 12.3 部署架构（三阶段）
 
@@ -712,7 +765,7 @@ Supabase（后端服务）
 6. 在未确认安全边界前默认上传未公开申请文件到外部服务
 7. 覆盖实用新型和外观设计审查
 8. 多模态图表/结构图识别（留到 v0.3.0）
-9. RAG 向量检索（留到 v0.2.0）
+9. ~~RAG 向量检索（留到 v0.2.0）~~ ✅ 已在 v0.2.0 实现
 
 ---
 
@@ -767,6 +820,10 @@ Supabase（后端服务）
 | 区别技术特征 | 申请权利要求相比最接近现有技术额外具有的技术特征 |
 | 优先权日 | 首次提交申请的日期（主张优先权时），优先于申请日用于时间轴校验 |
 | RAG | Retrieval-Augmented Generation，检索增强生成，用本地文献库提升 AI 回答质量 |
+| Hybrid Search | 混合检索，向量语义搜索 + BM25 关键词搜索通过 RRF 融合 |
+| Reranker | 重排序器，对检索结果进行精细排序（远程 API → Cross-Encoder → 启发式三级降级） |
+| MCP | Model Context Protocol，模型上下文协议，用于 LLM 与外部工具通信 |
+| Groundedness | 接地性/忠实度，验证 LLM 生成内容是否基于检索到的文档，过滤幻觉 |
 | OCR | Optical Character Recognition，光学字符识别，用于解析扫描版 PDF |
 | 时间轴校验 | 核查对比文件公开日是否严格早于申请日/优先权日的必要步骤 |
 | Human-in-the-Loop | 所有关键操作须人工确认，AI 不自动执行不可逆操作 |

@@ -69,10 +69,9 @@ describe("orchestrator — agent routing", () => {
         apiKey: "test-key",
       });
       expect(result.ok).toBe(true);
-      // chat agent 走 tool executor 路径，mock 不返回 tool_calls 会触发重试（最多 3 次）
-      // 其他 agent 只调 1 次
-      const expectedCalls = agent === "chat" ? 3 : 1;
-      expect(registry.runWithFallback).toHaveBeenCalledTimes(expectedCalls);
+      // chat agent 走 tool executor 路径，mock 不返回 tool_calls 时直接返回 fallback
+      // 所有 agent 都只调 1 次 runWithFallback
+      expect(registry.runWithFallback).toHaveBeenCalledTimes(1);
     });
   }
 

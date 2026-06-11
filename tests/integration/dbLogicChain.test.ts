@@ -158,18 +158,6 @@ function makeChatMessage(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeFeedback(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "fb-1",
-    caseId: "case-1",
-    subjectType: "claim-chart",
-    subjectId: "chart-1",
-    verdict: "like",
-    createdAt: new Date().toISOString(),
-    ...overrides,
-  };
-}
-
 // ═══════════════════════════════════════════════════════════════
 // Case: Create → Read → Update → Delete
 // ═══════════════════════════════════════════════════════════════
@@ -460,29 +448,6 @@ describe("Chat logic chain", () => {
 
     expect(dbQuery(db, "chatSessions", "caseId", "case-1")).toHaveLength(0);
     expect(dbQuery(db, "chatMessages", "sessionId", "session-1")).toHaveLength(0);
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════
-// Feedback: Create → Read → Update → Delete
-// ═══════════════════════════════════════════════════════════════
-
-describe("Feedback logic chain", () => {
-  it("create → read → update → delete 全生命周期", () => {
-    const fb = makeFeedback();
-    dbCreate(db, "feedback", fb.id, fb);
-
-    let all = dbQuery(db, "feedback", "caseId", "case-1");
-    expect(all).toHaveLength(1);
-    expect(all[0]!.verdict).toBe("like");
-
-    dbUpdate(db, "feedback", fb.id, { ...fb, verdict: "dislike" });
-    all = dbQuery(db, "feedback", "caseId", "case-1");
-    expect(all[0]!.verdict).toBe("dislike");
-
-    dbDelete(db, "feedback", "fb-1");
-    all = dbQuery(db, "feedback", "caseId", "case-1");
-    expect(all).toHaveLength(0);
   });
 });
 

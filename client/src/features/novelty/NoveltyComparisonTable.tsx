@@ -2,8 +2,6 @@ import { useState } from "react";
 import type { NoveltyComparison } from "@shared/types/domain";
 import { useNoveltyStore } from "../../store";
 import { InlineEdit } from "../../components/InlineEdit";
-import { FeedbackButtons } from "../../components/FeedbackButtons";
-import { getFeedback, saveFeedback } from "../../lib/feedbackRepo";
 
 interface NoveltyComparisonTableProps {
   comparisonId: string;
@@ -188,14 +186,6 @@ export function NoveltyComparisonTable({ comparisonId }: NoveltyComparisonTableP
                     {row.reviewerNotes || "（点击编辑）"}
                   </span>
                 )}
-              </td>
-              <td>
-                <FeedbackButtons
-                  targetId={`${comparisonId}-${row.featureCode}`}
-                  targetType="novelty-row"
-                  existingFeedback={getFeedback(`${comparisonId}-${row.featureCode}`)}
-                  onSave={saveFeedback}
-                />
               </td>
             </tr>
           ))}

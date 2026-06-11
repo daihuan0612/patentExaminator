@@ -4,7 +4,7 @@ import { useChatStore, useCaseStore } from "../../store";
 import { ChatBubble } from "./ChatBubble";
 import { buildContextSummary } from "../../lib/chatContext";
 import type { ChatResponse, ChatAttachment } from "@shared/types/api";
-import { agentRun, lastMergedCitations, lastGroundedness } from "../../lib/repos";
+import { agentRun, lastMergedCitations } from "../../lib/repos";
 import { createSession, createMessage, deleteSession, deleteMessagesBySessionId, updateSession, getSessionsByCaseId, getMessagesBySessionId } from "../../lib/repos";
 import { formatAiErrorMessage } from "../../lib/errorDisplay";
 import type { ChatMessage, ChatSession, ModuleScope } from "@shared/types/domain";
@@ -311,7 +311,6 @@ export function ChatPanel() {
         role: "assistant",
         content: replyContent,
         ...(lastMergedCitations.length > 0 ? { mergedCitations: [...lastMergedCitations] } : {}),
-        ...(lastGroundedness ? { groundedness: lastGroundedness } : {}),
         createdAt: new Date().toISOString()
       };
       log("Adding assistant message:", assistantMsg.id);

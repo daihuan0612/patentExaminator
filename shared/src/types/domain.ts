@@ -221,16 +221,6 @@ export interface FormalDefect {
   overcomeStatus?: "overcome" | "not-overcome" | "partially-overcome";
 }
 
-export interface FeedbackEntry {
-  id: string;
-  targetId: string;
-  targetType: "claim-feature" | "novelty-row" | "chat-message";
-  sentiment: "like" | "dislike" | null;
-  comment: string;
-  createdAt: ISODateTimeString;
-  updatedAt: ISODateTimeString;
-}
-
 export type ModuleScope =
   | "claim-chart"
   | "novelty"

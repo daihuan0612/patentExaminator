@@ -301,15 +301,6 @@ const SAMPLE_SEARCH_SESSION = {
   updatedAt: "2026-06-04T10:00:00.000Z",
 };
 
-const SAMPLE_FEEDBACK = {
-  caseId: "case-1",
-  subjectType: "claimChart",
-  subjectId: "feature-A",
-  verdict: "like",
-  comment: "准确",
-  createdAt: "2026-06-04T10:00:00.000Z",
-};
-
 const SAMPLE_TEXT_INDEX = {
   documentId: "doc-1",
   pages: [
@@ -329,7 +320,7 @@ const SAMPLE_TEXT_INDEX = {
 
 const ALL_STORES = [
   "cases", "documents", "claimNodes", "claimCharts", "novelty",
-  "inventive", "chatMessages", "feedback", "settings", "textIndex",
+  "inventive", "chatMessages", "settings", "textIndex",
   "ocrCache", "interpretSummaries", "defects", "chatSessions",
   "opinionAnalyses", "argumentMappings", "reexamDrafts", "summaries",
   "runMarkers", "searchSessions",
@@ -681,21 +672,6 @@ describe("§二 全 Store CRUD 持久化", () => {
     });
   });
 
-  describe("feedback", () => {
-    it("Create → GetById → 字段一致", () => {
-      dbCreate(testDb.db, "feedback", "fb-1", SAMPLE_FEEDBACK);
-      const r = dbGetById(testDb.db, "feedback", "fb-1");
-      expect(r!.verdict).toBe("like");
-      expect(r!.comment).toBe("准确");
-    });
-    it("Query by subjectType", () => {
-      dbCreate(testDb.db, "feedback", "fb-1", SAMPLE_FEEDBACK);
-      dbCreate(testDb.db, "feedback", "fb-2", { ...SAMPLE_FEEDBACK, verdict: "dislike", subjectType: "novelty" });
-      const likes = dbQuery(testDb.db, "feedback", "verdict", "like");
-      expect(likes.length).toBe(1);
-    });
-  });
-
   describe("textIndex", () => {
     it("Create → GetById → 大对象完整", () => {
       dbCreate(testDb.db, "textIndex", "doc-1", SAMPLE_TEXT_INDEX);
@@ -915,7 +891,6 @@ describe("§四 边界场景", () => {
     dbCreate(testDb.db, "novelty", "nov-1", SAMPLE_NOVELTY);
     dbCreate(testDb.db, "inventive", "inv-1", SAMPLE_INVENTIVE);
     dbCreate(testDb.db, "chatMessages", "msg-1", SAMPLE_CHAT_MESSAGE);
-    dbCreate(testDb.db, "feedback", "fb-1", SAMPLE_FEEDBACK);
     dbCreate(testDb.db, "textIndex", "doc-1", SAMPLE_TEXT_INDEX);
     dbCreate(testDb.db, "interpretSummaries", "case-1", SAMPLE_INTERPRET_SUMMARIES);
     dbCreate(testDb.db, "defects", "def-1", SAMPLE_DEFECT);

@@ -16,7 +16,7 @@ import { getModelCapabilities } from "../providers/model-capabilities-registry.j
 import { estimateTokens } from "./tokenEstimator.js";
 import { metricsCollector } from "./metricsCollector.js";
 import type { RunTimings } from "@shared/types/metrics.js";
-import { estimateCost } from "./costEstimator.js";
+
 
 /**
  * D3: 根据模型上下文窗口动态截断文本。
@@ -45,6 +45,18 @@ function truncateForModel(
 // 保留原始 truncate 用于无 modelId 的场景
 function truncate(text: string, maxLen: number): string {
   return text.length > maxLen ? text.slice(0, maxLen) : text;
+}
+
+/** 从 baseUrl 提取 provider 名称，如 "https://api.siliconflow.cn/v1" → "siliconflow" */
+function providerFromBaseUrl(baseUrl?: string): string {
+  if (!baseUrl) return "";
+  try {
+    const host = new URL(baseUrl).hostname; // "api.siliconflow.cn"
+    const parts = host.split(".");
+    // api.siliconflow.cn → siliconflow, generativelanguage.googleapis.com → google
+    if (parts.length >= 2) return parts[parts.length - 2] || "";
+  } catch { /* ignore */ }
+  return "";
 }
 
 // ── 类型定义 ──────────────────────────────────────────
@@ -1230,29 +1242,34 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
 
         // ── Record metrics (tool executor path) ──────────
         timings.totalMs = Date.now() - totalStart;
+        const webCitationsForMetrics = merged.filter(c => c.engine !== "rag");
+        const searchEngines = [...new Set(webCitationsForMetrics.map(c => c.engine).filter(Boolean))];
+        // MCP web search 固定使用 SerpAPI，格式为 "serpapi:{engine}"
+        const searchProviderStr = searchEngines.map(e => `serpapi:${e}`).join(",") || '';
         try {
           metricsCollector.record({
             agent: req.agent,
             caseId: req.caseId || '',
-            providerId: '',
+            providerId: req.providerPreference?.[0] || '',
             modelId: req.modelId || '',
-            searchProvider: '',
-            rerankerType: req.knowledgeReranker?.modelId || '',
-            embeddingModel: req.knowledgeEmbedding?.modelId || '',
+            searchProvider: searchProviderStr,
+            rerankerType: req.knowledgeReranker ? `${providerFromBaseUrl(req.knowledgeReranker.baseUrl)}:${req.knowledgeReranker.modelId}` : '',
+            embeddingModel: req.knowledgeEmbedding ? `${providerFromBaseUrl(req.knowledgeEmbedding.baseUrl)}:${req.knowledgeEmbedding.modelId}` : '',
             durationMs: timings.totalMs,
-            ttftMs: 0,
-            toolRounds: 0,
+            ttftMs: toolResult.ttftMs,
+            toolRounds: toolResult.toolRounds,
             inputTokens: 0,
             outputTokens: 0,
             totalTokens: 0,
             thinkingTokens: 0,
-            costMicroUsd: 0,
             ragCitationCount: citations.length,
             topCitationScore: Math.max(0, ...citations.map(c => c.score)),
-            webSearchCount: merged.filter(c => c.engine !== "rag").length,
-            groundingScore: -1,
-            groundingVerdict: '',
-            removedClaimsCount: 0,
+            webSearchCount: webCitationsForMetrics.length,
+            webTopScore: toolResult.webTopScore,
+            fusionTopScore: toolResult.fusionTopScore,
+            groundingScore: groundednessResult?.score ?? -1,
+            groundingVerdict: groundednessResult?.verdict ?? '',
+            removedClaimsCount: groundednessResult?.removedCount ?? 0,
             success: true,
             errorType: '',
             errorCode: '',
@@ -1264,7 +1281,7 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
         return {
           ok: true,
           output: { reply: finalAnswer },
-          webSearchCitations: merged.filter((c) => c.engine !== "rag"),
+          webSearchCitations: webCitationsForMetrics,
           mergedCitations: merged,
           ...(groundednessResult && { groundedness: groundednessResult }),
         };
@@ -1337,11 +1354,11 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
         metricsCollector.record({
           agent: req.agent,
           caseId: req.caseId || '',
-          providerId: aiResponse.attempts?.[0]?.providerId || '',
+          providerId: aiResponse.attempts?.[0]?.providerId || req.providerPreference?.[0] || '',
           modelId: req.modelId || '',
           searchProvider: '',
-          rerankerType: req.knowledgeReranker?.modelId || '',
-          embeddingModel: req.knowledgeEmbedding?.modelId || '',
+          rerankerType: req.knowledgeReranker ? `${providerFromBaseUrl(req.knowledgeReranker.baseUrl)}:${req.knowledgeReranker.modelId}` : '',
+          embeddingModel: req.knowledgeEmbedding ? `${providerFromBaseUrl(req.knowledgeEmbedding.baseUrl)}:${req.knowledgeEmbedding.modelId}` : '',
           durationMs: timings.totalMs,
           ttftMs: 0,
           toolRounds: 0,
@@ -1349,10 +1366,11 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
           outputTokens: aiResponse.tokenUsage?.output || 0,
           totalTokens: aiResponse.tokenUsage?.total || 0,
           thinkingTokens: 0,
-          costMicroUsd: estimateCost(req.modelId || '', aiResponse.tokenUsage?.input || 0, aiResponse.tokenUsage?.output || 0),
           ragCitationCount: citations.length,
           topCitationScore: Math.max(0, ...citations.map(c => c.score)),
           webSearchCount: 0,
+          webTopScore: 0,
+          fusionTopScore: 0,
           groundingScore: -1,
           groundingVerdict: '',
           removedClaimsCount: 0,
@@ -1457,11 +1475,11 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
       metricsCollector.record({
         agent: req.agent,
         caseId: req.caseId || '',
-        providerId: aiResponse.attempts?.[0]?.providerId || '',
+        providerId: aiResponse.attempts?.[0]?.providerId || req.providerPreference?.[0] || '',
         modelId: req.modelId || '',
         searchProvider: '',
-        rerankerType: req.knowledgeReranker?.modelId || '',
-        embeddingModel: req.knowledgeEmbedding?.modelId || '',
+        rerankerType: req.knowledgeReranker ? `${providerFromBaseUrl(req.knowledgeReranker.baseUrl)}:${req.knowledgeReranker.modelId}` : '',
+        embeddingModel: req.knowledgeEmbedding ? `${providerFromBaseUrl(req.knowledgeEmbedding.baseUrl)}:${req.knowledgeEmbedding.modelId}` : '',
         durationMs: timings.totalMs,
         ttftMs: 0,
         toolRounds: 0,
@@ -1469,7 +1487,6 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
         outputTokens: aiResponse.tokenUsage?.output || 0,
         totalTokens: aiResponse.tokenUsage?.total || 0,
         thinkingTokens: 0,
-        costMicroUsd: estimateCost(req.modelId || '', aiResponse.tokenUsage?.input || 0, aiResponse.tokenUsage?.output || 0),
         ragCitationCount: citations.length,
         topCitationScore: Math.max(0, ...citations.map(c => c.score)),
         webSearchCount: 0,
@@ -1500,11 +1517,11 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
       metricsCollector.record({
         agent: req.agent,
         caseId: req.caseId || '',
-        providerId: '',
+        providerId: req.providerPreference?.[0] || '',
         modelId: req.modelId || '',
         searchProvider: '',
-        rerankerType: '',
-        embeddingModel: req.knowledgeEmbedding?.modelId || '',
+        rerankerType: req.knowledgeReranker ? `${providerFromBaseUrl(req.knowledgeReranker.baseUrl)}:${req.knowledgeReranker.modelId}` : '',
+        embeddingModel: req.knowledgeEmbedding ? `${providerFromBaseUrl(req.knowledgeEmbedding.baseUrl)}:${req.knowledgeEmbedding.modelId}` : '',
         durationMs: timings.totalMs,
         ttftMs: 0,
         toolRounds: 0,
@@ -1512,7 +1529,6 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
         outputTokens: 0,
         totalTokens: 0,
         thinkingTokens: 0,
-        costMicroUsd: 0,
         ragCitationCount: 0,
         topCitationScore: 0,
         webSearchCount: 0,
