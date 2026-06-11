@@ -4,7 +4,6 @@ import type { AppSettings, ProviderErrorMessage } from "@shared/types/agents";
 import type { KnowledgeConfig } from "@shared/types/knowledge";
 import { DEFAULT_KNOWLEDGE_CONFIG } from "@shared/types/knowledge";
 import { getById, create as dbCreate, patch as dbPatch } from "../../../lib/repos";
-import { waitForServerReady } from "../../../lib/serverReady";
 import { createLogger } from "../../../lib/logger";
 import { dbWriteGuard } from "../../../lib/dbWriteGuard";
 
@@ -95,35 +94,6 @@ function patchSettings(partial: Partial<AppSettings>, caller: string): void {
   });
 }
 
-interface SyncResult {
-  success: boolean;
-  syncedProviders: string[];
-  failedProviders: Array<{ providerId: string; error: string }>;
-}
-
-async function syncProviderKeys(settings: AppSettings): Promise<SyncResult> {
-  await waitForServerReady("/api");
-  const syncedProviders: string[] = [];
-  const failedProviders: Array<{ providerId: string; error: string }> = [];
-  for (const provider of settings.providers) {
-    if (!provider.enabled || !provider.apiKeyRef) continue;
-    try {
-      const response = await fetch(`/api/settings/providers/${provider.providerId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey: provider.apiKeyRef })
-      });
-      if (!response.ok) {
-        failedProviders.push({ providerId: provider.providerId, error: `HTTP ${response.status}: ${response.statusText}` });
-      } else {
-        syncedProviders.push(provider.providerId);
-      }
-    } catch (err) {
-      failedProviders.push({ providerId: provider.providerId, error: err instanceof Error ? err.message : String(err) });
-    }
-  }
-  return { success: failedProviders.length === 0, syncedProviders, failedProviders };
-}
 
 export interface SyncStatus {
   connected: boolean;
@@ -172,27 +142,12 @@ export const createSettingsSlice = (
     const caller = getCaller(3);
     set(() => ({ settings }));
     writeSettings(settings, `setSettings:${caller}`);
-    if (settings.mode === "real") {
-      syncProviderKeys(settings).then((result) => {
-        if (!result.success) {
-          log("Provider key sync partially failed:", result.failedProviders);
-          _get().setSyncStatus({ error: result.failedProviders.map((p) => `${p.providerId}: ${p.error}`).join(", ") });
-        }
-      }).catch(dbWriteGuard("settings"));
-    }
   },
   updateMode: (mode) => {
     const caller = getCaller(3);
     set((prev) => {
       const next = { ...prev.settings, mode };
       writeSettings(next, `updateMode:${caller}`);
-      if (mode === "real") {
-        syncProviderKeys(next).then((result) => {
-          if (!result.success) {
-            log("Provider key sync partially failed:", result.failedProviders);
-          }
-        }).catch(dbWriteGuard("settings"));
-      }
       return { settings: next };
     });
   },
@@ -224,14 +179,6 @@ export const createSettingsSlice = (
     try {
       const saved = await readSettings("loadFromDb");
       set(() => ({ settings: saved, isInitialized: true }));
-      // Sync API keys to server so AI calls work in real mode
-      if (saved.mode === "real") {
-        syncProviderKeys(saved).then((result) => {
-          if (!result.success) {
-            log("Provider key sync partially failed:", result.failedProviders);
-          }
-        }).catch(dbWriteGuard("settings"));
-      }
     } catch (e) {
       log("Failed to load settings from DB:", e);
       set(() => ({ isInitialized: true }));

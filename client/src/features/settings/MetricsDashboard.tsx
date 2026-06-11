@@ -47,13 +47,10 @@ interface GoldenQuestion {
 interface EvalConfigSummary {
   label: string;
   avgRecall: number;
-  avgMrr: number;
   avgNdcg: number;
   avgFaithfulness: number;
-  avgGroundedness: number;
   avgDurationMs: number;
   passRate: number;
-  // nf5 新增
   avgAnswerCorrectness: number;
   avgFactCoverage: number;
   avgArticleAccuracy: number;
@@ -65,7 +62,6 @@ interface EvalConfigSummary {
 interface EvalResult {
   configLabel: string;
   recall: number;
-  mrr: number;
   ndcg: number;
   faithfulness: number;
 }
