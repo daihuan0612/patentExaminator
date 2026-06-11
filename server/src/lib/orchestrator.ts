@@ -1109,7 +1109,6 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
             const result = await registry.runWithFallback(
               req.providerPreference ?? [],
               chatReq,
-              undefined,
               req.modelFallbacks,
               req.enableModelFallback,
               req.providerBaseUrls,
@@ -1193,7 +1192,6 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
                   temperature: 0.3,
                   ...(req.signal !== undefined && { signal: req.signal }),
                 },
-                undefined,
                 req.modelFallbacks,
                 req.enableModelFallback,
                 req.providerBaseUrls,
@@ -1681,7 +1679,6 @@ async function callInternalGateway(req: InternalGatewayRequest): Promise<Interna
   const result = await registry.runWithFallback(
     providerOrder,
     chatRequest,
-    undefined,
     req.modelFallbacks,
     req.enableModelFallback,
     req.providerBaseUrls,

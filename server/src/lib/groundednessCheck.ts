@@ -185,7 +185,6 @@ async function callJudge(
     const result = await registry.runWithFallback(
       config.providerPreference ?? [],
       chatReq,
-      undefined,
       config.modelFallbacks,
       config.enableModelFallback,
       config.providerBaseUrls,

@@ -255,7 +255,8 @@ describe("ProviderRegistry", () => {
 
     const { response, attempts } = await registry.runWithFallback(
       ["gemini"],
-      { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "test-key" }
+      { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "test-key" },
+      { gemini: ["gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-pro"] }
     );
 
     expect(response.text).toBe("fallback-success");
@@ -283,7 +284,8 @@ describe("ProviderRegistry", () => {
 
     const { response, attempts } = await registry.runWithFallback(
       ["gemini"],
-      { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "test-key" }
+      { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "test-key" },
+      { gemini: ["gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-pro"] }
     );
 
     expect(response.text).toBe("recovered");
@@ -303,7 +305,8 @@ describe("ProviderRegistry", () => {
 
     const { response, attempts } = await registry.runWithFallback(
       ["gemini"],
-      { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "test-key" }
+      { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "test-key" },
+      { gemini: ["gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-pro"] }
     );
 
     expect(response.text).toBe("quota-recovered");
@@ -359,7 +362,8 @@ describe("ProviderRegistry", () => {
 
       const promise = registry.runWithFallback(
         ["gemini", "bedrock", "kimi", "glm", "deepseek"],
-        { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "test-key" }
+        { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "test-key" },
+        { gemini: ["gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-pro"] }
       );
 
       // Flush all backoff timers: Gemini 5×(0+500+1500)=10s + Bedrock/Kimi/GLM 3×(0+500+1500)=6s each ≈ 28s total
@@ -393,7 +397,8 @@ describe("ProviderRegistry", () => {
 
       const promise = registry.runWithFallback(
         ["gemini", "bedrock"],
-        { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "test-key" }
+        { modelId: "gemini-2.5-flash-lite", messages: [{ role: "user", content: "test" }], apiKey: "test-key" },
+        { gemini: ["gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-pro"] }
       );
 
       // Flush Gemini backoff timers: 5 models × 3 retries × (0+500+1500) ≈ 10s

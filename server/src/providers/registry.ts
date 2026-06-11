@@ -14,9 +14,6 @@ import { OpenRouterAdapter } from "./openrouter.js";
 import { OpencodeAdapter } from "./opencode.js";
 import { DoubaoAdapter } from "./doubao.js";
 
-const MIMO_MODEL_FALLBACKS = ["mimo-v2.5-pro", "mimo-v2.5", "mimo-v2-pro", "mimo-v2-omni"];
-const GEMINI_MODEL_FALLBACKS = ["gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-pro"];
-
 const BACKOFF_DELAYS = [500, 1500];
 const MAX_RETRIES = 2;
 const MAX_TOTAL_ATTEMPTS = 8;
@@ -64,7 +61,6 @@ export class ProviderRegistry {
   async runWithFallback(
     providerPreference: string[],
     req: ChatRequest,
-    mimoModelFallbacks?: string[],
     modelFallbacks?: Partial<Record<string, string[]>>,
     enableModelFallback?: Partial<Record<string, boolean>>,
     providerBaseUrls?: Partial<Record<string, string>>,
@@ -84,7 +80,7 @@ export class ProviderRegistry {
       const providerBaseUrl = providerBaseUrls?.[pid];
       const providerApiKey = providerApiKeys?.[pid];
       const enabled = enableModelFallback?.[pid] ?? true;
-      const configuredFallbacks = modelFallbacks?.[pid] ?? (pid === "mimo" ? (mimoModelFallbacks ?? MIMO_MODEL_FALLBACKS) : (pid === "gemini" ? GEMINI_MODEL_FALLBACKS : null));
+      const configuredFallbacks = modelFallbacks?.[pid] ?? null;
       // agent 指定了模型 → 先用它，失败再走用户配置的 fallback 顺序
       const models = req.modelId && configuredFallbacks
         ? [req.modelId, ...configuredFallbacks.filter((m) => m !== req.modelId)]

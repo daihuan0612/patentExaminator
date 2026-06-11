@@ -182,7 +182,7 @@ describe("ProviderRegistry", () => {
         const promise = registry.runWithFallback(
           ["mimo"],
           { ...baseReq, modelId: "mimo-v2.5-pro" },
-          ["mimo-v2.5-pro", "mimo-v2.5"]
+          { mimo: ["mimo-v2.5-pro", "mimo-v2.5"] }
         );
         await vi.advanceTimersByTimeAsync(5000);
 

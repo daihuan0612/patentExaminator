@@ -214,7 +214,6 @@ searchRouter.post("/search-references", async (req, res) => {
     const { response: extractRes, attempts: extractAttempts } = await registry.runWithFallback(
       availableProviders as string[],
       extractReq,
-      undefined,
       request.modelFallbacks as Partial<Record<string, string[]>> | undefined,
       request.enableModelFallback as Partial<Record<string, boolean>> | undefined,
       request.providerBaseUrls as Partial<Record<string, string>> | undefined,
@@ -324,7 +323,6 @@ searchRouter.post("/search-references", async (req, res) => {
           const { response: translateRes } = await registry.runWithFallback(
             availableProviders as string[],
             translateReq,
-            undefined,
             request.modelFallbacks as Partial<Record<string, string[]>> | undefined,
             request.enableModelFallback as Partial<Record<string, boolean>> | undefined,
             request.providerBaseUrls as Partial<Record<string, string>> | undefined,
@@ -455,7 +453,6 @@ searchRouter.post("/search-references", async (req, res) => {
       const result = await registry.runWithFallback(
         availableProviders as string[],
         filterReq,
-        undefined,
         request.modelFallbacks as Partial<Record<string, string[]>> | undefined,
         request.enableModelFallback as Partial<Record<string, boolean>> | undefined,
         request.providerBaseUrls as Partial<Record<string, string>> | undefined,
@@ -731,7 +728,6 @@ searchRouter.post("/extract-search-terms", async (req, res) => {
     const { response: extractRes, attempts: extractAttempts } = await registry.runWithFallback(
       availableProviders as string[],
       extractReq,
-      undefined,
       request.modelFallbacks as Partial<Record<string, string[]>> | undefined,
       request.enableModelFallback as Partial<Record<string, boolean>> | undefined,
       request.providerBaseUrls as Partial<Record<string, string>> | undefined,
