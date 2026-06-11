@@ -8,20 +8,31 @@ import { randomUUID } from "node:crypto";
 import { getSyncDb } from "./syncDb.js";
 import { logger } from "./logger.js";
 import { registry } from "../providers/registry.js";
+import { getAllSources, getChunksBySourceId } from "./knowledgeDb.js";
 import type { ProviderId } from "@shared/types/agents";
 
 // ── Types ──────────────────────────────────────────────
+
+import type { SourceType, ExpectedSource, RelevanceGrade } from "@shared/types/metrics";
 
 export interface GoldenQuestion {
   id: string;
   agent: string;           // which agent this tests
   query: string;           // examiner's question
-  expectedAnswer: string;  // expected answer summary
+  expectedAnswer: string;  // expected answer (200-500 chars for nf5)
   expectedSources: string[]; // knowledge base file names
   expectedArticles: string[]; // legal article references
   category: string;        // novelty|inventive|defect|procedure|legal
   difficulty: "easy" | "medium" | "hard";
   generatedBy: string;     // which LLM generated this
+
+  // ── nf5 新增字段 ──
+  sourceType: SourceType;
+  expectedSource: ExpectedSource;
+  sourceRoutingRationale: string;
+  mustIncludeFacts: string[];
+  relevanceGrading: RelevanceGrade[];
+  verifiedBy: string;
 }
 
 // ── Question Categories ────────────────────────────────
@@ -95,11 +106,65 @@ interface LLMProviderConfig {
   label: string;
 }
 
-const PROVIDER_CONFIGS: Array<{ key: keyof ApiKeys; providerId: ProviderId; defaultModel: string; label: string }> = [
-  { key: "mimo", providerId: "mimo", defaultModel: "mimo-v2.5-pro", label: "MiMo" },
-  { key: "deepseek", providerId: "deepseek", defaultModel: "deepseek-chat", label: "DeepSeek" },
-  { key: "gemini", providerId: "gemini", defaultModel: "gemini-2.5-flash", label: "Gemini" },
-];
+/** 灵活的 Provider 配置——由 server 端根据用户实际配置解析 */
+export interface GoldenSetProviderConfig {
+  providerId: ProviderId;
+  model: string;
+  apiKey: string;
+  label: string;
+}
+
+/**
+ * 从 server DB 直接读取 provider keys，解析出可用于 Golden Set 生成的 LLM 配置。
+ * 无视 enabled 状态——只要有 key 就可用。
+ * 规则：
+ * - mimo → 直接使用（MiMo 自有端点）
+ * - gemini → 直接使用（Gemini 自有端点）
+ * - deepseek → 直接使用（DeepSeek 自有端点）
+ * - 否则 doubao → 使用火山托管的 DeepSeek 模型
+ */
+export function resolveGoldenSetProviders(): GoldenSetProviderConfig[] {
+  const db = getSyncDb();
+  const settingsRow = db.prepare(
+    "SELECT data FROM sync_data WHERE store_name = 'settings' AND record_id = 'app'"
+  ).get() as { data: string } | undefined;
+
+  if (!settingsRow) {
+    logger.warn("[GoldenSet] No settings found in DB");
+    return [];
+  }
+
+  let providers: Array<{ providerId: string; apiKeyRef?: string }>;
+  try {
+    const settings = JSON.parse(settingsRow.data) as Record<string, unknown>;
+    providers = (settings.providers ?? []) as Array<{ providerId: string; apiKeyRef?: string }>;
+  } catch {
+    logger.warn("[GoldenSet] Failed to parse settings JSON");
+    return [];
+  }
+
+  // 构建 providerId → apiKey 映射（无视 enabled，只要有 key）
+  const apiKeys: Record<string, string> = {};
+  for (const p of providers) {
+    if (p.apiKeyRef) apiKeys[p.providerId] = p.apiKeyRef;
+  }
+
+  const configs: GoldenSetProviderConfig[] = [];
+
+  if (apiKeys["mimo"]) {
+    configs.push({ providerId: "mimo", model: "mimo-v2.5-pro", apiKey: apiKeys["mimo"], label: "MiMo" });
+  }
+  if (apiKeys["gemini"]) {
+    configs.push({ providerId: "gemini", model: "gemini-3.5-flash", apiKey: apiKeys["gemini"], label: "Gemini" });
+  }
+  // DeepSeek 只从火山引擎 provider 取，不从 deepseek provider 取
+  if (apiKeys["doubao"]) {
+    configs.push({ providerId: "doubao", model: "deepseek-v4-pro-260425", apiKey: apiKeys["doubao"], label: "DeepSeek" });
+  }
+
+  return configs;
+}
+
 
 // ── Database Helpers ───────────────────────────────────
 
@@ -138,8 +203,11 @@ function insertGoldenQuestion(q: GoldenQuestion): void {
   const db = getSyncDb();
   db.prepare(`
     INSERT OR IGNORE INTO metrics_golden_set
-      (id, agent, query, expected_answer, expected_sources, expected_articles, category, difficulty, generated_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, agent, query, expected_answer, expected_sources, expected_articles,
+       category, difficulty, generated_by,
+       source_type, expected_source, source_routing_rationale,
+       must_include_facts, relevance_grading, verified_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     q.id,
     q.agent,
@@ -150,12 +218,24 @@ function insertGoldenQuestion(q: GoldenQuestion): void {
     q.category,
     q.difficulty,
     q.generatedBy,
+    q.sourceType,
+    q.expectedSource,
+    q.sourceRoutingRationale,
+    JSON.stringify(q.mustIncludeFacts),
+    JSON.stringify(q.relevanceGrading),
+    q.verifiedBy,
   );
 }
 
 function loadAllGoldenQuestions(): GoldenQuestion[] {
   const db = getSyncDb();
-  const rows = db.prepare("SELECT * FROM metrics_golden_set ORDER BY created_at").all() as Array<{
+  const rows = db.prepare(
+    `SELECT id, agent, query, expected_answer, expected_sources, expected_articles,
+            category, difficulty, generated_by,
+            source_type, expected_source, source_routing_rationale,
+            must_include_facts, relevance_grading, verified_by
+     FROM metrics_golden_set ORDER BY created_at`
+  ).all() as Array<{
     id: string;
     agent: string;
     query: string;
@@ -165,6 +245,12 @@ function loadAllGoldenQuestions(): GoldenQuestion[] {
     category: string;
     difficulty: string;
     generated_by: string;
+    source_type: string;
+    expected_source: string;
+    source_routing_rationale: string;
+    must_include_facts: string;
+    relevance_grading: string;
+    verified_by: string;
   }>;
 
   return rows.map((r) => ({
@@ -177,6 +263,13 @@ function loadAllGoldenQuestions(): GoldenQuestion[] {
     category: r.category,
     difficulty: r.difficulty as "easy" | "medium" | "hard",
     generatedBy: r.generated_by,
+    // ── nf5 新增 ──
+    sourceType: (r.source_type || "kb_only") as SourceType,
+    expectedSource: (r.expected_source || "kb") as ExpectedSource,
+    sourceRoutingRationale: r.source_routing_rationale || "",
+    mustIncludeFacts: safeParseJson(r.must_include_facts, []),
+    relevanceGrading: safeParseJson(r.relevance_grading, []),
+    verifiedBy: r.verified_by || "auto",
   }));
 }
 
@@ -191,10 +284,8 @@ function safeParseJson<T>(json: string, fallback: T): T {
  * Returns chunks with their source metadata for context.
  */
 function sampleChunks(count: number): Array<{ chunk: ChunkRow; source: SourceRow }> {
-  const db = getSyncDb();
-
-  // Get all sources with chunk counts
-  const sources = db.prepare("SELECT id, name, type FROM kb_sources").all() as SourceRow[];
+  // 使用 knowledgeDb 的导出函数（kb_sources/kb_chunks 在 knowledge.db，不在 patent-examiner.db）
+  const sources = getAllSources();
   if (sources.length === 0) {
     logger.warn("[GoldenSet] No sources found in knowledge base");
     return [];
@@ -204,12 +295,16 @@ function sampleChunks(count: number): Array<{ chunk: ChunkRow; source: SourceRow
   const chunksPerSource = Math.max(1, Math.ceil(count / sources.length));
 
   for (const source of sources) {
-    const chunks = db.prepare(
-      "SELECT id, source_id, text, metadata FROM kb_chunks WHERE source_id = ? AND length(text) > 100 ORDER BY RANDOM() LIMIT ?"
-    ).all(source.id, chunksPerSource) as ChunkRow[];
+    const rawChunks = getChunksBySourceId(source.id, chunksPerSource * 3); // 多取一些以便过滤
+    const chunks = rawChunks
+      .filter((c) => c.text.length > 100)
+      .slice(0, chunksPerSource);
 
     for (const chunk of chunks) {
-      results.push({ chunk, source });
+      results.push({
+        chunk: { id: chunk.id, source_id: source.id, text: chunk.text, metadata: chunk.metadata },
+        source: { id: source.id, name: source.name, type: source.type },
+      });
     }
   }
 
@@ -232,18 +327,37 @@ interface GeneratedQuestion {
   category: string;
   difficulty: "easy" | "medium" | "hard";
   expected_articles: string[];
+  // ── nf5 新增 ──
+  must_include_facts: string[];
+  source_routing_rationale: string;
 }
 
-function buildPrompt(text: string, fileName: string, section: string): string {
+/** 从 metadata 中提取 section 信息 */
+function extractSection(metadata: string): string {
+  try {
+    const meta = JSON.parse(metadata) as Record<string, unknown>;
+    return typeof meta.section === "string"
+      ? meta.section
+      : typeof meta.heading === "string"
+        ? meta.heading
+        : "";
+  } catch {
+    return "";
+  }
+}
+
+/** 单个问题的 prompt（用于串行回退）— nf5: 200-500 字参考答案 + mustIncludeFacts */
+function buildSinglePrompt(text: string, fileName: string, section: string): string {
   return `你是一个专利复审评估集生成器。给定以下法律/审查文本，请生成一个专利审查员在复审工作中可能会问的问题，使得这段文本是回答该问题的最佳来源。
 
 要求：
 1. 问题必须是审查员在实际复审工作中会遇到的真实问题
 2. 问题应该具体、明确，不要过于宽泛
-3. 预期回答应该基于给定文本，简洁准确（100-200字）
-4. 标注适用的法条
-5. 分类必须是以下之一：新颖性、创造性、权利要求、形式缺陷、程序
-6. 难度根据问题的专业程度判断
+3. 参考答案应完整准确（200-500字），引用具体法条
+4. 列出答案必须包含的 3-8 个关键事实点
+5. 标注适用的法条
+6. 分类必须是以下之一：新颖性、创造性、权利要求、形式缺陷、程序
+7. 难度根据问题的专业程度判断
 
 文本内容：
 ${text}
@@ -254,11 +368,58 @@ ${text}
 请严格输出以下 JSON 格式，不要输出其他内容：
 {
   "query": "审查员问题",
-  "expected_answer": "基于该文本的预期回答摘要（100-200字）",
+  "expected_answer": "完整参考答案（200-500字）",
   "category": "新颖性|创造性|权利要求|形式缺陷|程序",
   "difficulty": "easy|medium|hard",
-  "expected_articles": ["第X条", "第X条第X款"]
+  "expected_articles": ["第X条", "第X条第X款"],
+  "must_include_facts": ["事实1", "事实2", "事实3"],
+  "source_routing_rationale": "为什么这个问题的答案来自知识库"
 }`;
+}
+
+/** 批量问题的 prompt */
+function buildBatchPrompt(
+  samples: Array<{ chunk: ChunkRow; source: SourceRow }>,
+  count: number,
+): string {
+  const chunkTexts = samples.map((s, i) => {
+    const section = extractSection(s.chunk.metadata);
+    return `
+--- Chunk ${i + 1} ---
+文件：${s.source.name}
+章节：${section}
+${s.chunk.text}`;
+  }).join("\n");
+
+  return `你是一个专利复审评估集生成器。给定以下 ${count} 个法律/审查文本片段，
+请为每个片段生成一个专利审查员在复审工作中可能会问的问题。
+
+要求：
+1. 每个问题必须是审查员在实际复审工作中会遇到的真实问题
+2. 问题应该具体、明确，不要过于宽泛
+3. 参考答案应完整准确（200-500字），引用具体法条
+4. 列出答案必须包含的 3-8 个关键事实点
+5. 标注适用的法条
+6. 分类必须是以下之一：新颖性、创造性、权利要求、形式缺陷、程序
+7. 难度根据问题的专业程度判断
+8. 必须生成恰好 ${count} 个问题，顺序与提供的文本片段对应
+
+文本内容：
+${chunkTexts}
+
+请严格输出以下 JSON 数组格式，不要输出其他内容：
+[
+  {
+    "query": "审查员问题",
+    "expected_answer": "完整参考答案（200-500字）",
+    "category": "新颖性|创造性|权利要求|形式缺陷|程序",
+    "difficulty": "easy|medium|hard",
+    "expected_articles": ["第X条", "第X条第X款"],
+    "must_include_facts": ["事实1", "事实2", "事实3"],
+    "source_routing_rationale": "为什么这个问题的答案来自知识库"
+  },
+  // ... 共 ${count} 个对象
+]`;
 }
 
 async function callLLM(
@@ -278,6 +439,8 @@ async function callLLM(
         temperature: 0.7,
         maxTokens: 1024,
       },
+      undefined, // modelFallbacks
+      { [config.providerId]: false }, // 禁用 model fallback — 只用指定模型
     );
 
     const resp = result.response;
@@ -291,6 +454,52 @@ async function callLLM(
   } catch (err) {
     logger.warn(`[GoldenSet] LLM call failed for ${config.label}: ${err}`);
     return null;
+  }
+}
+
+/** 批量 LLM 调用——一次请求生成多个问题 */
+async function callLLMBatch(
+  config: LLMProviderConfig,
+  prompt: string,
+  expectedCount: number,
+): Promise<GeneratedQuestion[]> {
+  try {
+    const result = await registry.runWithFallback(
+      [config.providerId],
+      {
+        modelId: config.defaultModel,
+        messages: [
+          { role: "system", content: "你是专利复审评估集生成助手。严格输出 JSON 数组，不要输出 markdown 代码块或其他内容。" },
+          { role: "user", content: prompt },
+        ],
+        apiKey: config.apiKey,
+        temperature: 0.7,
+        maxTokens: 4096,  // 增加 token 限制以支持批量输出
+      },
+      undefined,
+      { [config.providerId]: false },
+    );
+
+    const resp = result.response;
+    if (resp.error) {
+      logger.warn(`[GoldenSet] Batch LLM error from ${config.label}: ${resp.error.message}`);
+      return [];
+    }
+
+    const text = resp.text.trim();
+    const questions = parseBatchQuestions(text);
+
+    // 验证数量：如果生成数量不足 50%，认为批量失败
+    if (questions.length < expectedCount * 0.5) {
+      logger.warn(`[GoldenSet] ${config.label}: Batch generated only ${questions.length}/${expectedCount} questions, insufficient`);
+      return [];
+    }
+
+    logger.info(`[GoldenSet] ${config.label}: Batch generated ${questions.length}/${expectedCount} questions`);
+    return questions;
+  } catch (err) {
+    logger.warn(`[GoldenSet] Batch LLM call failed for ${config.label}: ${err}`);
+    return [];
   }
 }
 
@@ -321,6 +530,40 @@ function parseGeneratedQuestion(text: string): GeneratedQuestion | null {
   return null;
 }
 
+/** 解析批量生成的 JSON 数组 */
+function parseBatchQuestions(text: string): GeneratedQuestion[] {
+  let cleaned = text;
+  cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+  cleaned = cleaned.trim();
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map(item => validateQuestion(item as Record<string, unknown>))
+        .filter((q): q is GeneratedQuestion => q !== null);
+    }
+  } catch {
+    // 尝试提取 JSON 数组
+    const match = cleaned.match(/\[[\s\S]*\]/);
+    if (match) {
+      try {
+        const parsed = JSON.parse(match[0]);
+        if (Array.isArray(parsed)) {
+          return parsed
+            .map(item => validateQuestion(item as Record<string, unknown>))
+            .filter((q): q is GeneratedQuestion => q !== null);
+        }
+      } catch {
+        // fall through
+      }
+    }
+  }
+
+  logger.warn(`[GoldenSet] Failed to parse batch LLM output as JSON array: ${text.slice(0, 200)}`);
+  return [];
+}
+
 function validateQuestion(parsed: Record<string, unknown>): GeneratedQuestion | null {
   const query = typeof parsed.query === "string" ? parsed.query : "";
   const expected_answer = typeof parsed.expected_answer === "string" ? parsed.expected_answer : "";
@@ -329,6 +572,12 @@ function validateQuestion(parsed: Record<string, unknown>): GeneratedQuestion | 
   const expected_articles = Array.isArray(parsed.expected_articles)
     ? (parsed.expected_articles as unknown[]).filter((a): a is string => typeof a === "string")
     : [];
+  // nf5 新增字段
+  const must_include_facts = Array.isArray(parsed.must_include_facts)
+    ? (parsed.must_include_facts as unknown[]).filter((f): f is string => typeof f === "string")
+    : [];
+  const source_routing_rationale = typeof parsed.source_routing_rationale === "string"
+    ? parsed.source_routing_rationale : "";
 
   if (!query || !expected_answer) {
     logger.warn("[GoldenSet] Parsed question missing required fields (query/expected_answer)");
@@ -349,6 +598,8 @@ function validateQuestion(parsed: Record<string, unknown>): GeneratedQuestion | 
     category: safeCategory,
     difficulty: safeDifficulty,
     expected_articles,
+    must_include_facts,
+    source_routing_rationale,
   };
 }
 
@@ -358,108 +609,140 @@ function findCategoryForAgent(category: string): QuestionCategory | undefined {
   return QUESTION_CATEGORIES.find((c) => c.category === category);
 }
 
-// ── Public API ─────────────────────────────────────────
+/** 串行生成回退函数——批量失败时使用 */
+async function generateSerial(
+  config: LLMProviderConfig,
+  samples: Array<{ chunk: ChunkRow; source: SourceRow }>,
+  targetCount: number,
+): Promise<GeneratedQuestion[]> {
+  const results: GeneratedQuestion[] = [];
 
-export interface ApiKeys {
-  mimo: string;
-  deepseek: string;
-  gemini: string;
+  for (const { chunk, source } of samples) {
+    if (results.length >= targetCount) break;
+
+    const section = extractSection(chunk.metadata);
+    const prompt = buildSinglePrompt(chunk.text, source.name, section);
+    const question = await callLLM(config, prompt);
+
+    if (question) {
+      results.push(question);
+    }
+  }
+
+  return results;
 }
+
+// ── Public API ─────────────────────────────────────────
 
 /**
  * Generate a golden evaluation set for patent re-examination RAG quality.
- * Generates 60 questions total: 3 LLMs x 20 questions each.
+ * Generates questions using 1-3 LLMs for diversity.
  * Uses different chunks for each LLM to maximize diversity.
  * Results are stored in metrics_golden_set table.
  *
- * @param apiKeys - API keys for the three LLM providers
+ * 优化版本：3 个 provider 并行执行，每个 provider 批量生成问题（1 次 LLM call）。
+ * 批量失败时自动回退到串行模式。
+ *
+ * @param providerConfigs - Provider 配置数组（由 resolveGoldenSetProviders() 生成）
  * @param questionsPerProvider - Number of questions per provider (default 20)
  * @returns The generated golden questions
  */
 export async function generateGoldenSet(
-  apiKeys: ApiKeys,
+  providerConfigs: GoldenSetProviderConfig[],
   questionsPerProvider = 20,
 ): Promise<GoldenQuestion[]> {
   createGoldenSetTable();
 
-  const totalQuestions = questionsPerProvider * PROVIDER_CONFIGS.length;
-  logger.info(`[GoldenSet] Generating ${totalQuestions} questions (${questionsPerProvider} per provider x ${PROVIDER_CONFIGS.length} providers)`);
-
-  // Sample enough chunks for all providers (each gets unique chunks)
-  const allSamples = sampleChunks(totalQuestions);
-  if (allSamples.length === 0) {
-    logger.warn("[GoldenSet] No chunks available in knowledge base, cannot generate golden set");
+  if (providerConfigs.length === 0) {
+    logger.warn("[GoldenSet] No provider configs provided, cannot generate golden set");
     return [];
   }
 
-  logger.info(`[GoldenSet] Sampled ${allSamples.length} chunks from knowledge base`);
+  const totalQuestions = questionsPerProvider * providerConfigs.length;
+  logger.info(`[GoldenSet] Generating ${totalQuestions} questions (${questionsPerProvider} per provider x ${providerConfigs.length} providers)`);
 
-  const results: GoldenQuestion[] = [];
-  let sampleIndex = 0;
+  // 为每个 provider 采样独立的 chunks（避免 chunk 共享导致的重复问题）
+  const providerSamples = providerConfigs.map(() => sampleChunks(questionsPerProvider));
 
-  for (const providerConfig of PROVIDER_CONFIGS) {
-    const apiKey = apiKeys[providerConfig.key];
-    if (!apiKey) {
-      logger.warn(`[GoldenSet] No API key provided for ${providerConfig.label}, skipping`);
-      sampleIndex += questionsPerProvider;
-      continue;
+  // 并行生成所有 provider 的问题
+  const providerPromises = providerConfigs.map(async (pc, providerIndex) => {
+    const samples = providerSamples[providerIndex]!;
+    if (samples.length === 0) {
+      logger.warn(`[GoldenSet] No chunks available for ${pc.label}`);
+      return [];
     }
 
     const llmConfig: LLMProviderConfig = {
-      providerId: providerConfig.providerId,
-      apiKey,
-      defaultModel: providerConfig.defaultModel,
-      label: providerConfig.label,
+      providerId: pc.providerId,
+      apiKey: pc.apiKey,
+      defaultModel: pc.model,
+      label: pc.label,
     };
 
-    let generated = 0;
-    let attempts = 0;
-    const maxAttempts = questionsPerProvider * 2; // allow some failures
-
-    while (generated < questionsPerProvider && attempts < maxAttempts && sampleIndex < allSamples.length) {
-      attempts++;
-      const { chunk, source } = allSamples[sampleIndex]!;
-
-      // Extract section info from metadata
-      let section = "";
-      try {
-        const meta = JSON.parse(chunk.metadata) as Record<string, unknown>;
-        section = typeof meta.section === "string" ? meta.section : typeof meta.heading === "string" ? meta.heading : "";
-      } catch {
-        section = "";
+    // 尝试批量生成，失败时逐级缩小 batch size
+    let questions: GeneratedQuestion[] = [];
+    const batchSizes = [samples.length, 10, 5]; // 20 → 10 → 5
+    for (const batchSize of batchSizes) {
+      if (batchSize > samples.length) continue;
+      const batchSamples = samples.slice(0, batchSize);
+      const batchPrompt = buildBatchPrompt(batchSamples, batchSamples.length);
+      questions = await callLLMBatch(llmConfig, batchPrompt, batchSamples.length);
+      if (questions.length > 0) {
+        logger.info(`[GoldenSet] ${pc.label}: Batch(${batchSize}) succeeded with ${questions.length} questions`);
+        break;
       }
-
-      const prompt = buildPrompt(chunk.text, source.name, section);
-      const generated_q = await callLLM(llmConfig, prompt);
-
-      sampleIndex++;
-
-      if (!generated_q) continue;
-
-      // Find the matching category to determine the agent
-      const categoryInfo = findCategoryForAgent(generated_q.category);
-      const agent = categoryInfo?.agent ?? "chat";
-
-      const goldenQuestion: GoldenQuestion = {
-        id: `gs-${randomUUID().slice(0, 8)}`,
-        agent,
-        query: generated_q.query,
-        expectedAnswer: generated_q.expected_answer,
-        expectedSources: [source.name],
-        expectedArticles: generated_q.expected_articles,
-        category: generated_q.category,
-        difficulty: generated_q.difficulty,
-        generatedBy: providerConfig.label,
-      };
-
-      insertGoldenQuestion(goldenQuestion);
-      results.push(goldenQuestion);
-      generated++;
-
-      logger.debug(`[GoldenSet] Generated Q${results.length}/${totalQuestions}: "${goldenQuestion.query.slice(0, 40)}..." (${providerConfig.label})`);
+      logger.info(`[GoldenSet] ${pc.label}: Batch(${batchSize}) failed, trying smaller batch`);
     }
 
-    logger.info(`[GoldenSet] ${providerConfig.label}: generated ${generated}/${questionsPerProvider} questions`);
+    // 所有 batch 都失败，回退到单题串行（最后手段）
+    if (questions.length === 0) {
+      logger.info(`[GoldenSet] ${pc.label}: All batches failed, falling back to serial generation`);
+      questions = await generateSerial(llmConfig, samples, questionsPerProvider);
+    }
+
+    // 构建 GoldenQuestion 对象并存储
+    const goldenQuestions: GoldenQuestion[] = [];
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i]!;
+      const sample = samples[i];
+      const categoryInfo = findCategoryForAgent(q.category);
+      const goldenQuestion: GoldenQuestion = {
+        id: `gs-${randomUUID().slice(0, 8)}`,
+        agent: categoryInfo?.agent ?? "chat",
+        query: q.query,
+        expectedAnswer: q.expected_answer,
+        expectedSources: [sample?.source.name ?? "unknown"],
+        expectedArticles: q.expected_articles,
+        category: q.category,
+        difficulty: q.difficulty,
+        generatedBy: pc.label,
+        // ── nf5: 默认 kb_only 类型 ──
+        sourceType: "kb_only",
+        expectedSource: "kb",
+        sourceRoutingRationale: q.source_routing_rationale || "答案来自知识库",
+        mustIncludeFacts: q.must_include_facts || [],
+        relevanceGrading: [],
+        verifiedBy: "auto",
+      };
+      insertGoldenQuestion(goldenQuestion);
+      goldenQuestions.push(goldenQuestion);
+    }
+
+    logger.info(`[GoldenSet] ${pc.label}: generated ${goldenQuestions.length}/${questionsPerProvider} questions`);
+    return goldenQuestions;
+  });
+
+  // 等待所有 provider 完成（允许部分失败）
+  const providerResults = await Promise.allSettled(providerPromises);
+
+  // 收集结果
+  const results: GoldenQuestion[] = [];
+  for (const result of providerResults) {
+    if (result.status === "fulfilled") {
+      results.push(...result.value);
+    } else {
+      logger.error(`[GoldenSet] Provider failed: ${result.reason}`);
+    }
   }
 
   logger.info(`[GoldenSet] Total generated: ${results.length}/${totalQuestions} questions`);
@@ -487,7 +770,13 @@ export async function clearGoldenSet(): Promise<void> {
 /**
  * Get golden set statistics.
  */
-export function getGoldenSetStats(): { total: number; byCategory: Record<string, number>; byDifficulty: Record<string, number>; byProvider: Record<string, number> } {
+export function getGoldenSetStats(): {
+  total: number;
+  byCategory: Record<string, number>;
+  byDifficulty: Record<string, number>;
+  byProvider: Record<string, number>;
+  bySourceType: Record<string, number>;
+} {
   const db = getSyncDb();
   createGoldenSetTable();
 
@@ -505,5 +794,10 @@ export function getGoldenSetStats(): { total: number; byCategory: Record<string,
   const byProvider: Record<string, number> = {};
   for (const r of providerRows) byProvider[r.generated_by] = r.c;
 
-  return { total, byCategory, byDifficulty, byProvider };
+  // nf5: 按 sourceType 统计
+  const sourceTypeRows = db.prepare("SELECT source_type, COUNT(*) as c FROM metrics_golden_set GROUP BY source_type").all() as Array<{ source_type: string; c: number }>;
+  const bySourceType: Record<string, number> = {};
+  for (const r of sourceTypeRows) bySourceType[r.source_type || "kb_only"] = r.c;
+
+  return { total, byCategory, byDifficulty, byProvider, bySourceType };
 }

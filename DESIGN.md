@@ -8,6 +8,7 @@
 
 | 版本 | 日期 | 变更摘要 | 影响范围 | 关联 commit |
 |------|------|---------|----------|-------------|
+| v0.1.0-r53 | 2026-06-11 | nf5: 离线评估指标计算 — 扩展 DB schema（golden_set 6 列 + golden_runs 9 列增量升级）、新增 multiJudge.ts（3-provider 并行打分 + majority vote/average 聚合）、evalMetrics.ts（10+ 指标：NDCG chunk 级、Recall、KB/Web Hit Rate、Faithfulness multi-judge、Answer Correctness、Fact Coverage、Article Accuracy、Source Routing/Attribution、Conflict Resolution、Refusal Accuracy）、evalRunner 集成新指标、goldenSetGenerator 支持 mustIncludeFacts/更长参考答案、metrics 路由新增报告详情端点、Dashboard 展示新指标列、44 个单元测试 | syncDb.ts, shared/src/types/metrics.ts, multiJudge.ts(新建), evalMetrics.ts(新建), evalRunner.ts, goldenSetGenerator.ts, metrics.ts, MetricsDashboard.tsx, evalMetrics.test.ts(新建), multiJudge.test.ts(新建) | — |
 | v0.1.0-r52 | 2026-06-10 | nf3: 聊天文件上传 — 新增 POST /api/chat/extract 端点（PDF/DOCX/TXT/HTML/图片提取），ChatPanel 添加 📎 附件按钮+chip 预览，ChatBubble 展示附件标签，ChatRequest/ChatMessage 新增 attachments 字段，orchestrator buildChatPrompt 注入附件内容到 prompt，图片附件支持 MultimodalPart 视觉模型 | shared/src/types/api.ts, shared/src/types/domain.ts, server/src/routes/chat-attachments.ts(新建), server/src/lib/orchestrator.ts, server/src/index.ts, client/src/features/chat/ChatPanel.tsx, client/src/features/chat/ChatBubble.tsx, client/src/styles/app.css | — |
 | v0.1.0-r51 | 2026-06-10 | 新增 §6.7 Metrics 体系设计（审查员质量徽章/成本显示/健康状态/反馈按钮 + 开发者 Dashboard + 离线评估 Golden Set 60 题）；docs/metrics-design.md 详细设计文档 | DESIGN.md §6.7, docs/metrics-design.md | — |
 | v0.1.0-r50 | 2026-06-10 | §6.6 文档重构：拆分为 §6.6.1 RAG 管线架构（5 阶段流程图 + Query Expansion/Hybrid Search/Reranker/MMR/Parent-Child 详细设计）、§6.6.2 Web Search MCP Server（NF1）、§6.6.3 Groundedness Detection（NF2）；PRD 同步更新 §12.4 + 术语表 | DESIGN.md §6.6, PRD.md §12.4/附录A | — |
@@ -1191,8 +1192,8 @@ flowchart TD
 
 | 层级 | 实现 | 说明 |
 |------|------|------|
-| 远程 Reranker API | POST `{baseUrl}/v1/rerank` | 用户配置的远程服务 |
-| Cross-Encoder | `Xenova/bge-reranker-base` | 本地模型，懒加载 + 预热 |
+| 远程 Reranker API | POST `{baseUrl}/v1/rerank` | 用户配置的远程服务（预设模型 BAAI/bge-reranker-v2-m3） |
+| Cross-Encoder（本地 fallback） | `Xenova/bge-reranker-base` | 本地轻量模型（~266MB），懒加载 + 预热；远程不可用时降级 |
 | 启发式加权 | 5 信号融合 | 语义 0.4 + 关键词 0.25 + 文档类型 0.15 + 法条引用 0.15 + 深度 0.05 |
 
 法律文本专用权重：法条引用提升到 0.3，语义降到 0.3。

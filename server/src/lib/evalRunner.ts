@@ -3,7 +3,9 @@
  *
  * Runs model configurations against the golden set to compare
  * retrieval quality (recall, MRR, NDCG) and generation quality
- * (faithfulness, groundedness).
+ * (faithfulness, groundedness, answer correctness, fact coverage).
+ *
+ * nf5: Extended with multi-judge metrics and chunk-level relevance grading.
  *
  * Follows CLAUDE.md key isolation: all API keys come from function
  * parameters, never from process.env or keyStore.
@@ -12,6 +14,21 @@ import { randomUUID } from "node:crypto";
 import { getSyncDb } from "./syncDb.js";
 import { logger } from "./logger.js";
 import type { AgentRunRequest, AgentRunResponse } from "./orchestrator.js";
+import type { RelevanceGrade, SourceType, ExpectedSource } from "../../../shared/src/types/metrics.js";
+import {
+  computeNDCGChunkLevel,
+  computeRecallChunkLevel,
+  computeKBHitRate,
+  computeWebHitRate,
+  computeFaithfulnessMultiJudge,
+  computeAnswerCorrectness,
+  computeFactCoverage,
+  computeArticleAccuracy,
+  computeSourceRoutingAccuracy,
+  computeSourceAttributionAccuracy,
+  computeConflictResolution,
+  computeRefusalAccuracy,
+} from "./evalMetrics.js";
 
 // ── Type definitions ──────────────────────────────────────
 
@@ -41,6 +58,17 @@ export interface EvalResult {
   actualAnswer: string;
   actualSources: string[];
   error?: string;
+
+  // ── nf5 新增指标 ──
+  answerCorrectness: number;
+  factCoverage: number;
+  articleAccuracy: number;
+  sourceRoutingAccuracy: number;
+  sourceAttributionAccuracy: number;
+  conflictResolution: number;
+  refusalAccuracy: number;
+  kbHitRate: number;
+  webHitRate: number;
 }
 
 export interface EvalReport {
@@ -60,6 +88,14 @@ export interface EvalConfigSummary {
   avgGroundedness: number;
   avgDurationMs: number;
   passRate: number;           // % with faithfulness > 0.7
+
+  // ── nf5 新增指标平均值 ──
+  avgAnswerCorrectness: number;
+  avgFactCoverage: number;
+  avgArticleAccuracy: number;
+  avgSourceRoutingAccuracy: number;
+  avgKbHitRate: number;
+  avgWebHitRate: number;
 }
 
 interface GoldenQuestion {
@@ -71,6 +107,14 @@ interface GoldenQuestion {
   expectedArticles: string[];
   category: string;
   difficulty: string;
+
+  // ── nf5 新增字段 ──
+  sourceType: SourceType;
+  expectedSource: ExpectedSource;
+  sourceRoutingRationale: string;
+  mustIncludeFacts: string[];
+  relevanceGrading: RelevanceGrade[];
+  verifiedBy: string;
 }
 
 // ── Golden set loading ────────────────────────────────────
@@ -81,7 +125,9 @@ interface GoldenQuestion {
 export function loadGoldenSet(): GoldenQuestion[] {
   const db = getSyncDb();
   const rows = db.prepare(
-    `SELECT id, agent, query, expected_answer, expected_sources, expected_articles, category, difficulty
+    `SELECT id, agent, query, expected_answer, expected_sources, expected_articles,
+            category, difficulty, source_type, expected_source, source_routing_rationale,
+            must_include_facts, relevance_grading, verified_by
      FROM metrics_golden_set
      ORDER BY category, id`
   ).all() as Array<{
@@ -93,6 +139,12 @@ export function loadGoldenSet(): GoldenQuestion[] {
     expected_articles: string;
     category: string;
     difficulty: string;
+    source_type: string;
+    expected_source: string;
+    source_routing_rationale: string;
+    must_include_facts: string;
+    relevance_grading: string;
+    verified_by: string;
   }>;
 
   return rows.map((r) => ({
@@ -104,6 +156,12 @@ export function loadGoldenSet(): GoldenQuestion[] {
     expectedArticles: parseJsonArray(r.expected_articles),
     category: r.category,
     difficulty: r.difficulty,
+    sourceType: (r.source_type || "kb_only") as SourceType,
+    expectedSource: (r.expected_source || "kb") as ExpectedSource,
+    sourceRoutingRationale: r.source_routing_rationale || "",
+    mustIncludeFacts: parseJsonArray(r.must_include_facts),
+    relevanceGrading: parseJsonSafe<RelevanceGrade[]>(r.relevance_grading, []),
+    verifiedBy: r.verified_by || "auto",
   }));
 }
 
@@ -377,23 +435,74 @@ async function runSingleEvaluation(
     const actualAnswer = extractAnswer(response);
     const actualSources = extractSources(response);
 
-    // Compute retrieval metrics
+    // Compute retrieval metrics (file-level, backward compatible)
     const recallAtK = computeRecallAtK(actualSources, question.expectedSources, 5);
     const mrr = computeMRR(actualSources, question.expectedSources);
     const ndcgAtK = computeNDCG(actualSources, question.expectedSources, [], 5);
 
-    // Compute faithfulness via LLM-as-judge
-    const context = actualSources.join("\n");
-    const faithfulness = await checkFaithfulness(
-      actualAnswer,
-      context,
-      opts.judgeApiKey,
-      [config.providerId],
-      config.modelId
-    );
+    // ── nf5: 构建 judge API keys 映射 ──
+    const judgeApiKeys: Record<string, string> = {};
+    if (opts.judgeApiKey) {
+      // 使用提供的 key 作为所有 judge 的 fallback
+      for (const pid of ["mimo", "deepseek", "gemini"]) {
+        judgeApiKeys[pid] = opts.judgeApiKey;
+      }
+    }
 
-    // Use groundedness from the orchestrator response if available
-    const groundedness = faithfulness; // ground truth is same as faithfulness for eval
+    // ── nf5: 多 Judge 生成质量指标 ──
+    const context = actualSources.join("\n");
+
+    // Faithfulness（multi-judge, reference-free）
+    const faithfulnessResult = await computeFaithfulnessMultiJudge(
+      actualAnswer, context, judgeApiKeys
+    );
+    const faithfulness = faithfulnessResult.aggregated;
+    const groundedness = faithfulness;
+
+    // Answer Correctness（multi-judge, 需要参考答案）
+    let answerCorrectness = 0;
+    if (question.expectedAnswer) {
+      const acResult = await computeAnswerCorrectness(
+        actualAnswer, question.expectedAnswer, judgeApiKeys
+      );
+      answerCorrectness = acResult.aggregated;
+    }
+
+    // Fact Coverage（multi-judge, 需要 mustIncludeFacts）
+    let factCoverage = 0;
+    if (question.mustIncludeFacts.length > 0) {
+      const fcResult = await computeFactCoverage(
+        actualAnswer, question.mustIncludeFacts, judgeApiKeys
+      );
+      factCoverage = fcResult.aggregated;
+    }
+
+    // ── nf5: 确定性指标 ──
+    const articleAccuracy = computeArticleAccuracy(actualAnswer, question.expectedArticles);
+
+    const actualSourceFlags = {
+      kb: response.knowledgeCitations ? response.knowledgeCitations.length > 0 : false,
+      web: response.webSearchCitations ? response.webSearchCitations.length > 0 : false,
+    };
+    const sourceRoutingAccuracy = computeSourceRoutingAccuracy(
+      question.expectedSource, actualSourceFlags
+    );
+    const sourceAttributionAccuracy = computeSourceAttributionAccuracy(
+      actualSources, actualSources // 引用的来源 = 实际使用的来源
+    );
+    const conflictResolution = computeConflictResolution(
+      question.sourceType, question.expectedSource,
+      actualSourceFlags.kb && actualSourceFlags.web ? "mixed" :
+        actualSourceFlags.kb ? "kb" : "web"
+    );
+    const refusalAccuracy = computeRefusalAccuracy(question.sourceType, actualAnswer);
+
+    // ── nf5: chunk 级检索指标 ──
+    const retrievedChunks = extractRetrievedChunks(response);
+    const kbHitRate = question.relevanceGrading.length > 0
+      ? computeKBHitRate(retrievedChunks, question.relevanceGrading, 10) : recallAtK;
+    const webHitRate = question.relevanceGrading.length > 0
+      ? computeWebHitRate(retrievedChunks, question.relevanceGrading, 10) : recallAtK;
 
     const result: EvalResult = {
       goldenId: question.id,
@@ -406,6 +515,17 @@ async function runSingleEvaluation(
       groundedness,
       durationMs,
       actualAnswer: actualAnswer.slice(0, 2000),
+      actualSources,
+      // ── nf5 新增指标 ──
+      answerCorrectness,
+      factCoverage,
+      articleAccuracy,
+      sourceRoutingAccuracy,
+      sourceAttributionAccuracy,
+      conflictResolution,
+      refusalAccuracy,
+      kbHitRate,
+      webHitRate,
       actualSources,
     };
 
@@ -449,6 +569,13 @@ function buildReport(
       passRate: configResults.length > 0
         ? configResults.filter((r) => r.faithfulness > 0.7).length / configResults.length
         : 0,
+      // ── nf5 新增指标平均值 ──
+      avgAnswerCorrectness: avg(successResults.map((r) => r.answerCorrectness)),
+      avgFactCoverage: avg(successResults.map((r) => r.factCoverage)),
+      avgArticleAccuracy: avg(successResults.map((r) => r.articleAccuracy)),
+      avgSourceRoutingAccuracy: avg(successResults.map((r) => r.sourceRoutingAccuracy)),
+      avgKbHitRate: avg(successResults.map((r) => r.kbHitRate)),
+      avgWebHitRate: avg(successResults.map((r) => r.webHitRate)),
     };
   });
 
@@ -469,8 +596,11 @@ function buildReport(
 export function saveReport(report: EvalReport): void {
   const db = getSyncDb();
   const stmt = db.prepare(`
-    INSERT INTO metrics_golden_runs (id, golden_id, run_id, timestamp, config_json, recall_at_k, mrr, ndcg_at_k, faithfulness, groundedness, actual_answer, actual_sources)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO metrics_golden_runs (id, golden_id, run_id, timestamp, config_json,
+      recall_at_k, mrr, ndcg_at_k, faithfulness, groundedness, actual_answer, actual_sources,
+      answer_correctness, fact_coverage, article_accuracy, source_routing_accuracy,
+      source_attribution_accuracy, conflict_resolution, refusal_accuracy, kb_hit_rate, web_hit_rate)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insert = db.transaction(() => {
@@ -491,7 +621,16 @@ export function saveReport(report: EvalReport): void {
         r.faithfulness,
         r.groundedness,
         r.actualAnswer,
-        JSON.stringify(r.actualSources)
+        JSON.stringify(r.actualSources),
+        r.answerCorrectness,
+        r.factCoverage,
+        r.articleAccuracy,
+        r.sourceRoutingAccuracy,
+        r.sourceAttributionAccuracy,
+        r.conflictResolution,
+        r.refusalAccuracy,
+        r.kbHitRate,
+        r.webHitRate
       );
     }
   });
@@ -507,8 +646,11 @@ function saveSingleResult(result: EvalResult, runId: string, config: EvalConfig)
   try {
     const db = getSyncDb();
     db.prepare(`
-      INSERT INTO metrics_golden_runs (id, golden_id, run_id, timestamp, config_json, recall_at_k, mrr, ndcg_at_k, faithfulness, groundedness, actual_answer, actual_sources)
-      VALUES (?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO metrics_golden_runs (id, golden_id, run_id, timestamp, config_json,
+        recall_at_k, mrr, ndcg_at_k, faithfulness, groundedness, actual_answer, actual_sources,
+        answer_correctness, fact_coverage, article_accuracy, source_routing_accuracy,
+        source_attribution_accuracy, conflict_resolution, refusal_accuracy, kb_hit_rate, web_hit_rate)
+      VALUES (?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       randomUUID(),
       result.goldenId,
@@ -524,7 +666,16 @@ function saveSingleResult(result: EvalResult, runId: string, config: EvalConfig)
       result.faithfulness,
       result.groundedness,
       result.actualAnswer,
-      JSON.stringify(result.actualSources)
+      JSON.stringify(result.actualSources),
+      result.answerCorrectness,
+      result.factCoverage,
+      result.articleAccuracy,
+      result.sourceRoutingAccuracy,
+      result.sourceAttributionAccuracy,
+      result.conflictResolution,
+      result.refusalAccuracy,
+      result.kbHitRate,
+      result.webHitRate
     );
   } catch (err) {
     logger.warn(`[EvalRunner] Failed to save single result: ${err}`);
@@ -543,7 +694,10 @@ export function getReports(): EvalReport[] {
   const reports: EvalReport[] = [];
   for (const row of rows) {
     const resultRows = db.prepare(
-      `SELECT golden_id, config_json, recall_at_k, mrr, ndcg_at_k, faithfulness, groundedness, actual_answer, actual_sources
+      `SELECT golden_id, config_json, recall_at_k, mrr, ndcg_at_k, faithfulness, groundedness,
+              actual_answer, actual_sources,
+              answer_correctness, fact_coverage, article_accuracy, source_routing_accuracy,
+              source_attribution_accuracy, conflict_resolution, refusal_accuracy, kb_hit_rate, web_hit_rate
        FROM metrics_golden_runs WHERE run_id = ? ORDER BY golden_id`
     ).all(row.run_id) as Array<{
       golden_id: string;
@@ -555,6 +709,15 @@ export function getReports(): EvalReport[] {
       groundedness: number;
       actual_answer: string;
       actual_sources: string;
+      answer_correctness: number;
+      fact_coverage: number;
+      article_accuracy: number;
+      source_routing_accuracy: number;
+      source_attribution_accuracy: number;
+      conflict_resolution: number;
+      refusal_accuracy: number;
+      kb_hit_rate: number;
+      web_hit_rate: number;
     }>;
 
     const results: EvalResult[] = resultRows.map((r) => {
@@ -571,6 +734,16 @@ export function getReports(): EvalReport[] {
         durationMs: configMeta.durationMs ?? 0,
         actualAnswer: r.actual_answer,
         actualSources: parseJsonArray(r.actual_sources),
+        // ── nf5 新增指标 ──
+        answerCorrectness: r.answer_correctness ?? 0,
+        factCoverage: r.fact_coverage ?? 0,
+        articleAccuracy: r.article_accuracy ?? 0,
+        sourceRoutingAccuracy: r.source_routing_accuracy ?? 0,
+        sourceAttributionAccuracy: r.source_attribution_accuracy ?? 0,
+        conflictResolution: r.conflict_resolution ?? 0,
+        refusalAccuracy: r.refusal_accuracy ?? 0,
+        kbHitRate: r.kb_hit_rate ?? 0,
+        webHitRate: r.web_hit_rate ?? 0,
       };
       if (configMeta.error !== undefined) result.error = configMeta.error;
       return result;
@@ -592,6 +765,13 @@ export function getReports(): EvalReport[] {
         passRate: configResults.length > 0
           ? configResults.filter((r) => r.faithfulness > 0.7).length / configResults.length
           : 0,
+        // ── nf5 新增指标平均值 ──
+        avgAnswerCorrectness: avg(successResults.map((r) => r.answerCorrectness)),
+        avgFactCoverage: avg(successResults.map((r) => r.factCoverage)),
+        avgArticleAccuracy: avg(successResults.map((r) => r.articleAccuracy)),
+        avgSourceRoutingAccuracy: avg(successResults.map((r) => r.sourceRoutingAccuracy)),
+        avgKbHitRate: avg(successResults.map((r) => r.kbHitRate)),
+        avgWebHitRate: avg(successResults.map((r) => r.webHitRate)),
       };
     });
 
@@ -736,7 +916,47 @@ function buildErrorResult(
     actualAnswer: "",
     actualSources: [],
     error: error ?? "unknown error",
+    // ── nf5 新增指标（错误时全部为 0） ──
+    answerCorrectness: 0,
+    factCoverage: 0,
+    articleAccuracy: 0,
+    sourceRoutingAccuracy: 0,
+    sourceAttributionAccuracy: 0,
+    conflictResolution: 0,
+    refusalAccuracy: 0,
+    kbHitRate: 0,
+    webHitRate: 0,
   };
+}
+
+/**
+ * 从 agent response 中提取检索到的 chunk 信息
+ * 用于 chunk 级 NDCG/Recall 计算
+ */
+function extractRetrievedChunks(
+  response: AgentRunResponse
+): Array<{ id: string }> {
+  const chunks: Array<{ id: string }> = [];
+
+  if (response.knowledgeCitations) {
+    for (const c of response.knowledgeCitations) {
+      chunks.push({ id: c.sourceId || c.source || "" });
+    }
+  }
+
+  if (response.webSearchCitations) {
+    for (const c of response.webSearchCitations) {
+      chunks.push({ id: c.url || c.title || "" });
+    }
+  }
+
+  if (response.mergedCitations) {
+    for (const c of response.mergedCitations) {
+      chunks.push({ id: c.url || c.title || "" });
+    }
+  }
+
+  return chunks.filter((c) => c.id);
 }
 
 // ── Source matching ───────────────────────────────────────

@@ -118,8 +118,68 @@ export function getSyncDb(): Database.Database {
     );
   `);
 
+  // ── 增量 schema 升级：为已有表添加新列 ──
+  upgradeGoldenSetSchema(db);
+  upgradeGoldenRunsSchema(db);
+
   logger.info(`Sync database initialized at ${DB_PATH}`);
   return db;
+}
+
+/**
+ * 增量升级 metrics_golden_set 表 — 添加 nf5 新列
+ * 使用 ALTER TABLE ADD COLUMN（SQLite 安全增量操作）
+ */
+function upgradeGoldenSetSchema(db: Database.Database): void {
+  const existingCols = new Set(
+    (db.prepare("PRAGMA table_info('metrics_golden_set')").all() as Array<{ name: string }>)
+      .map((c) => c.name)
+  );
+
+  const columnsToAdd: Array<{ name: string; def: string }> = [
+    { name: "source_type",             def: "TEXT DEFAULT 'kb_only'" },
+    { name: "expected_source",         def: "TEXT DEFAULT 'kb'" },
+    { name: "source_routing_rationale", def: "TEXT DEFAULT ''" },
+    { name: "must_include_facts",      def: "TEXT DEFAULT '[]'" },
+    { name: "relevance_grading",       def: "TEXT DEFAULT '[]'" },
+    { name: "verified_by",             def: "TEXT DEFAULT 'auto'" },
+  ];
+
+  for (const col of columnsToAdd) {
+    if (!existingCols.has(col.name)) {
+      db.exec(`ALTER TABLE metrics_golden_set ADD COLUMN ${col.name} ${col.def}`);
+      logger.info(`[SyncDb] Added column metrics_golden_set.${col.name}`);
+    }
+  }
+}
+
+/**
+ * 增量升级 metrics_golden_runs 表 — 添加 nf5 新指标列
+ */
+function upgradeGoldenRunsSchema(db: Database.Database): void {
+  const existingCols = new Set(
+    (db.prepare("PRAGMA table_info('metrics_golden_runs')").all() as Array<{ name: string }>)
+      .map((c) => c.name)
+  );
+
+  const columnsToAdd: Array<{ name: string; def: string }> = [
+    { name: "answer_correctness",           def: "REAL DEFAULT 0" },
+    { name: "fact_coverage",                def: "REAL DEFAULT 0" },
+    { name: "article_accuracy",             def: "REAL DEFAULT 0" },
+    { name: "source_routing_accuracy",      def: "REAL DEFAULT 0" },
+    { name: "source_attribution_accuracy",  def: "REAL DEFAULT 0" },
+    { name: "conflict_resolution",          def: "REAL DEFAULT 0" },
+    { name: "refusal_accuracy",             def: "REAL DEFAULT 0" },
+    { name: "kb_hit_rate",                  def: "REAL DEFAULT 0" },
+    { name: "web_hit_rate",                 def: "REAL DEFAULT 0" },
+  ];
+
+  for (const col of columnsToAdd) {
+    if (!existingCols.has(col.name)) {
+      db.exec(`ALTER TABLE metrics_golden_runs ADD COLUMN ${col.name} ${col.def}`);
+      logger.info(`[SyncDb] Added column metrics_golden_runs.${col.name}`);
+    }
+  }
 }
 
 /**

@@ -128,6 +128,24 @@ export interface LatencyPercentiles {
 
 // ── Golden Evaluation Set ──────────────────────────────
 
+/** 题目来源类型（nf5 spec §2.3） */
+export type SourceType = "kb_only" | "web_only" | "cross_source" | "conflict" | "no_answer";
+
+/** 预期答案来源 */
+export type ExpectedSource = "kb" | "web" | "kb+web" | "any";
+
+/** 验证方式 */
+export type VerificationMethod = "human" | "llm-judge" | "auto";
+
+/** Chunk 级 relevance grading（nf5 spec §2.2，TREC/NIST 0-3 标准） */
+export interface RelevanceGrade {
+  source: "kb" | "web";
+  docId: string;
+  chunkId?: string;
+  grade: 0 | 1 | 2 | 3;      // 0=不相关, 1=边际, 2=部分, 3=高度相关
+  rationale: string;
+}
+
 export interface GoldenQuestion {
   id: string;
   createdAt: string;
@@ -139,6 +157,14 @@ export interface GoldenQuestion {
   category: string;
   difficulty: 'easy' | 'medium' | 'hard';
   generatedBy: string;
+
+  // ── nf5 新增字段 ──
+  sourceType: SourceType;
+  expectedSource: ExpectedSource;
+  sourceRoutingRationale: string;
+  mustIncludeFacts: string[];
+  relevanceGrading: RelevanceGrade[];
+  verifiedBy: VerificationMethod;
 }
 
 export interface GoldenRunResult {
@@ -154,6 +180,17 @@ export interface GoldenRunResult {
   groundedness: number;
   actualAnswer: string;
   actualSources: string[];
+
+  // ── nf5 新增指标 ──
+  answerCorrectness: number;          // multi-judge, 0-1
+  factCoverage: number;               // multi-judge, 0-1
+  articleAccuracy: number;            // deterministic, 0-1
+  sourceRoutingAccuracy: number;      // deterministic, 0-1
+  sourceAttributionAccuracy: number;  // deterministic, 0-1
+  conflictResolution: number;         // deterministic, 0-1
+  refusalAccuracy: number;            // deterministic, 0-1
+  kbHitRate: number;                  // KB 专属题的 recall
+  webHitRate: number;                 // Web 专属题的 recall
 }
 
 export interface EvalReport {
@@ -172,6 +209,14 @@ export interface EvalConfigSummary {
   avgGroundedness: number;
   avgDurationMs: number;
   passRate: number;
+
+  // ── nf5 新增指标平均值 ──
+  avgAnswerCorrectness: number;
+  avgFactCoverage: number;
+  avgArticleAccuracy: number;
+  avgSourceRoutingAccuracy: number;
+  avgKbHitRate: number;
+  avgWebHitRate: number;
 }
 
 export interface EvalQuestionRow {

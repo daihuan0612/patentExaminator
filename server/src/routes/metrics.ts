@@ -461,16 +461,25 @@ metricsRouter.get("/metrics/agents", (_req, res) => {
 });
 
 // POST /api/metrics/golden-set/generate
-// Generate golden evaluation set using 3 free LLMs
-// Body: { apiKeys: { mimo: string, deepseek: string, gemini: string } }
+// Generate golden evaluation set
+// Body (optional): { providerConfigs: Array<{ providerId, model, apiKey, label }> }
+// 无 body 时从 DB 读取用户已配置的 provider keys
 metricsRouter.post("/metrics/golden-set/generate", async (req, res) => {
   try {
-    const { apiKeys } = req.body as { apiKeys?: Record<string, string> };
-    if (!apiKeys?.mimo || !apiKeys?.deepseek || !apiKeys?.gemini) {
-      return res.status(400).json({ error: "需要提供 mimo、deepseek、gemini 三个 API key" });
+    const { generateGoldenSet, resolveGoldenSetProviders } = await import("../lib/goldenSetGenerator.js");
+
+    const body = req.body as {
+      providerConfigs?: Array<{ providerId: string; model: string; apiKey: string; label: string }>;
+      questionsPerProvider?: number;
+    };
+    const providerConfigs = (body.providerConfigs && body.providerConfigs.length > 0)
+      ? body.providerConfigs
+      : resolveGoldenSetProviders();
+
+    if (providerConfigs.length === 0) {
+      return res.status(400).json({ error: "未找到可用于 Golden Set 生成的 Provider（需要 MiMo / DeepSeek / Gemini 之一）" });
     }
-    const { generateGoldenSet } = await import("../lib/goldenSetGenerator.js");
-    const questions = await generateGoldenSet(apiKeys);
+    const questions = await generateGoldenSet(providerConfigs, body.questionsPerProvider);
     writeAudit({ op: "CREATE", store: "metrics_golden_set", caller: "user", dataAfter: { count: questions.length } });
     res.json({ count: questions.length, questions });
   } catch (err) {
@@ -548,6 +557,22 @@ metricsRouter.get("/metrics/eval/reports", async (_req, res) => {
       ORDER BY timestamp DESC LIMIT 20
     `).all() as ReportRow[];
     res.json(rows || []);
+  } catch (err) {
+    res.status(500).json({ error: errMsg(err) });
+  }
+});
+
+// GET /api/metrics/eval/reports/:id
+// Get full detail of a single evaluation report (nf5)
+metricsRouter.get("/metrics/eval/reports/:id", async (req, res) => {
+  try {
+    const { getReports } = await import("../lib/evalRunner.js");
+    const reports = getReports();
+    const report = reports.find((r) => r.id === req.params.id);
+    if (!report) {
+      return res.status(404).json({ error: "报告未找到" });
+    }
+    res.json(report);
   } catch (err) {
     res.status(500).json({ error: errMsg(err) });
   }

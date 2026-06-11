@@ -30,24 +30,6 @@ interface SummaryRow {
   avg_tool_rounds: number;
 }
 
-interface TrendResponse {
-  metric: string;
-  granularity: string;
-  data: Array<{ bucket: string; avg_value: number; sample_count: number }>;
-}
-
-interface LatencyResponse {
-  duration: { p50: number; p75: number; p90: number; p95: number; p99: number; count: number };
-  ttft: { p50: number; p75: number; p90: number; p95: number; p99: number; count: number };
-}
-
-interface LatencyBreakdown {
-  llmWaitMs: number;
-  groundednessMs: number;
-  otherMs: number;
-  count: number;
-}
-
 interface AgentRow {
   agent: string;
   count: number;
@@ -71,6 +53,13 @@ interface EvalConfigSummary {
   avgGroundedness: number;
   avgDurationMs: number;
   passRate: number;
+  // nf5 新增
+  avgAnswerCorrectness: number;
+  avgFactCoverage: number;
+  avgArticleAccuracy: number;
+  avgSourceRoutingAccuracy: number;
+  avgKbHitRate: number;
+  avgWebHitRate: number;
 }
 
 interface EvalResult {
@@ -124,9 +113,6 @@ interface DimResponse {
 
 export function MetricsDashboard() {
   const [summary, setSummary] = useState<SummaryRow[]>([]);
-  const [trends, setTrends] = useState<TrendResponse | null>(null);
-  const [latency, setLatency] = useState<LatencyResponse | null>(null);
-  const [latencyBreakdown, setLatencyBreakdown] = useState<LatencyBreakdown | null>(null);
   const [byDimension, setByDimension] = useState<Record<string, DimRow[]>>({});
   const [agents, setAgents] = useState<AgentRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -160,18 +146,12 @@ export function MetricsDashboard() {
       const qs = params.toString();
       const suffix = qs ? `?${qs}` : "";
 
-      const [sumRes, trendRes, latRes, latBreakRes, agentRes] = await Promise.all([
+      const [sumRes, agentRes] = await Promise.all([
         fetch(`/api/metrics/summary${suffix}`),
-        fetch(`/api/metrics/trends?metric=groundedness${selectedAgent ? `&agent=${selectedAgent}` : ""}`),
-        fetch(`/api/metrics/latency${selectedAgent ? `?agent=${selectedAgent}` : ""}`),
-        fetch(`/api/metrics/latency-breakdown${selectedAgent ? `?agent=${selectedAgent}` : ""}`),
         fetch("/api/metrics/agents"),
       ]);
 
       if (sumRes.ok) setSummary(await sumRes.json());
-      if (trendRes.ok) setTrends(await trendRes.json());
-      if (latRes.ok) setLatency(await latRes.json());
-      if (latBreakRes.ok) setLatencyBreakdown(await latBreakRes.json());
       if (agentRes.ok) setAgents(await agentRes.json());
 
       // Fetch per-dimension summaries
@@ -280,27 +260,11 @@ export function MetricsDashboard() {
   // ── Offline eval handlers ──────────────────────────────
 
   const handleGenerateGoldenSet = async () => {
-    // Need 3 keys: mimo, deepseek, gemini
-    const apiKeys: Record<string, string> = {};
-    for (const [pid, key] of Object.entries(providerKeys)) {
-      const lower = pid.toLowerCase();
-      if (lower.includes("mimo") || lower.includes("mimo")) apiKeys.mimo = key;
-      if (lower.includes("deepseek")) apiKeys.deepseek = key;
-      if (lower.includes("gemini")) apiKeys.gemini = key;
-    }
-    if (!apiKeys.mimo || !apiKeys.deepseek || !apiKeys.gemini) {
-      setEvalError("需要配置 MiMo、DeepSeek、Gemini 三个 Provider 的 API Key");
-      return;
-    }
     setEvalLoading(true);
     setEvalError(null);
     setEvalSuccess(null);
     try {
-      const res = await fetch("/api/metrics/golden-set/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKeys }),
-      });
+      const res = await fetch("/api/metrics/golden-set/generate", { method: "POST" });
       if (!res.ok) {
         const data = await res.json() as { error?: string };
         throw new Error(data.error || "生成失败");
@@ -380,16 +344,13 @@ export function MetricsDashboard() {
   };
 
   const handleViewReport = async (reportId: string) => {
-    // Load full report from golden runs
+    // Load full report detail via dedicated endpoint (nf5)
     try {
-      const res = await fetch(`/api/metrics/eval/reports`);
+      const res = await fetch(`/api/metrics/eval/reports/${reportId}`);
       if (res.ok) {
-        const reports = await res.json() as ReportListItem[];
-        const found = reports.find((r) => r.id === reportId);
-        if (found) {
-          // Parse config_json for now — full report detail would need a dedicated endpoint
-          setEvalSuccess(`报告 ${reportId.slice(0, 8)}... 加载于 ${new Date(found.timestamp).toLocaleString()}`);
-        }
+        const report = await res.json() as EvalReport;
+        setSelectedReport(report);
+        setEvalSuccess(`报告 ${reportId.slice(0, 8)}... 加载于 ${new Date(report.timestamp).toLocaleString()}`);
       }
     } catch { /* ignore */ }
   };
@@ -553,97 +514,6 @@ export function MetricsDashboard() {
         );
       })}
 
-      {/* Latency */}
-      {latency && (
-        <div className="metrics-section">
-          <h3>延迟分布</h3>
-          <div className="latency-grid">
-            <div className="latency-card">
-              <div className="latency-card__title">总延迟</div>
-              <div className="latency-card__rows">
-                <div className="latency-card__row">
-                  <span className="latency-card__label">p50</span>
-                  <span className="latency-card__value">{(latency.duration.p50 / 1000).toFixed(1)}s</span>
-                </div>
-                <div className="latency-card__row">
-                  <span className="latency-card__label">p90</span>
-                  <span className="latency-card__value">{(latency.duration.p90 / 1000).toFixed(1)}s</span>
-                </div>
-                <div className="latency-card__row">
-                  <span className="latency-card__label">p99</span>
-                  <span className="latency-card__value">{(latency.duration.p99 / 1000).toFixed(1)}s</span>
-                </div>
-              </div>
-              <div className="latency-card__count">{latency.duration.count} 次</div>
-            </div>
-            {latency.ttft.count > 0 && (
-              <div className="latency-card">
-                <div className="latency-card__title">TTFT</div>
-                <div className="latency-card__rows">
-                  <div className="latency-card__row">
-                    <span className="latency-card__label">p50</span>
-                    <span className="latency-card__value">{latency.ttft.p50}ms</span>
-                  </div>
-                  <div className="latency-card__row">
-                    <span className="latency-card__label">p90</span>
-                    <span className="latency-card__value">{latency.ttft.p90}ms</span>
-                  </div>
-                  <div className="latency-card__row">
-                    <span className="latency-card__label">p99</span>
-                    <span className="latency-card__value">{latency.ttft.p99}ms</span>
-                  </div>
-                </div>
-                <div className="latency-card__count">{latency.ttft.count} 次</div>
-              </div>
-            )}
-          </div>
-          {/* Latency Breakdown */}
-          {latencyBreakdown && latencyBreakdown.count > 0 && (
-            <div className="latency-breakdown" data-testid="latency-breakdown">
-              <div className="latency-breakdown__bar">
-                <div
-                  className="latency-breakdown__seg latency-breakdown__seg--llm"
-                  style={{ flex: latencyBreakdown.llmWaitMs }}
-                  title={`LLM 等待: ${latencyBreakdown.llmWaitMs}ms`}
-                />
-                <div
-                  className="latency-breakdown__seg latency-breakdown__seg--gnd"
-                  style={{ flex: latencyBreakdown.groundednessMs }}
-                  title={`Groundedness: ${latencyBreakdown.groundednessMs}ms`}
-                />
-                <div
-                  className="latency-breakdown__seg latency-breakdown__seg--other"
-                  style={{ flex: latencyBreakdown.otherMs || 1 }}
-                  title={`其他: ${latencyBreakdown.otherMs}ms`}
-                />
-              </div>
-              <div className="latency-breakdown__labels">
-                <span className="latency-breakdown__label">
-                  <span className="latency-breakdown__dot latency-breakdown__dot--llm" />
-                  LLM 等待 {(latencyBreakdown.llmWaitMs / 1000).toFixed(1)}s
-                </span>
-                <span className="latency-breakdown__label">
-                  <span className="latency-breakdown__dot latency-breakdown__dot--gnd" />
-                  Groundedness {(latencyBreakdown.groundednessMs / 1000).toFixed(1)}s
-                </span>
-                <span className="latency-breakdown__label">
-                  <span className="latency-breakdown__dot latency-breakdown__dot--other" />
-                  其他 {(latencyBreakdown.otherMs / 1000).toFixed(1)}s
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Groundedness Trend */}
-      {trends && trends.data.length > 1 && (
-        <div className="metrics-section">
-          <h3>Groundedness 趋势</h3>
-          <TrendLine data={trends.data} />
-        </div>
-      )}
-
       {/* Offline Evaluation */}
       <div className="metrics-section">
         <h3
@@ -651,7 +521,7 @@ export function MetricsDashboard() {
           onClick={() => setShowOfflineEval(!showOfflineEval)}
           data-testid="offline-eval-toggle"
         >
-          离线评估 {showOfflineEval ? "▼" : "▶"}
+          离线评估 <span className="metrics-section__toggle__arrow">{showOfflineEval ? "▼" : "▶"}</span>
         </h3>
         {showOfflineEval && (
           <div className="offline-eval" data-testid="offline-eval">
@@ -677,7 +547,7 @@ export function MetricsDashboard() {
                 <div>
                   <p className="metrics-hint">尚未生成 Golden Set</p>
                   <button type="button" onClick={handleGenerateGoldenSet} disabled={evalLoading} data-testid="golden-generate">
-                    {evalLoading ? "生成中..." : "生成 Golden Set（需 MiMo + DeepSeek + Gemini Key）"}
+                    {evalLoading ? "生成中..." : "生成 Golden Set"}
                   </button>
                 </div>
               )}
@@ -724,11 +594,14 @@ export function MetricsDashboard() {
                       <tr>
                         <th>配置</th>
                         <th>Recall@K</th>
-                        <th>MRR</th>
                         <th>NDCG@K</th>
                         <th>Faithfulness</th>
-                        <th>Groundedness</th>
-                        <th>平均耗时</th>
+                        <th>答案正确性</th>
+                        <th>事实覆盖</th>
+                        <th>法条准确</th>
+                        <th>路由准确</th>
+                        <th>KB Hit</th>
+                        <th>Web Hit</th>
                         <th>通过率</th>
                       </tr>
                     </thead>
@@ -737,11 +610,14 @@ export function MetricsDashboard() {
                         <tr key={c.label}>
                           <td>{c.label}</td>
                           <td>{c.avgRecall.toFixed(3)}</td>
-                          <td>{c.avgMrr.toFixed(3)}</td>
                           <td>{c.avgNdcg.toFixed(3)}</td>
                           <td>{c.avgFaithfulness.toFixed(3)}</td>
-                          <td>{c.avgGroundedness.toFixed(3)}</td>
-                          <td>{(c.avgDurationMs / 1000).toFixed(1)}s</td>
+                          <td>{(c.avgAnswerCorrectness ?? 0).toFixed(3)}</td>
+                          <td>{(c.avgFactCoverage ?? 0).toFixed(3)}</td>
+                          <td>{(c.avgArticleAccuracy ?? 0).toFixed(3)}</td>
+                          <td>{(c.avgSourceRoutingAccuracy ?? 0).toFixed(3)}</td>
+                          <td>{(c.avgKbHitRate ?? 0).toFixed(3)}</td>
+                          <td>{(c.avgWebHitRate ?? 0).toFixed(3)}</td>
                           <td>{(c.passRate * 100).toFixed(0)}%</td>
                         </tr>
                       ))}
@@ -804,49 +680,5 @@ function MetricCard({ label, value }: { label: string; value: string | number })
       <div className="metric-card__value">{value}</div>
       <div className="metric-card__label">{label}</div>
     </div>
-  );
-}
-
-function TrendLine({ data }: { data: Array<{ bucket: string; avg_value: number; sample_count: number }> }) {
-  if (data.length < 2) return <p className="metrics-hint">数据不足，至少需要 2 个数据点</p>;
-
-  const width = 600;
-  const height = 200;
-  const padding = 40;
-
-  const values = data.map((d) => d.avg_value);
-  const minVal = Math.min(...values) * 0.9;
-  const maxVal = Math.max(...values) * 1.1;
-  const range = maxVal - minVal || 1;
-
-  const points = data
-    .map((d, i) => {
-      const x = padding + (i / (data.length - 1)) * (width - 2 * padding);
-      const y = height - padding - ((d.avg_value - minVal) / range) * (height - 2 * padding);
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  return (
-    <svg width="100%" viewBox={`0 0 ${width} ${height}`} className="trend-chart" data-testid="trend-chart">
-      {[0, 0.25, 0.5, 0.75, 1].map((frac) => {
-        const y = height - padding - frac * (height - 2 * padding);
-        return <line key={frac} x1={padding} y1={y} x2={width - padding} y2={y} stroke="#e5e7eb" strokeWidth={1} />;
-      })}
-      <polyline points={points} fill="none" stroke="#3b82f6" strokeWidth={2} />
-      {data.map((d, i) => {
-        const x = padding + (i / (data.length - 1)) * (width - 2 * padding);
-        const y = height - padding - ((d.avg_value - minVal) / range) * (height - 2 * padding);
-        return (
-          <circle key={i} cx={x} cy={y} r={3} fill="#3b82f6">
-            <title>{`${d.bucket}: ${d.avg_value.toFixed(3)} (${d.sample_count} runs)`}</title>
-          </circle>
-        );
-      })}
-      <text x={padding - 8} y={padding + 4} textAnchor="end" fontSize={10} fill="#888">{maxVal.toFixed(2)}</text>
-      <text x={padding - 8} y={height - padding + 4} textAnchor="end" fontSize={10} fill="#888">{minVal.toFixed(2)}</text>
-      <text x={padding} y={height - 8} textAnchor="start" fontSize={10} fill="#888">{data[0]?.bucket ?? ""}</text>
-      <text x={width - padding} y={height - 8} textAnchor="end" fontSize={10} fill="#888">{data[data.length - 1]?.bucket ?? ""}</text>
-    </svg>
   );
 }
