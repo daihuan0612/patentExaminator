@@ -9,7 +9,6 @@
  *
  * 所有函数为纯计算或 async LLM 调用，不依赖 DB。
  */
-import { logger } from "./logger.js";
 import {
   multiJudgeContinuous,
   extractJsonFromLLM,
@@ -150,10 +149,12 @@ export function computeWebHitRate(
 export async function computeFaithfulnessMultiJudge(
   answer: string,
   context: string,
-  judgeApiKeys: Record<string, string>
+  judgeApiKeys: Record<string, string>,
+  judgeOpts?: { modelFallbacks?: Record<string, string[]>; enableModelFallback?: boolean }
 ): Promise<MultiJudgeResult<number>> {
   if (!answer || !context) {
-    return { aggregated: 1, individualResults: [], judgeCount: 0 };
+    // 空答案无法验证忠实度，返回 0 而非 1
+    return { aggregated: 0, individualResults: [], judgeCount: 0 };
   }
 
   const system = [
@@ -184,7 +185,7 @@ export async function computeFaithfulnessMultiJudge(
     { system, user },
     judgeApiKeys,
     parseScoreFromJson,
-    { defaultValue: 0.5 }
+    { defaultValue: 0.5, ...judgeOpts }
   );
 }
 
@@ -196,7 +197,8 @@ export async function computeFaithfulnessMultiJudge(
 export async function computeAnswerCorrectness(
   answer: string,
   expectedAnswer: string,
-  judgeApiKeys: Record<string, string>
+  judgeApiKeys: Record<string, string>,
+  judgeOpts?: { modelFallbacks?: Record<string, string[]>; enableModelFallback?: boolean }
 ): Promise<MultiJudgeResult<number>> {
   if (!answer || !expectedAnswer) {
     return { aggregated: 0, individualResults: [], judgeCount: 0 };
@@ -230,7 +232,7 @@ export async function computeAnswerCorrectness(
     { system, user },
     judgeApiKeys,
     parseScoreFromJson,
-    { defaultValue: 0 }
+    { defaultValue: 0, ...judgeOpts }
   );
 }
 
@@ -242,7 +244,8 @@ export async function computeAnswerCorrectness(
 export async function computeFactCoverage(
   answer: string,
   mustIncludeFacts: string[],
-  judgeApiKeys: Record<string, string>
+  judgeApiKeys: Record<string, string>,
+  judgeOpts?: { modelFallbacks?: Record<string, string[]>; enableModelFallback?: boolean }
 ): Promise<MultiJudgeResult<number>> {
   if (!answer || mustIncludeFacts.length === 0) {
     return { aggregated: 1, individualResults: [], judgeCount: 0 };
@@ -290,7 +293,7 @@ export async function computeFactCoverage(
       }
       return null;
     },
-    { defaultValue: 0 }
+    { defaultValue: 0, ...judgeOpts }
   );
 }
 
@@ -402,30 +405,50 @@ export function computeConflictResolution(
 }
 
 /**
- * Refusal Accuracy — no_answer 题中正确拒绝回答的比例
+ * Refusal Accuracy — no_answer 题中正确拒绝回答的比例（multi-LLM-judge）
  *
  * 规范 §5.3: no_answer 类型题目，系统应回答"无法确定"
+ * 使用 multi-judge 而非 pattern matching，避免脆弱的字符串匹配
  */
-export function computeRefusalAccuracy(
+export async function computeRefusalAccuracy(
   sourceType: SourceType,
-  answer: string
-): number {
-  if (sourceType !== "no_answer") return 1; // 非拒绝题不评估
+  answer: string,
+  judgeApiKeys: Record<string, string>,
+  judgeOpts?: { modelFallbacks?: Record<string, string[]>; enableModelFallback?: boolean }
+): Promise<MultiJudgeResult<number>> {
+  if (sourceType !== "no_answer") {
+    return { aggregated: 1, individualResults: [], judgeCount: 0 };
+  }
 
-  const refusalPatterns = [
-    "无法确定", "无法判断", "需要进一步查证", "不确定",
-    "没有可靠", "没有找到", "未找到", "无法回答",
-    "cannot determine", "unable to", "not found", "no reliable",
-    "信息不足", "证据不足", "暂无",
-  ];
+  const system = [
+    "你是专利复审评估专家。判断一个回答是否正确地拒绝了无法回答的问题。",
+    "",
+    "背景：这是一个 golden set 中的 no_answer 类型题目，正确做法是表明无法确定/信息不足。",
+    "",
+    "评分标准（0.0 - 1.0）：",
+    "- 1.0: 明确拒绝回答，表明信息不足或无法确定，且保持简洁",
+    "- 0.7: 拒绝回答但内容冗长",
+    "- 0.4: 部分拒绝但包含不确定的推测",
+    "- 0.1: 没有拒绝，直接给出了不确定的答案",
+    "- 0.0: 完全没有拒绝，自信地给出了错误答案",
+    "",
+    "输出 JSON：{ \"score\": 0.0-1.0, \"reasoning\": \"评分理由\" }",
+    "严格按 JSON 格式输出，不要输出 markdown 代码块。",
+  ].join("\n");
 
-  const normAnswer = answer.toLowerCase();
-  const hasRefusal = refusalPatterns.some((p) => normAnswer.includes(p));
+  const user = [
+    "## 待评估的回答",
+    answer.slice(0, 4000),
+    "",
+    "请评估该回答是否正确地拒绝了无法回答的问题。",
+  ].join("\n");
 
-  // 同时检查答案是否过长（拒绝回答应该简短）
-  const isConcise = answer.length < 500;
-
-  return hasRefusal && isConcise ? 1 : hasRefusal ? 0.7 : 0;
+  return multiJudgeContinuous(
+    { system, user },
+    judgeApiKeys,
+    parseScoreFromJson,
+    { defaultValue: 0, ...judgeOpts }
+  );
 }
 
 // ── 辅助函数 ──

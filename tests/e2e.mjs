@@ -143,6 +143,17 @@ import {
   testNf1Nf2NotTriggeredForNonChat,
   testNf1RealWebSearchReturnsResults,
   testNf1MergedCitationsRanking,
+  testGoldenSetUploadKnowledge,
+  testGoldenSetGenerate,
+  testGoldenSetRead,
+  testGoldenSetStats,
+  testGoldenSetCleanup,
+  testGoldenEvalUploadKnowledge,
+  testGoldenEvalWriteSettings,
+  testGoldenEvalGenerate,
+  testGoldenEvalQuality,
+  testGoldenEvalModelCombination,
+  testGoldenEvalCleanup,
 } from "./e2e/index.mjs";
 
 // ── 初始化 ──────────────────────────────────────────────────────────
@@ -421,9 +432,29 @@ async function main() {
     await withTimeout(() => maybe(testRealEpoSearchCandidates));
 
     console.log("\n--- NF1 Real Web Search ---");
-    await withTimeout(() => maybe(testNf1RealWebSearchReturnsResults));
+    const NF1_TIMEOUT = 180_000; // 3 分钟（多轮 tool calling + rerank + groundedness）
+    await withTimeout(() => maybe(testNf1RealWebSearchReturnsResults), NF1_TIMEOUT);
     await delay(AI_RATE_LIMIT_DELAY);
-    await withTimeout(() => maybe(testNf1MergedCitationsRanking));
+    await withTimeout(() => maybe(testNf1MergedCitationsRanking), NF1_TIMEOUT);
+
+    // Golden Set 生成（需要知识库数据 + LLM keys，每个 provider 需要 40-60s/题）
+    const GOLDEN_SET_TIMEOUT = 300_000; // 5 分钟
+    console.log("\n--- Golden Set ---");
+    await withTimeout(() => maybe(testGoldenSetUploadKnowledge));
+    await withTimeout(() => maybe(testGoldenSetGenerate), GOLDEN_SET_TIMEOUT);
+    await withTimeout(() => maybe(testGoldenSetRead));
+    await withTimeout(() => maybe(testGoldenSetStats));
+    await withTimeout(() => maybe(testGoldenSetCleanup));
+
+    // Golden Set E2E 证据生成（nf5: golden set + quality report + eval report）
+    const GOLDEN_EVAL_TIMEOUT = 2_700_000; // 45 分钟（21 题 × multi-judge grading，每题 20-90s × 3 judges）
+    console.log("\n--- Golden Set E2E Evidence ---");
+    await withTimeout(() => maybe(testGoldenEvalUploadKnowledge));
+    await withTimeout(() => maybe(testGoldenEvalWriteSettings)); // BUG-3: 写入 settings 到隔离 DB
+    await withTimeout(() => maybe(testGoldenEvalGenerate), GOLDEN_EVAL_TIMEOUT);
+    await withTimeout(() => maybe(testGoldenEvalQuality));
+    await withTimeout(() => maybe(testGoldenEvalModelCombination), GOLDEN_EVAL_TIMEOUT);
+    await withTimeout(() => maybe(testGoldenEvalCleanup));
   }
 
   function maybe(fn, ...fnArgs) {

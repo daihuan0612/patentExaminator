@@ -68,13 +68,19 @@ export const PROVIDER_FALLBACK_CHAIN = [
 
 // ── Fallback 模型链条 ────────────────────────────────────────────────
 
-/** Gemini fallback 模型列表（按数据库配置顺序） */
+/** Gemini fallback 模型列表（按数据库配置顺序，BUG-178: 与用户 DB 保持一致） */
 export const GEMINI_FALLBACK_MODELS = [
   "gemini-3.5-flash",
-  "gemini-3.1-flash-lite",
   "gemini-3.1-flash-lite-preview",
   "gemini-2.5-flash-lite",
   "gemini-2.0-flash-lite",
+  "gemini-3.1-flash-lite",
+  "gemini-3-flash-preview",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-2.5-pro",
+  "gemini-3-pro-preview",
+  "gemini-3.1-pro-preview",
 ];
 
 /** OpenRouter fallback 模型列表（带标签） */

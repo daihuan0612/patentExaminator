@@ -2,8 +2,8 @@
  * 服务端重排序器 — 使用多信号评分对检索结果重新排序
  * 从 client/src/lib/knowledge/reranker.ts 迁移到服务端
  *
- * cr-2: 优先使用 Cross-Encoder 模型（BAAI/bge-reranker-base）精排，
- * 模型不可用时降级为本地启发式算法。
+ * cr-2: 三级降级链 — 远程 Reranker API（BAAI/bge-reranker-v2-m3）→ 本地 Cross-Encoder（BAAI/bge-reranker-base，轻量 fallback）→ 本地启发式算法。
+ * 注：本地模型使用 base 版（~266MB）而非 v2-m3（~1.1GB），因 v2-m3 首次下载易超时。远程 API 预设模型为 v2-m3。
  * 5 个信号加权：语义相似度、关键词匹配、文档类型、法条引用、chunk 深度
  */
 

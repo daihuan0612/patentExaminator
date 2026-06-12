@@ -137,13 +137,21 @@ export type ExpectedSource = "kb" | "web" | "kb+web" | "any";
 /** 验证方式 */
 export type VerificationMethod = "human" | "llm-judge" | "auto";
 
+/** 单个 Judge 的独立打分结果（nf5 spec §7.2） */
+export interface JudgeResult {
+  provider: string;             // judge provider ID（mimo / volcengine / gemini）
+  grade: 0 | 1 | 2 | 3 | null; // null = judge 调用失败
+  rationale: string;            // 打分理由（judge_failed 表示调用失败）
+}
+
 /** Chunk 级 relevance grading（nf5 spec §2.2，TREC/NIST 0-3 标准） */
 export interface RelevanceGrade {
   source: "kb" | "web";
   docId: string;
   chunkId?: string;
-  grade: 0 | 1 | 2 | 3;      // 0=不相关, 1=边际, 2=部分, 3=高度相关
-  rationale: string;
+  grade: 0 | 1 | 2 | 3;      // 聚合后的最终 grade（majority vote / 中位数）
+  rationale: string;           // 聚合理由
+  judges?: JudgeResult[];      // 每个 judge 的独立打分 + 理由（spec §7.2）
 }
 
 export interface GoldenQuestion {
@@ -173,24 +181,21 @@ export interface GoldenRunResult {
   runId: string;
   timestamp: string;
   configJson: string;
-  recallAtK: number;
-  mrr: number;
-  ndcgAtK: number;
+  recallAtK: number;          // chunk-level
+  ndcgAtK: number;            // chunk-level
   faithfulness: number;
-  groundedness: number;
   actualAnswer: string;
   actualSources: string[];
 
-  // ── nf5 新增指标 ──
-  answerCorrectness: number;          // multi-judge, 0-1
-  factCoverage: number;               // multi-judge, 0-1
-  articleAccuracy: number;            // deterministic, 0-1
-  sourceRoutingAccuracy: number;      // deterministic, 0-1
-  sourceAttributionAccuracy: number;  // deterministic, 0-1
-  conflictResolution: number;         // deterministic, 0-1
-  refusalAccuracy: number;            // deterministic, 0-1
-  kbHitRate: number;                  // KB 专属题的 recall
-  webHitRate: number;                 // Web 专属题的 recall
+  answerCorrectness: number;
+  factCoverage: number;
+  articleAccuracy: number;
+  sourceRoutingAccuracy: number;
+  sourceAttributionAccuracy: number;
+  conflictResolution: number;
+  refusalAccuracy: number;
+  kbHitRate: number;
+  webHitRate: number;
 }
 
 export interface EvalReport {
@@ -203,14 +208,11 @@ export interface EvalReport {
 export interface EvalConfigSummary {
   label: string;
   avgRecall: number;
-  avgMrr: number;
   avgNdcg: number;
   avgFaithfulness: number;
-  avgGroundedness: number;
   avgDurationMs: number;
   passRate: number;
 
-  // ── nf5 新增指标平均值 ──
   avgAnswerCorrectness: number;
   avgFactCoverage: number;
   avgArticleAccuracy: number;
@@ -221,7 +223,7 @@ export interface EvalConfigSummary {
 
 export interface EvalQuestionRow {
   query: string;
-  results: Array<{ configLabel: string; recall: number; mrr: number; ndcg: number }>;
+  results: Array<{ configLabel: string; recall: number; ndcg: number }>;
 }
 
 // ── Drift Detection ────────────────────────────────────

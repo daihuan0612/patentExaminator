@@ -1,4 +1,13 @@
-# 专利复审 AI 助手 — 系统规格书
+# ⚠️ [归档] 专利复审 AI 助手 — 系统规格书
+
+> **⚠️ 归档声明（2026-06-11）**：本文档基于 **B-038 重构之前**的架构编写。当前系统已发生以下重大变更，文中描述的"当前系统"不再准确：
+>
+> - **持久化层**：IndexedDB 已移除，全部数据迁移到后端 SQLite（ADR-012, B-034）。文中所有 IndexedDB store 引用（`opinionAnalyses`、`argumentMappings`、`searchSessions` 等）均需替换为 SQLite 表。
+> - **业务逻辑**：已从前端 AgentClient 迁移到后端 orchestrator（ADR-001, B-038）。`AgentClient.ts` 已删除，Prompt 来源改为 `server/src/lib/orchestrator.ts` + `shared/src/prompts/*.prompt.md`。
+> - **Provider 数量**：从 5 家扩展到 11 家（新增 Gemini/Qwen/Bedrock/OpenRouter/OpenCode/Doubao）。
+> - **新增能力**：Web Search MCP Server（NF1）、Groundedness Detection（NF2）、Metrics 体系（§6.7）、聊天文件上传（nf3）、离线评估指标（nf5）。
+>
+> 如需基于当前架构重新规划 Coze 迁移，请参考 DESIGN.md 和 PRD.md 的最新版本。
 
 <p align="right">2026-05-27 · v0.10.0 · 用于 Coze.cn 低代码 Agent 平台移植</p>
 
@@ -363,12 +372,9 @@ interface SyncResult {
 >
 > **注意**：代码中 store 名为 `textIndex`、`claimNodes`、`claimCharts`（非 `claimFeatures`）。早期版本文档中使用的 `claimFeatures` 为历史遗留名称，已修正。
 
-### Provider Key 同步（bg-39）
+### Provider Key 读取（B-041）
 
-`syncProviderKeys()` 遍历所有已启用的 Provider，将 API Key 同步到 Server 内存。返回 `SyncResult`：
-- `syncedProviders`：成功同步的 Provider ID 列表
-- `failedProviders`：失败的 Provider 及错误信息（含 HTTP 状态码或网络错误）
-- 调用方（`settingsSlice`）在 `result.success === false` 时 `console.warn` 失败详情
+Server 从 `sync_data` 表（`store_name='settings'`, `record_id='app'`）直接读取用户配置的 Provider API Key。`getApiKey(providerId)` 先查内存缓存，未命中时自动 fallback 到 DB 查询。Client 端不再需要同步 Key 到 Server。
 
 ---
 

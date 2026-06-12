@@ -72,11 +72,11 @@ interface EvalQuestionRow {
 }
 
 interface EvalReport {
-  id: string;
+  runId: string;
   timestamp: string;
   configs: EvalConfigSummary[];
   questionCount: number;
-  results: EvalQuestionRow[];
+  questionBreakdown: EvalQuestionRow[];
 }
 
 interface ReportListItem {
@@ -128,9 +128,6 @@ export function MetricsDashboard() {
   const [evalSuccess, setEvalSuccess] = useState<string | null>(null);
   const [showOfflineEval, setShowOfflineEval] = useState(false);
 
-  // Settings (for reading user-configured keys)
-  const [providerKeys, setProviderKeys] = useState<Record<string, string>>({});
-
   const refreshAll = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -170,26 +167,6 @@ export function MetricsDashboard() {
       setLoading(false);
     }
   }, [selectedAgent, dateFrom, dateTo]);
-
-  // Load settings (provider keys) and offline eval data on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        const settingsRes = await fetch("/api/data/settings");
-        if (settingsRes.ok) {
-          const settings = await settingsRes.json() as Record<string, unknown>;
-          const providers = settings.providers as Array<{ id: string; apiKeyRef?: string; enabled?: boolean }> | undefined;
-          if (providers) {
-            const keys: Record<string, string> = {};
-            for (const p of providers) {
-              if (p.enabled && p.apiKeyRef) keys[p.id] = p.apiKeyRef;
-            }
-            setProviderKeys(keys);
-          }
-        }
-      } catch { /* ignore */ }
-    })();
-  }, []);
 
   const refreshGoldenSet = useCallback(async () => {
     try {
@@ -290,13 +267,6 @@ export function MetricsDashboard() {
   };
 
   const handleRunEval = async () => {
-    // Pick first available key
-    const keys = Object.values(providerKeys);
-    if (keys.length === 0) {
-      setEvalError("请先在 Provider 设置中配置至少一个 API Key");
-      return;
-    }
-    const apiKey = keys[0];
     // Build configs from summary data (unique provider:model combos)
     const seen = new Set<string>();
     const configs = summary
@@ -322,7 +292,7 @@ export function MetricsDashboard() {
       const res = await fetch("/api/metrics/eval/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ configs, apiKey }),
+        body: JSON.stringify({ configs }),
       });
       if (!res.ok) {
         const data = await res.json() as { error?: string };

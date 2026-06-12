@@ -15,7 +15,6 @@ import request from "supertest";
 import { healthRouter } from "@server/routes/health.js";
 import { settingsRouter } from "@server/routes/settings.js";
 import { aiRouter } from "@server/routes/ai.js";
-import { clearAll } from "@server/security/keyStore.js";
 
 // Mock the provider registry to avoid real AI calls
 vi.mock("@server/providers/registry.js", () => {
@@ -51,34 +50,9 @@ describe("GET /api/health", () => {
   });
 });
 
-describe("Settings routes", () => {
-  beforeEach(() => {
-    clearAll();
-  });
-
-  it("PUT /api/settings/providers/:id sets API key", async () => {
-    const app = createTestApp();
-    const res = await request(app)
-      .put("/api/settings/providers/kimi")
-      .send({ apiKey: "test-key-123" });
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty("ok", true);
-    expect(res.body).toHaveProperty("providerId", "kimi");
-  });
-
-  it("PUT /api/settings/providers/:id rejects missing apiKey", async () => {
-    const app = createTestApp();
-    const res = await request(app)
-      .put("/api/settings/providers/kimi")
-      .send({});
-    expect(res.status).toBe(400);
-    expect(res.body).toHaveProperty("error", "Required");
-  });
-});
-
 describe("POST /api/ai/run", () => {
   beforeEach(() => {
-    clearAll();
+    // B-041: keyStore.clearAll() no longer needed — provider keys read from DB
   });
 
   it("rejects missing required fields", async () => {

@@ -45,13 +45,11 @@ export interface EvalResult {
   goldenId: string;
   query: string;
   configLabel: string;
-  // Retrieval metrics
-  recallAtK: number;          // % of expected sources found in top-K
-  mrr: number;                // 1/rank of first relevant result
-  ndcgAtK: number;            // NDCG@K (graded relevance)
+  // Chunk-level retrieval metrics（统一用 chunk-level，不再计算 file-level）
+  recallAtK: number;          // chunk-level recall（基于 relevanceGrading）
+  ndcgAtK: number;            // chunk-level NDCG（基于 relevanceGrading）
   // Generation metrics
   faithfulness: number;       // LLM-as-judge 0-1
-  groundedness: number;       // from groundedness check
   // Performance
   durationMs: number;
   // Raw outputs
@@ -59,7 +57,7 @@ export interface EvalResult {
   actualSources: string[];
   error?: string;
 
-  // ── nf5 新增指标 ──
+  // ── nf5 指标 ──
   answerCorrectness: number;
   factCoverage: number;
   articleAccuracy: number;
@@ -72,24 +70,22 @@ export interface EvalResult {
 }
 
 export interface EvalReport {
-  id: string;
+  runId: string;
   timestamp: string;
   configs: EvalConfigSummary[];
   questionCount: number;
-  results: EvalResult[];
+  questionBreakdown: EvalResult[];
 }
 
 export interface EvalConfigSummary {
   label: string;
-  avgRecall: number;
-  avgMrr: number;
-  avgNdcg: number;
+  avgRecall: number;          // chunk-level
+  avgNdcg: number;            // chunk-level
   avgFaithfulness: number;
-  avgGroundedness: number;
   avgDurationMs: number;
   passRate: number;           // % with faithfulness > 0.7
 
-  // ── nf5 新增指标平均值 ──
+  // ── nf5 指标平均值 ──
   avgAnswerCorrectness: number;
   avgFactCoverage: number;
   avgArticleAccuracy: number;
@@ -165,89 +161,6 @@ export function loadGoldenSet(): GoldenQuestion[] {
   }));
 }
 
-// ── Retrieval metrics ─────────────────────────────────────
-
-/**
- * Recall@K: fraction of expected sources found in top-K actual sources.
- * Uses fuzzy matching: source name contains expected or vice versa.
- */
-export function computeRecallAtK(
-  actualSources: string[],
-  expectedSources: string[],
-  k: number = 5
-): number {
-  if (expectedSources.length === 0) return 1;
-  const topK = actualSources.slice(0, k);
-  let found = 0;
-  for (const expected of expectedSources) {
-    const normExpected = normalizeSource(expected);
-    if (topK.some((actual) => fuzzySourceMatch(normalizeSource(actual), normExpected))) {
-      found++;
-    }
-  }
-  return found / expectedSources.length;
-}
-
-/**
- * MRR (Mean Reciprocal Rank): 1 / rank of first relevant result.
- */
-export function computeMRR(
-  actualSources: string[],
-  expectedSources: string[]
-): number {
-  if (expectedSources.length === 0) return 1;
-  for (let i = 0; i < actualSources.length; i++) {
-    const normActual = normalizeSource(actualSources[i] ?? "");
-    if (expectedSources.some((exp) => fuzzySourceMatch(normActual, normalizeSource(exp)))) {
-      return 1 / (i + 1);
-    }
-  }
-  return 0;
-}
-
-/**
- * NDCG@K (Normalized Discounted Cumulative Gain).
- * Graded relevance: expected source = 2, partial match = 1, no match = 0.
- * DCG = sum( (2^rel_i - 1) / log2(i + 2) )
- * NDCG = DCG / IDCG
- */
-export function computeNDCG(
-  actualSources: string[],
-  expectedSources: string[],
-  scores: number[],
-  k: number = 5
-): number {
-  if (expectedSources.length === 0) return 1;
-  const topK = actualSources.slice(0, k);
-
-  // Assign relevance to each actual source
-  const relevances: number[] = topK.map((actual) => {
-    const normActual = normalizeSource(actual);
-    for (const exp of expectedSources) {
-      const normExp = normalizeSource(exp);
-      if (fuzzySourceMatch(normActual, normExp)) return 2;      // exact match
-      if (partialSourceMatch(normActual, normExp)) return 1;    // partial match
-    }
-    return 0;
-  });
-
-  // DCG
-  let dcg = 0;
-  for (let i = 0; i < relevances.length; i++) {
-    const rel = relevances[i] ?? 0;
-    dcg += (Math.pow(2, rel) - 1) / Math.log2(i + 2);
-  }
-
-  // IDCG: ideal ordering (all expected sources at top with relevance=2)
-  const idealCount = Math.min(expectedSources.length, k);
-  let idcg = 0;
-  for (let i = 0; i < idealCount; i++) {
-    idcg += (Math.pow(2, 2) - 1) / Math.log2(i + 2);  // relevance=2 for each
-  }
-
-  return idcg > 0 ? dcg / idcg : 0;
-}
-
 // ── Faithfulness check ────────────────────────────────────
 
 /**
@@ -260,43 +173,6 @@ export function computeNDCG(
  * @param providerPreference - providers to use for the judge
  * @param modelId - model for the judge call
  */
-export async function checkFaithfulness(
-  answer: string,
-  context: string,
-  apiKey: string,
-  providerPreference?: string[],
-  modelId?: string
-): Promise<number> {
-  try {
-    const { checkGroundedness } = await import("./groundednessCheck.js");
-
-    // Build grounding docs from context
-    const groundingDocs = context.length > 0
-      ? [{ source: "knowledge", excerpt: context.slice(0, 8000) }]
-      : [];
-
-    if (groundingDocs.length === 0) {
-      return 1; // no context to verify against
-    }
-
-    const result = await checkGroundedness(
-      answer,
-      groundingDocs.map((d) => ({ source: d.source, excerpt: d.excerpt, score: 0 })),
-      undefined, // no web search citations
-      {
-        apiKey,
-        providerPreference: providerPreference ?? ["gemini", "mimo"],
-        modelId: modelId ?? "gemini-2.5-flash",
-      }
-    );
-
-    return result.groundingScore;
-  } catch (err) {
-    logger.warn(`[EvalRunner] Faithfulness check failed: ${err}`);
-    return 0.5; // neutral fallback
-  }
-}
-
 // ── Main evaluation runner ────────────────────────────────
 
 /**
@@ -320,15 +196,18 @@ export async function runEvaluation(
     maxConcurrency?: number;
     agentFilter?: string;
     llmApiKey?: string;
-    judgeApiKey?: string;
+    /** 每个 judge provider 的 API key（MiMo/DeepSeek/Gemini 各自独立） */
+    judgeApiKeys?: Record<string, string>;
+    /** 用户在 APP 设置页配置的 fallback 链 */
+    modelFallbacks?: Record<string, string[]>;
+    enableModelFallback?: boolean;
     knowledgeEnabled?: boolean;
     knowledgeEmbedding?: { baseUrl: string; apiKey: string; modelId: string };
     knowledgeReranker?: { baseUrl: string; apiKey: string; modelId: string };
   }
 ): Promise<EvalReport> {
-  const maxConcurrency = options?.maxConcurrency ?? 1;
+  const maxConcurrency = options?.maxConcurrency ?? 3;
   const llmApiKey = options?.llmApiKey ?? "";
-  const judgeApiKey = options?.judgeApiKey ?? llmApiKey;
 
   // Load golden set
   let questions = loadGoldenSet();
@@ -338,19 +217,21 @@ export async function runEvaluation(
 
   if (questions.length === 0) {
     logger.warn("[EvalRunner] No golden questions found. Seed the golden set first.");
-    const reportId = randomUUID();
     const report: EvalReport = {
-      id: reportId,
+      runId: randomUUID(),
       timestamp: new Date().toISOString(),
       configs: configs.map((c) => ({
         label: c.label,
-        avgRecall: 0, avgMrr: 0, avgNdcg: 0,
-        avgFaithfulness: 0, avgGroundedness: 0,
+        avgRecall: 0, avgNdcg: 0,
+        avgFaithfulness: 0,
         avgDurationMs: 0,
         passRate: 0,
+        avgAnswerCorrectness: 0, avgFactCoverage: 0,
+        avgArticleAccuracy: 0, avgSourceRoutingAccuracy: 0,
+        avgKbHitRate: 0, avgWebHitRate: 0,
       })),
       questionCount: 0,
-      results: [],
+      questionBreakdown: [],
     };
     return report;
   }
@@ -369,16 +250,20 @@ export async function runEvaluation(
     for (const batch of chunks) {
       const evalOpts: {
         llmApiKey: string;
-        judgeApiKey: string;
+        judgeApiKeys: Record<string, string>;
+        modelFallbacks?: Record<string, string[]>;
+        enableModelFallback?: boolean;
         knowledgeEnabled: boolean;
         knowledgeEmbedding?: { baseUrl: string; apiKey: string; modelId: string } | undefined;
         knowledgeReranker?: { baseUrl: string; apiKey: string; modelId: string } | undefined;
       } = {
         llmApiKey,
-        judgeApiKey,
+        judgeApiKeys: options?.judgeApiKeys ?? {},
         knowledgeEnabled: options?.knowledgeEnabled ?? true,
         knowledgeEmbedding: options?.knowledgeEmbedding,
         knowledgeReranker: options?.knowledgeReranker,
+        ...(options?.modelFallbacks !== undefined && { modelFallbacks: options.modelFallbacks }),
+        ...(options?.enableModelFallback !== undefined && { enableModelFallback: options.enableModelFallback }),
       };
       const batchResults = await Promise.all(
         batch.map((q) => runSingleEvaluation(q, config, runId, evalOpts))
@@ -393,7 +278,7 @@ export async function runEvaluation(
   // Save to database
   saveReport(report);
 
-  logger.info(`[EvalRunner] Evaluation complete: ${allResults.length} results, report=${report.id}`);
+  logger.info(`[EvalRunner] Evaluation complete: ${allResults.length} results, report=${report.runId}`);
   return report;
 }
 
@@ -405,7 +290,9 @@ async function runSingleEvaluation(
   runId: string,
   opts: {
     llmApiKey: string;
-    judgeApiKey: string;
+    judgeApiKeys: Record<string, string>;
+    modelFallbacks?: Record<string, string[]>;
+    enableModelFallback?: boolean;
     knowledgeEnabled: boolean;
     knowledgeEmbedding?: { baseUrl: string; apiKey: string; modelId: string } | undefined;
     knowledgeReranker?: { baseUrl: string; apiKey: string; modelId: string } | undefined;
@@ -435,35 +322,38 @@ async function runSingleEvaluation(
     const actualAnswer = extractAnswer(response);
     const actualSources = extractSources(response);
 
-    // Compute retrieval metrics (file-level, backward compatible)
-    const recallAtK = computeRecallAtK(actualSources, question.expectedSources, 5);
-    const mrr = computeMRR(actualSources, question.expectedSources);
-    const ndcgAtK = computeNDCG(actualSources, question.expectedSources, [], 5);
-
-    // ── nf5: 构建 judge API keys 映射 ──
-    const judgeApiKeys: Record<string, string> = {};
-    if (opts.judgeApiKey) {
-      // 使用提供的 key 作为所有 judge 的 fallback
-      for (const pid of ["mimo", "deepseek", "gemini"]) {
-        judgeApiKeys[pid] = opts.judgeApiKey;
-      }
-    }
+    // ── nf5: chunk 级检索指标（统一用 chunk-level，不再计算 file-level） ──
+    const retrievedChunks = extractRetrievedChunks(response);
+    const recallAtK = question.relevanceGrading.length > 0
+      ? computeRecallChunkLevel(retrievedChunks, question.relevanceGrading, 10)
+      : 0;
+    const ndcgAtK = question.relevanceGrading.length > 0
+      ? computeNDCGChunkLevel(retrievedChunks, question.relevanceGrading, 10)
+      : 0;
+    const kbHitRate = question.relevanceGrading.length > 0
+      ? computeKBHitRate(retrievedChunks, question.relevanceGrading, 10)
+      : 0;
+    const webHitRate = question.relevanceGrading.length > 0
+      ? computeWebHitRate(retrievedChunks, question.relevanceGrading, 10)
+      : 0;
 
     // ── nf5: 多 Judge 生成质量指标 ──
     const context = actualSources.join("\n");
+    const judgeOpts: { modelFallbacks?: Record<string, string[]>; enableModelFallback?: boolean } = {};
+    if (opts.modelFallbacks !== undefined) judgeOpts.modelFallbacks = opts.modelFallbacks;
+    if (opts.enableModelFallback !== undefined) judgeOpts.enableModelFallback = opts.enableModelFallback;
 
     // Faithfulness（multi-judge, reference-free）
     const faithfulnessResult = await computeFaithfulnessMultiJudge(
-      actualAnswer, context, judgeApiKeys
+      actualAnswer, context, opts.judgeApiKeys, judgeOpts
     );
     const faithfulness = faithfulnessResult.aggregated;
-    const groundedness = faithfulness;
 
     // Answer Correctness（multi-judge, 需要参考答案）
     let answerCorrectness = 0;
     if (question.expectedAnswer) {
       const acResult = await computeAnswerCorrectness(
-        actualAnswer, question.expectedAnswer, judgeApiKeys
+        actualAnswer, question.expectedAnswer, opts.judgeApiKeys, judgeOpts
       );
       answerCorrectness = acResult.aggregated;
     }
@@ -472,7 +362,7 @@ async function runSingleEvaluation(
     let factCoverage = 0;
     if (question.mustIncludeFacts.length > 0) {
       const fcResult = await computeFactCoverage(
-        actualAnswer, question.mustIncludeFacts, judgeApiKeys
+        actualAnswer, question.mustIncludeFacts, opts.judgeApiKeys, judgeOpts
       );
       factCoverage = fcResult.aggregated;
     }
@@ -487,36 +377,34 @@ async function runSingleEvaluation(
     const sourceRoutingAccuracy = computeSourceRoutingAccuracy(
       question.expectedSource, actualSourceFlags
     );
+
+    // Issue 1 修复：从答案文本中提取引用的来源，与实际检索到的来源对比
+    const allCandidateSources = [...new Set([...question.expectedSources, ...actualSources])];
+    const citedSources = extractCitedSourcesFromAnswer(actualAnswer, allCandidateSources);
     const sourceAttributionAccuracy = computeSourceAttributionAccuracy(
-      actualSources, actualSources // 引用的来源 = 实际使用的来源
+      citedSources, actualSources
     );
+
     const conflictResolution = computeConflictResolution(
       question.sourceType, question.expectedSource,
       actualSourceFlags.kb && actualSourceFlags.web ? "mixed" :
         actualSourceFlags.kb ? "kb" : "web"
     );
-    const refusalAccuracy = computeRefusalAccuracy(question.sourceType, actualAnswer);
-
-    // ── nf5: chunk 级检索指标 ──
-    const retrievedChunks = extractRetrievedChunks(response);
-    const kbHitRate = question.relevanceGrading.length > 0
-      ? computeKBHitRate(retrievedChunks, question.relevanceGrading, 10) : recallAtK;
-    const webHitRate = question.relevanceGrading.length > 0
-      ? computeWebHitRate(retrievedChunks, question.relevanceGrading, 10) : recallAtK;
+    const refusalResult = await computeRefusalAccuracy(
+      question.sourceType, actualAnswer, opts.judgeApiKeys, judgeOpts
+    );
+    const refusalAccuracy = refusalResult.aggregated;
 
     const result: EvalResult = {
       goldenId: question.id,
       query: question.query,
       configLabel: config.label,
       recallAtK,
-      mrr,
       ndcgAtK,
       faithfulness,
-      groundedness,
       durationMs,
       actualAnswer: actualAnswer.slice(0, 2000),
       actualSources,
-      // ── nf5 新增指标 ──
       answerCorrectness,
       factCoverage,
       articleAccuracy,
@@ -526,13 +414,12 @@ async function runSingleEvaluation(
       refusalAccuracy,
       kbHitRate,
       webHitRate,
-      actualSources,
     };
 
     saveSingleResult(result, runId, config);
 
     const status = recallAtK > 0 ? "OK" : "MISS";
-    logger.info(`[EvalRunner]   Q=${question.id} ${status}: recall=${recallAtK.toFixed(2)} mrr=${mrr.toFixed(2)} faith=${faithfulness.toFixed(2)} ${durationMs}ms`);
+    logger.info(`[EvalRunner]   Q=${question.id} ${status}: recall=${recallAtK.toFixed(2)} ndcg=${ndcgAtK.toFixed(2)} faith=${faithfulness.toFixed(2)} ${durationMs}ms`);
 
     return result;
   } catch (err) {
@@ -561,15 +448,12 @@ function buildReport(
     return {
       label: config.label,
       avgRecall: avg(successResults.map((r) => r.recallAtK)),
-      avgMrr: avg(successResults.map((r) => r.mrr)),
       avgNdcg: avg(successResults.map((r) => r.ndcgAtK)),
       avgFaithfulness: avg(successResults.map((r) => r.faithfulness)),
-      avgGroundedness: avg(successResults.map((r) => r.groundedness)),
       avgDurationMs: avg(configResults.map((r) => r.durationMs)),
       passRate: configResults.length > 0
         ? configResults.filter((r) => r.faithfulness > 0.7).length / configResults.length
         : 0,
-      // ── nf5 新增指标平均值 ──
       avgAnswerCorrectness: avg(successResults.map((r) => r.answerCorrectness)),
       avgFactCoverage: avg(successResults.map((r) => r.factCoverage)),
       avgArticleAccuracy: avg(successResults.map((r) => r.articleAccuracy)),
@@ -580,11 +464,11 @@ function buildReport(
   });
 
   return {
-    id: runId,
+    runId,
     timestamp: new Date().toISOString(),
     configs: configSummaries,
     questionCount,
-    results,
+    questionBreakdown: results,
   };
 }
 
@@ -604,11 +488,11 @@ export function saveReport(report: EvalReport): void {
   `);
 
   const insert = db.transaction(() => {
-    for (const r of report.results) {
+    for (const r of report.questionBreakdown) {
       stmt.run(
         randomUUID(),
         r.goldenId,
-        report.id,
+        report.runId,
         report.timestamp,
         JSON.stringify({
           label: r.configLabel,
@@ -616,10 +500,10 @@ export function saveReport(report: EvalReport): void {
           error: r.error,
         }),
         r.recallAtK,
-        r.mrr,
+        0,              // mrr: 已废弃（chunk-level 不需要）
         r.ndcgAtK,
         r.faithfulness,
-        r.groundedness,
+        0,              // groundedness: 已废弃（与 faithfulness 重复）
         r.actualAnswer,
         JSON.stringify(r.actualSources),
         r.answerCorrectness,
@@ -636,7 +520,7 @@ export function saveReport(report: EvalReport): void {
   });
 
   insert();
-  logger.info(`[EvalRunner] Saved ${report.results.length} results for report ${report.id}`);
+  logger.info(`[EvalRunner] Saved ${report.questionBreakdown.length} results for report ${report.runId}`);
 }
 
 /**
@@ -661,10 +545,10 @@ function saveSingleResult(result: EvalResult, runId: string, config: EvalConfig)
         error: result.error,
       }),
       result.recallAtK,
-      result.mrr,
+      0,              // mrr: 已废弃
       result.ndcgAtK,
       result.faithfulness,
-      result.groundedness,
+      0,              // groundedness: 已废弃
       result.actualAnswer,
       JSON.stringify(result.actualSources),
       result.answerCorrectness,
@@ -727,14 +611,11 @@ export function getReports(): EvalReport[] {
         query: "", // not stored per-row, available from golden set join
         configLabel: configMeta.label ?? "unknown",
         recallAtK: r.recall_at_k,
-        mrr: r.mrr,
         ndcgAtK: r.ndcg_at_k,
         faithfulness: r.faithfulness,
-        groundedness: r.groundedness,
         durationMs: configMeta.durationMs ?? 0,
         actualAnswer: r.actual_answer,
         actualSources: parseJsonArray(r.actual_sources),
-        // ── nf5 新增指标 ──
         answerCorrectness: r.answer_correctness ?? 0,
         factCoverage: r.fact_coverage ?? 0,
         articleAccuracy: r.article_accuracy ?? 0,
@@ -757,15 +638,12 @@ export function getReports(): EvalReport[] {
       return {
         label,
         avgRecall: avg(successResults.map((r) => r.recallAtK)),
-        avgMrr: avg(successResults.map((r) => r.mrr)),
         avgNdcg: avg(successResults.map((r) => r.ndcgAtK)),
         avgFaithfulness: avg(successResults.map((r) => r.faithfulness)),
-        avgGroundedness: avg(successResults.map((r) => r.groundedness)),
         avgDurationMs: avg(configResults.map((r) => r.durationMs)),
         passRate: configResults.length > 0
           ? configResults.filter((r) => r.faithfulness > 0.7).length / configResults.length
           : 0,
-        // ── nf5 新增指标平均值 ──
         avgAnswerCorrectness: avg(successResults.map((r) => r.answerCorrectness)),
         avgFactCoverage: avg(successResults.map((r) => r.factCoverage)),
         avgArticleAccuracy: avg(successResults.map((r) => r.articleAccuracy)),
@@ -776,11 +654,11 @@ export function getReports(): EvalReport[] {
     });
 
     reports.push({
-      id: row.run_id,
+      runId: row.run_id,
       timestamp: row.timestamp,
       configs: configSummaries,
       questionCount: results.length,
-      results,
+      questionBreakdown: results,
     });
   }
 
@@ -908,15 +786,12 @@ function buildErrorResult(
     query: question.query,
     configLabel: config.label,
     recallAtK: 0,
-    mrr: 0,
     ndcgAtK: 0,
     faithfulness: 0,
-    groundedness: 0,
     durationMs,
     actualAnswer: "",
     actualSources: [],
     error: error ?? "unknown error",
-    // ── nf5 新增指标（错误时全部为 0） ──
     answerCorrectness: 0,
     factCoverage: 0,
     articleAccuracy: 0,
@@ -956,47 +831,37 @@ function extractRetrievedChunks(
     }
   }
 
-  return chunks.filter((c) => c.id);
+  // 去重：knowledgeCitations / webSearchCitations / mergedCitations 可能有重叠
+  const seen = new Set<string>();
+  return chunks.filter((c) => {
+    if (!c.id || seen.has(c.id)) return false;
+    seen.add(c.id);
+    return true;
+  });
 }
 
-// ── Source matching ───────────────────────────────────────
+// ── Source attribution ─────────────────────────────────────
 
 /**
- * Normalize a source name for comparison:
- * - lowercase
- * - remove common suffixes (.pdf, .docx, etc.)
- * - collapse whitespace
+ * 从答案文本中提取引用的来源名称
+ *
+ * 在答案中搜索 candidateSources 里出现的来源名，
+ * 返回答案实际引用的来源列表。
+ * 用于 sourceAttributionAccuracy：对比"答案中引用的来源"vs"实际检索到的来源"。
  */
-function normalizeSource(source: string): string {
-  return source
-    .toLowerCase()
-    .replace(/\.\w{1,5}$/i, "")       // remove file extension
-    .replace(/[_-]+/g, " ")            // normalize separators
-    .replace(/\s+/g, " ")              // collapse whitespace
-    .trim();
-}
-
-/**
- * Fuzzy match: either string contains the other, or significant overlap.
- */
-function fuzzySourceMatch(actual: string, expected: string): boolean {
-  if (!actual || !expected) return false;
-  // Direct containment in either direction
-  if (actual.includes(expected) || expected.includes(actual)) return true;
-  // Check if significant tokens overlap (>50% of expected tokens found)
-  const expectedTokens = expected.split(" ").filter((t) => t.length > 1);
-  if (expectedTokens.length === 0) return false;
-  const matched = expectedTokens.filter((t) => actual.includes(t)).length;
-  return matched / expectedTokens.length > 0.5;
-}
-
-/**
- * Partial match: at least one significant token overlaps.
- */
-function partialSourceMatch(actual: string, expected: string): boolean {
-  if (!actual || !expected) return false;
-  const expectedTokens = expected.split(" ").filter((t) => t.length > 2);
-  return expectedTokens.some((t) => actual.includes(t));
+function extractCitedSourcesFromAnswer(
+  answer: string,
+  candidateSources: string[]
+): string[] {
+  if (!answer || candidateSources.length === 0) return [];
+  const lowerAnswer = answer.toLowerCase();
+  return candidateSources.filter((source) => {
+    const normSource = source
+      .toLowerCase()
+      .replace(/\.\w{1,5}$/i, "")
+      .trim();
+    return normSource.length > 2 && lowerAnswer.includes(normSource);
+  });
 }
 
 // ── Utility ───────────────────────────────────────────────

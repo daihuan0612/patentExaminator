@@ -462,15 +462,18 @@ metricsRouter.get("/metrics/agents", (_req, res) => {
 
 // POST /api/metrics/golden-set/generate
 // Generate golden evaluation set
-// Body (optional): { providerConfigs: Array<{ providerId, model, apiKey, label }> }
-// 无 body 时从 DB 读取用户已配置的 provider keys
+// Body: { providerConfigs?, questionsPerProvider?, searchApiKey?, judgeApiKeys? }
+// - App client: 不传 key，server 从 DB settings 读
+// - 测试脚本: 从 .env 读 key，通过请求体传递（CLAUDE.md）
 metricsRouter.post("/metrics/golden-set/generate", async (req, res) => {
   try {
     const { generateGoldenSet, resolveGoldenSetProviders } = await import("../lib/goldenSetGenerator.js");
 
     const body = req.body as {
-      providerConfigs?: Array<{ providerId: string; model: string; apiKey: string; label: string }>;
+      providerConfigs?: Array<{ providerId: string; model: string; apiKey: string; label: string; modelFallbacks?: string[]; enableModelFallback?: boolean }>;
       questionsPerProvider?: number;
+      searchApiKey?: string;
+      judgeApiKeys?: Record<string, string>;
     };
     const providerConfigs = (body.providerConfigs && body.providerConfigs.length > 0)
       ? body.providerConfigs
@@ -479,7 +482,66 @@ metricsRouter.post("/metrics/golden-set/generate", async (req, res) => {
     if (providerConfigs.length === 0) {
       return res.status(400).json({ error: "未找到可用于 Golden Set 生成的 Provider（需要 MiMo / DeepSeek / Gemini 之一）" });
     }
-    const questions = await generateGoldenSet(providerConfigs, body.questionsPerProvider);
+
+    // searchApiKey / judgeApiKeys: 请求体优先（测试脚本），否则从 DB 读（App client）
+    let searchApiKey = body.searchApiKey || "";
+    let judgeApiKeys = body.judgeApiKeys || {};
+    const judgeFallbacks: Record<string, string[]> = {};
+    const judgeModelIds: Record<string, string> = {};
+
+    // 始终从 DB 读取 fallback 配置（无论 providerConfigs 来自请求体还是 DB）
+    const db = getSyncDb();
+    const settingsRow = db.prepare(
+      "SELECT data FROM sync_data WHERE store_name = 'settings' AND record_id = 'app'"
+    ).get() as { data: string } | undefined;
+    if (settingsRow) {
+      const settings = JSON.parse(settingsRow.data) as Record<string, unknown>;
+      if (!searchApiKey) {
+        const searchProviders = (settings.searchProviders ?? []) as Array<{
+          providerId: string; apiKeyRef?: string;
+        }>;
+        for (const sp of searchProviders) {
+          if (sp.providerId === "serpapi" && sp.apiKeyRef) {
+            searchApiKey = sp.apiKeyRef;
+            break;
+          }
+        }
+      }
+      const dbProviders = (settings.providers ?? []) as Array<{
+        providerId: string; apiKeyRef?: string; modelFallbacks?: string[]; defaultModelId?: string;
+      }>;
+      if (Object.keys(judgeApiKeys).length === 0) {
+        const dbKeys: Record<string, string> = {};
+        for (const p of dbProviders) {
+          if (p.apiKeyRef) dbKeys[p.providerId] = p.apiKeyRef;
+        }
+        if (Object.keys(dbKeys).length > 0) judgeApiKeys = dbKeys;
+      }
+      // BUG-176: 构建 judge fallback 链（从 DB settings 读取每个 provider 的 modelFallbacks）
+      // BUG-178: 构建 judge 模型映射（从 DB settings 读取每个 provider 的 defaultModelId）
+      for (const p of dbProviders) {
+        if (p.modelFallbacks?.length) judgeFallbacks[p.providerId] = p.modelFallbacks;
+        if (p.defaultModelId) judgeModelIds[p.providerId] = p.defaultModelId;
+      }
+
+      // 将 DB 中的 modelFallbacks 合并到请求体的 providerConfigs（生成阶段 fallback）
+      for (const pc of providerConfigs) {
+        const dbp = dbProviders.find(p => p.providerId === pc.providerId);
+        if (dbp?.modelFallbacks?.length && !pc.modelFallbacks) {
+          pc.modelFallbacks = dbp.modelFallbacks;
+          pc.enableModelFallback = true;
+        }
+      }
+    }
+
+    const questions = await generateGoldenSet(
+      providerConfigs,
+      body.questionsPerProvider,
+      searchApiKey || undefined,
+      "serpapi", // spec §11: 与 MCP Web Search 路径一致
+    );
+
+    // BUG-180: 持久化已移入 generateGoldenSet() 内部（生成完成立即写文件，不等 route return）
     writeAudit({ op: "CREATE", store: "metrics_golden_set", caller: "user", dataAfter: { count: questions.length } });
     res.json({ count: questions.length, questions });
   } catch (err) {

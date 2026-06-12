@@ -31,12 +31,12 @@ export interface MultiJudgeResult<T> {
 // ── 默认配置 ──────────────────────────────────────────
 
 /** 默认 3 个 judge provider（不同模型家族，decorrelate 偏差） */
-const DEFAULT_JUDGE_PROVIDERS = ["mimo", "deepseek", "gemini"];
+export const DEFAULT_JUDGE_PROVIDERS = ["mimo", "volcengine", "gemini"];
 
 /** 各 provider 的默认 judge 模型 */
-const DEFAULT_JUDGE_MODELS: Record<string, string> = {
+export const DEFAULT_JUDGE_MODELS: Record<string, string> = {
   mimo: "mimo-v2.5-pro",
-  deepseek: "deepseek-v4-flash",
+  volcengine: "deepseek-v4-pro-260425",
   gemini: "gemini-2.5-flash",
 };
 
@@ -103,6 +103,10 @@ export async function callMultiJudge(
     temperature?: number;
     maxTokens?: number;
     signal?: AbortSignal;
+    /** 用户在 APP 设置页配置的 fallback 链 */
+    modelFallbacks?: Record<string, string[]>;
+    /** 是否启用 fallback */
+    enableModelFallback?: boolean;
   }
 ): Promise<JudgeOutput[]> {
   const providers = options?.providers ?? DEFAULT_JUDGE_PROVIDERS;
@@ -114,6 +118,7 @@ export async function callMultiJudge(
   const judgeTasks = providers.map(async (providerId): Promise<JudgeOutput> => {
     const apiKey = judgeApiKeys[providerId];
     if (!apiKey) {
+      logger.warn(`[MultiJudge] ${providerId} judge skipped: no API key configured`);
       return { providerId, rawText: "", success: false, error: "No API key" };
     }
 
@@ -133,11 +138,14 @@ export async function callMultiJudge(
       };
 
       const providerApiKeys: Record<string, string> = { [providerId]: apiKey };
+      const enableFallback = options?.enableModelFallback !== undefined
+        ? { [providerId]: options.enableModelFallback }
+        : undefined;
       const result = await registry.runWithFallback(
         [providerId],
         chatReq,
-        undefined,
-        undefined,
+        options?.modelFallbacks,
+        enableFallback,
         undefined,
         providerApiKeys
       );
@@ -199,6 +207,8 @@ export async function multiJudgeDiscrete(
     providers?: string[];
     modelIds?: Record<string, string>;
     defaultValue?: number;
+    modelFallbacks?: Record<string, string[]>;
+    enableModelFallback?: boolean;
   }
 ): Promise<MultiJudgeResult<number>> {
   const defaultVal = options?.defaultValue ?? 0;
@@ -245,6 +255,8 @@ export async function multiJudgeContinuous(
     providers?: string[];
     modelIds?: Record<string, string>;
     defaultValue?: number;
+    modelFallbacks?: Record<string, string[]>;
+    enableModelFallback?: boolean;
   }
 ): Promise<MultiJudgeResult<number>> {
   const defaultVal = options?.defaultValue ?? 0.5;

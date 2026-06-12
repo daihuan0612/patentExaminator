@@ -86,6 +86,11 @@ export class ProviderRegistry {
         ? [req.modelId, ...configuredFallbacks.filter((m) => m !== req.modelId)]
         : configuredFallbacks;
 
+      // Log the actual fallback chain for debugging
+      if (configuredFallbacks && configuredFallbacks.length > 0) {
+        logger.info(`[Registry] ${providerId} fallback chain: initialModel=${req.modelId ?? "default"}, configuredFallbacks=[${configuredFallbacks.join(", ")}], effectiveModels=[${(models ?? []).join(", ")}], enabled=${enabled}`);
+      }
+
       const buildReq = (base: ChatRequest, overrides: Partial<ChatRequest>): ChatRequest => {
         const result = { ...base, ...overrides };
         if (providerApiKey) {

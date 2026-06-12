@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { getSyncDb } from "./syncDb.js";
 import { logger } from "./logger.js";
 import { registry } from "../providers/registry.js";
+import { searchPatents } from "../services/webSearch.js";
 import { getAllSources, getChunksBySourceId } from "./knowledgeDb.js";
 import type { ProviderId } from "@shared/types/agents";
 
@@ -104,6 +105,8 @@ interface LLMProviderConfig {
   apiKey: string;
   defaultModel: string;
   label: string;
+  modelFallbacks?: string[];
+  enableModelFallback?: boolean;
 }
 
 /** 灵活的 Provider 配置——由 server 端根据用户实际配置解析 */
@@ -112,6 +115,8 @@ export interface GoldenSetProviderConfig {
   model: string;
   apiKey: string;
   label: string;
+  modelFallbacks?: string[];
+  enableModelFallback?: boolean;
 }
 
 /**
@@ -134,32 +139,57 @@ export function resolveGoldenSetProviders(): GoldenSetProviderConfig[] {
     return [];
   }
 
-  let providers: Array<{ providerId: string; apiKeyRef?: string }>;
+  let providers: Array<{
+    providerId: string; apiKeyRef?: string;
+    modelFallbacks?: string[]; enableModelFallback?: boolean;
+    defaultModelId?: string;
+  }>;
   try {
     const settings = JSON.parse(settingsRow.data) as Record<string, unknown>;
-    providers = (settings.providers ?? []) as Array<{ providerId: string; apiKeyRef?: string }>;
+    providers = (settings.providers ?? []) as typeof providers;
   } catch {
     logger.warn("[GoldenSet] Failed to parse settings JSON");
     return [];
   }
 
-  // 构建 providerId → apiKey 映射（无视 enabled，只要有 key）
+  // 构建 providerId → apiKey + fallback 映射（无视 enabled，只要有 key）
   const apiKeys: Record<string, string> = {};
+  const defaultModelIds: Record<string, string | undefined> = {};
+  const fallbacks: Record<string, string[] | undefined> = {};
+  const enableFallback: Record<string, boolean | undefined> = {};
   for (const p of providers) {
     if (p.apiKeyRef) apiKeys[p.providerId] = p.apiKeyRef;
+    if (p.defaultModelId) defaultModelIds[p.providerId] = p.defaultModelId;
+    if (p.modelFallbacks?.length) fallbacks[p.providerId] = p.modelFallbacks;
+    if (p.enableModelFallback) enableFallback[p.providerId] = true;
   }
 
   const configs: GoldenSetProviderConfig[] = [];
 
   if (apiKeys["mimo"]) {
-    configs.push({ providerId: "mimo", model: "mimo-v2.5-pro", apiKey: apiKeys["mimo"], label: "MiMo" });
+    configs.push({
+      providerId: "mimo", model: "mimo-v2.5-pro", apiKey: apiKeys["mimo"], label: "MiMo",
+      ...(fallbacks["mimo"] && { modelFallbacks: fallbacks["mimo"] }),
+      ...(enableFallback["mimo"] && { enableModelFallback: true }),
+    });
   }
   if (apiKeys["gemini"]) {
-    configs.push({ providerId: "gemini", model: "gemini-3.5-flash", apiKey: apiKeys["gemini"], label: "Gemini" });
+    configs.push({
+      providerId: "gemini",
+      model: defaultModelIds["gemini"] ?? "gemini-3.5-flash",
+      apiKey: apiKeys["gemini"],
+      label: "Gemini",
+      ...(fallbacks["gemini"] && { modelFallbacks: fallbacks["gemini"] }),
+      ...(enableFallback["gemini"] && { enableModelFallback: true }),
+    });
   }
   // DeepSeek 只从火山引擎 provider 取，不从 deepseek provider 取
   if (apiKeys["volcengine"]) {
-    configs.push({ providerId: "volcengine", model: "deepseek-v4-pro-260425", apiKey: apiKeys["volcengine"], label: "DeepSeek" });
+    configs.push({
+      providerId: "volcengine", model: "deepseek-v4-pro-260425", apiKey: apiKeys["volcengine"], label: "DeepSeek",
+      ...(fallbacks["volcengine"] && { modelFallbacks: fallbacks["volcengine"] }),
+      ...(enableFallback["volcengine"] && { enableModelFallback: true }),
+    });
   }
 
   return configs;
@@ -439,8 +469,11 @@ async function callLLM(
         temperature: 0.7,
         maxTokens: 1024,
       },
-      undefined, // modelFallbacks
-      { [config.providerId]: false }, // 禁用 model fallback — 只用指定模型
+      // BUG-176 fix: registry 期望 { providerId: string[] } 格式，不是原始数组
+      config.modelFallbacks ? { [config.providerId]: config.modelFallbacks } : undefined,
+      config.enableModelFallback !== undefined
+        ? { [config.providerId]: config.enableModelFallback }
+        : undefined,
     );
 
     const resp = result.response;
@@ -476,8 +509,11 @@ async function callLLMBatch(
         temperature: 0.7,
         maxTokens: 4096,  // 增加 token 限制以支持批量输出
       },
-      undefined,
-      { [config.providerId]: false },
+      // BUG-176 fix: registry 期望 { providerId: string[] } 格式，不是原始数组
+      config.modelFallbacks ? { [config.providerId]: config.modelFallbacks } : undefined,
+      config.enableModelFallback !== undefined
+        ? { [config.providerId]: config.enableModelFallback }
+        : undefined,
     );
 
     const resp = result.response;
@@ -632,6 +668,32 @@ async function generateSerial(
   return results;
 }
 
+// ── Web Search ──────────────────────────────────────────
+
+/**
+ * 调用 web 搜索获取候选结果
+ * 用于 web_only 和 cross_source 题目生成
+ *
+ * spec §11: 默认使用 SerpAPI，与 MCP Web Search 路径保持一致
+ */
+async function searchWebForQuestion(
+  queries: string[],
+  searchApiKey: string,
+  maxResults: number = 5,
+  providerId: string = "serpapi",
+): Promise<Array<{ title: string; url: string; content: string }>> {
+  try {
+    const response = await searchPatents(queries, maxResults, {
+      providerId,
+      apiKey: searchApiKey,
+    });
+    return response.results;
+  } catch (err) {
+    logger.warn(`[GoldenSet] Web search failed: ${err}`);
+    return [];
+  }
+}
+
 // ── Public API ─────────────────────────────────────────
 
 /**
@@ -645,11 +707,15 @@ async function generateSerial(
  *
  * @param providerConfigs - Provider 配置数组（由 resolveGoldenSetProviders() 生成）
  * @param questionsPerProvider - Number of questions per provider (default 20)
+ * @param searchApiKey - 搜索 API key（web_only/cross_source/conflict 需要）
+ * @param searchProviderId - 搜索 provider ID（spec §11: 默认 "serpapi"，与 MCP 路径一致）
  * @returns The generated golden questions
  */
 export async function generateGoldenSet(
   providerConfigs: GoldenSetProviderConfig[],
   questionsPerProvider = 20,
+  searchApiKey?: string,
+  searchProviderId?: string,
 ): Promise<GoldenQuestion[]> {
   createGoldenSetTable();
 
@@ -661,8 +727,26 @@ export async function generateGoldenSet(
   const totalQuestions = questionsPerProvider * providerConfigs.length;
   logger.info(`[GoldenSet] Generating ${totalQuestions} questions (${questionsPerProvider} per provider x ${providerConfigs.length} providers)`);
 
+  // spec §11: 检查 web 搜索可用性
+  const hasWebSearch = !!searchApiKey;
+  if (!hasWebSearch) {
+    logger.warn("[GoldenSet] No searchApiKey provided — web_only/cross_source/conflict will fallback to kb_only");
+  }
+
   // 为每个 provider 采样独立的 chunks（避免 chunk 共享导致的重复问题）
   const providerSamples = providerConfigs.map(() => sampleChunks(questionsPerProvider));
+
+  // 预获取 web 搜索结果（所有 provider 共享）
+  let webResults: Array<{ title: string; url: string; content: string }> = [];
+  if (hasWebSearch) {
+    const searchQueries = providerSamples[0]?.slice(0, 5).map(s => {
+      const section = extractSection(s.chunk.metadata);
+      return `${s.source.name} ${section}`.trim();
+    }) ?? [];
+    webResults = await searchWebForQuestion(searchQueries, searchApiKey!, 15, searchProviderId);
+    logger.info(`[GoldenSet] Web search returned ${webResults.length} results`);
+  }
+
 
   // 并行生成所有 provider 的问题
   const providerPromises = providerConfigs.map(async (pc, providerIndex) => {
@@ -677,6 +761,8 @@ export async function generateGoldenSet(
       apiKey: pc.apiKey,
       defaultModel: pc.model,
       label: pc.label,
+      ...(pc.modelFallbacks && { modelFallbacks: pc.modelFallbacks }),
+      ...(pc.enableModelFallback !== undefined && { enableModelFallback: pc.enableModelFallback }),
     };
 
     // 尝试批量生成，失败时逐级缩小 batch size

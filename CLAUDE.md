@@ -8,6 +8,53 @@
 
 ---
 
+## 核心原则：测试数据库严格隔离（B-042 + BUG-171）
+
+1. **生产数据库**：`server/data/patent-examiner.db` 和 `server/data/knowledge.db` 是用户数据，**绝对不能被任何自动测试读写**
+2. **隔离机制**：集成测试必须调用 `resetSyncDbForTesting(":memory:")` / `resetKnowledgeDbForTesting(":memory:")`；E2E 测试必须通过 `startIsolatedServer()` 启动隔离子进程
+3. **AI 自测规则**：Claude 改完代码后验证修改时，**绝对不能**直接 `curl localhost:3000` 打用户正在运行的 dev server，必须走隔离测试路径
+
+❌ **绝对禁止**：
+- 任何测试直接访问 `server/data/patent-examiner.db` 或 `server/data/knowledge.db`
+- 写新集成测试文件时忘记在 `beforeAll` 中调用 `resetSyncDbForTesting()` / `resetKnowledgeDbForTesting()`
+- 用 `curl localhost:3000` 对用户 dev server 做 ad-hoc 验证
+- 用 `npm run test:e2e:legacy` 连接非隔离服务器
+
+✅ **正确做法**：
+- E2E 验证：`npm run test:e2e` 或 `node tests/e2e.mjs`（自动启动隔离服务器）
+- 集成测试：`npm run test:integration`（每个文件必须注入内存数据库）
+- 临时验证：使用 `tests/e2e-shared/server-lifecycle.mjs` 的 `startIsolatedServer()`
+- 用完立即清理：测试结束必须 kill 隔离 server 进程、删除临时目录
+
+---
+
+## 核心原则：Client 只做 UI，Server 做业务逻辑（ADR-001）
+
+**client 端只负责 UI 渲染和调用后端 API，绝对不能包含业务逻辑、数据存储、数据处理。**
+
+❌ **绝对禁止（AI 常犯的错误）**：
+- 在 client 端直接操作 IndexedDB/localStorage 存取业务数据
+- 在 client 端做数据过滤、排序、聚合等业务逻辑
+- 在 client 端直接调用第三方 API（必须经过 server 代理）
+- 在 client 端实现 RAG 检索、rerank、评分等逻辑
+- 在 client 端解析 LLM 输出、提取结构化数据
+- 在 client 端管理 API Key 或做 provider 连通性判断
+
+✅ **正确做法**：
+- client 通过 `fetch("/api/...")` 调用 server 端点，只负责展示返回结果
+- 业务逻辑（LLM 调用、检索、rerank、评分、数据处理）全部在 `server/src/` 实现
+- 数据存储（SQLite、文件）只在 server 端操作
+- client 端唯一允许的本地状态：UI 状态（展开/折叠、选中项、loading 状态）
+- 依赖方向：`shared ← client`、`shared ← server`、`client ↛ server`（仅通过 `/api/*` HTTP）
+
+**典型违规案例**（从 commit history 总结）：
+- client/modelCatalog.ts 硬编码模型数据 → 已迁移到 server model-capabilities-registry（bug9）
+- client 端 IndexedDB 直接存取案件数据 → 已迁移到 server SQLite
+- client 端 AgentClient 承担过多业务逻辑 → 已完全迁移到 server orchestrator（ADR-001）
+- client 端 knowledge/ 下 hybridSearch/vectorStore/bm25Search/embedder → 已迁移到 server（cr-1）
+
+---
+
 ## .env 文件位置
 
 项目根目录的 `.env` 文件包含所有 API key，**仅用于自动测试脚本**。

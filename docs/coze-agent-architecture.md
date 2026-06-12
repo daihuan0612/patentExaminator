@@ -1,4 +1,13 @@
-# 专利复审 AI 助手 — Coze Agent/Bot 架构设计文档
+# ⚠️ [归档] 专利复审 AI 助手 — Coze Agent/Bot 架构设计文档
+
+> **⚠️ 归档声明（2026-06-11）**：本文档基于 **B-038 重构之前**的架构编写。当前系统已发生以下重大变更，文中描述的"当前系统"不再准确：
+>
+> - **持久化层**：IndexedDB 已移除，全部数据迁移到后端 SQLite（ADR-012, B-034）
+> - **业务逻辑**：已从前端 AgentClient 迁移到后端 orchestrator（ADR-001, B-038）
+> - **Prompt 来源**：不再以 `AgentClient.ts` 为准，改为 `server/src/lib/orchestrator.ts` + `shared/src/prompts/*.prompt.md`
+> - **Provider 数量**：从 5 家扩展到 11 家（新增 Gemini/Qwen/Bedrock/OpenRouter/OpenCode/Doubao）
+>
+> 如需基于当前架构重新规划 Coze 迁移，请参考 DESIGN.md 和 PRD.md 的最新版本。
 
 <p align="right">2026-05-28 · v1.0 · 对应 backlog nf-6</p>
 

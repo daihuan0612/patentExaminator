@@ -117,6 +117,25 @@ export {
   testFullPipelineMock_Reexam_G1,
 } from "./pipeline.mjs";
 
+// Golden Set 测试
+export {
+  testGoldenSetUploadKnowledge,
+  testGoldenSetGenerate,
+  testGoldenSetRead,
+  testGoldenSetStats,
+  testGoldenSetCleanup,
+} from "./golden-set.mjs";
+
+// Golden Set E2E 证据生成测试（nf5）
+export {
+  testGoldenEvalUploadKnowledge,
+  testGoldenEvalWriteSettings,
+  testGoldenEvalGenerate,
+  testGoldenEvalQuality,
+  testGoldenEvalModelCombination,
+  testGoldenEvalCleanup,
+} from "./golden-set-eval.mjs";
+
 // NF1 + NF2 测试
 export {
   testNf1WebSearchDefaultEnabled,
