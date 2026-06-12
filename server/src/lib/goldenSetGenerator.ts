@@ -14,7 +14,8 @@ import type { ProviderId } from "@shared/types/agents";
 
 // ── Types ──────────────────────────────────────────────
 
-import type { SourceType, ExpectedSource, RelevanceGrade } from "@shared/types/metrics";
+import type { SourceType, ExpectedSource, RelevanceGrade, JudgeResult } from "@shared/types/metrics";
+import { callMultiJudge, aggregateDiscrete, DEFAULT_JUDGE_CONFIGS } from "./multiJudge.js";
 
 export interface GoldenQuestion {
   id: string;
@@ -124,9 +125,8 @@ export interface GoldenSetProviderConfig {
  * 无视 enabled 状态——只要有 key 就可用。
  * 规则：
  * - mimo → 直接使用（MiMo 自有端点）
- * - gemini → 直接使用（Gemini 自有端点）
- * - deepseek → 直接使用（DeepSeek 自有端点）
- * - 否则 volcengine → 使用火山托管的 DeepSeek 模型
+ * - volcengine + deepseek → 火山托管的 DeepSeek 模型
+ * - volcengine + doubao-seed → 火山自研 doubao-seed 模型（替换 Gemini）
  */
 export function resolveGoldenSetProviders(): GoldenSetProviderConfig[] {
   const db = getSyncDb();
@@ -168,19 +168,18 @@ export function resolveGoldenSetProviders(): GoldenSetProviderConfig[] {
 
   if (apiKeys["mimo"]) {
     configs.push({
-      providerId: "mimo", model: "mimo-v2.5-pro", apiKey: apiKeys["mimo"], label: "MiMo",
+      providerId: "mimo", model: "mimo-v2.5", apiKey: apiKeys["mimo"], label: "MiMo",
       ...(fallbacks["mimo"] && { modelFallbacks: fallbacks["mimo"] }),
       ...(enableFallback["mimo"] && { enableModelFallback: true }),
     });
   }
-  if (apiKeys["gemini"]) {
+  // 火山引擎 doubao-seed（替换 Gemini，因 API 超时频繁失败）
+  if (apiKeys["volcengine"]) {
     configs.push({
-      providerId: "gemini",
-      model: defaultModelIds["gemini"] ?? "gemini-3.5-flash",
-      apiKey: apiKeys["gemini"],
-      label: "Gemini",
-      ...(fallbacks["gemini"] && { modelFallbacks: fallbacks["gemini"] }),
-      ...(enableFallback["gemini"] && { enableModelFallback: true }),
+      providerId: "volcengine",
+      model: "doubao-seed-2-0-pro-260215",
+      apiKey: apiKeys["volcengine"],
+      label: "doubao-seed",
     });
   }
   // DeepSeek 只从火山引擎 provider 取，不从 deepseek provider 取
@@ -347,6 +346,128 @@ function sampleChunks(count: number): Array<{ chunk: ChunkRow; source: SourceRow
   }
 
   return results.slice(0, count);
+}
+
+// ── Relevance Grading (spec §3) ──────────────────────────
+
+const GRADING_SYSTEM_PROMPT = `你是专利复审领域的评估专家。给定一个问题和一段文本，请判断该文本对回答问题的相关程度。
+
+评分标准：
+- 0分：完全不相关，内容与问题无关
+- 1分：边际相关，提及了相关主题但不直接回答问题
+- 2分：部分相关，包含回答问题所需的部分信息
+- 3分：高度相关，直接且完整地回答了问题
+
+请输出 JSON：
+{
+  "grade": 0|1|2|3,
+  "rationale": "打分理由"
+}`;
+
+function buildGradingUserPrompt(query: string, chunkText: string): string {
+  return `问题：${query}\n\n文本：${chunkText}`;
+}
+
+/** 从 DB settings 解析 judge API keys（spec §3.2: MiMo + DeepSeek + doubao-seed） */
+function resolveJudgeApiKeys(): Record<string, string> {
+  const db = getSyncDb();
+  const settingsRow = db.prepare(
+    "SELECT data FROM sync_data WHERE store_name = 'settings' AND record_id = 'app'"
+  ).get() as { data: string } | undefined;
+
+  if (!settingsRow) return {};
+
+  try {
+    const settings = JSON.parse(settingsRow.data) as Record<string, unknown>;
+    const providers = (settings.providers ?? []) as Array<{
+      providerId: string; apiKeyRef?: string;
+    }>;
+    const keys: Record<string, string> = {};
+    for (const p of providers) {
+      if (p.apiKeyRef) keys[p.providerId] = p.apiKeyRef;
+    }
+    return keys;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * 对一组候选 chunks 进行 relevance grading（spec §3.3）
+ *
+ * 1. 3 个 judge 对每个候选独立打分（0-3）
+ * 2. Majority Vote 聚合
+ * 3. 返回 RelevanceGrade[]
+ */
+async function gradeRelevance(
+  query: string,
+  candidates: Array<{ docId: string; chunkId?: string; text: string; source: "kb" | "web" }>,
+  judgeApiKeys: Record<string, string>,
+): Promise<RelevanceGrade[]> {
+  if (candidates.length === 0) return [];
+
+  const grades: RelevanceGrade[] = [];
+
+  for (const candidate of candidates) {
+    const userPrompt = buildGradingUserPrompt(query, candidate.text);
+
+    const judgeOutputs = await callMultiJudge(
+      { system: GRADING_SYSTEM_PROMPT, user: userPrompt },
+      judgeApiKeys,
+      { judgeConfigs: DEFAULT_JUDGE_CONFIGS, temperature: 0, maxTokens: 500 },
+    );
+
+    // 解析每个 judge 的打分
+    const judgeResults: JudgeResult[] = [];
+    const numericGrades: number[] = [];
+
+    for (const output of judgeOutputs) {
+      if (!output.success) {
+        judgeResults.push({
+          provider: output.providerId,
+          grade: null,
+          rationale: `judge_failed: ${output.error}`,
+        });
+        continue;
+      }
+
+      try {
+        // 提取 JSON（judge 可能返回 markdown 包裹的 JSON）
+        const jsonMatch = output.rawText.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error("No JSON found in response");
+        const parsed = JSON.parse(jsonMatch[0]) as { grade: number; rationale: string };
+        const grade = Math.max(0, Math.min(3, Math.round(parsed.grade))) as 0 | 1 | 2 | 3;
+        judgeResults.push({
+          provider: output.providerId,
+          grade,
+          rationale: parsed.rationale || "",
+        });
+        numericGrades.push(grade);
+      } catch {
+        judgeResults.push({
+          provider: output.providerId,
+          grade: null,
+          rationale: "parse_failed",
+        });
+      }
+    }
+
+    // 聚合：至少 2 个 judge 成功才打分
+    const aggregatedGrade = numericGrades.length >= 2
+      ? aggregateDiscrete(numericGrades) as 0 | 1 | 2 | 3
+      : 0;
+
+    grades.push({
+      source: candidate.source,
+      docId: candidate.docId,
+      chunkId: candidate.chunkId,
+      grade: aggregatedGrade,
+      rationale: judgeResults.map(j => `${j.provider}:${j.grade ?? "fail"}(${j.rationale})`).join("; "),
+      judges: judgeResults,
+    });
+  }
+
+  return grades;
 }
 
 // ── LLM Call ───────────────────────────────────────────
@@ -747,6 +868,12 @@ export async function generateGoldenSet(
     logger.info(`[GoldenSet] Web search returned ${webResults.length} results`);
   }
 
+  // spec §3: 解析 judge API keys（用于 relevance grading）
+  const judgeApiKeys = resolveJudgeApiKeys();
+  const hasJudges = Object.keys(judgeApiKeys).length >= 2;
+  if (!hasJudges) {
+    logger.warn("[GoldenSet] Insufficient judge API keys — relevance grading will be skipped");
+  }
 
   // 并行生成所有 provider 的问题
   const providerPromises = providerConfigs.map(async (pc, providerIndex) => {
@@ -765,11 +892,10 @@ export async function generateGoldenSet(
       ...(pc.enableModelFallback !== undefined && { enableModelFallback: pc.enableModelFallback }),
     };
 
-    // 尝试批量生成，失败时逐级缩小 batch size
+    // 尝试批量生成，失败时逐级减半 batch size: x → x/2 → x/4 → ... → 1
     let questions: GeneratedQuestion[] = [];
-    const batchSizes = [samples.length, 10, 5]; // 20 → 10 → 5
-    for (const batchSize of batchSizes) {
-      if (batchSize > samples.length) continue;
+    let batchSize = samples.length;
+    while (batchSize >= 1) {
       const batchSamples = samples.slice(0, batchSize);
       const batchPrompt = buildBatchPrompt(batchSamples, batchSamples.length);
       questions = await callLLMBatch(llmConfig, batchPrompt, batchSamples.length);
@@ -778,6 +904,7 @@ export async function generateGoldenSet(
         break;
       }
       logger.info(`[GoldenSet] ${pc.label}: Batch(${batchSize}) failed, trying smaller batch`);
+      batchSize = Math.max(1, Math.floor(batchSize / 2));
     }
 
     // 所有 batch 都失败，回退到单题串行（最后手段）
@@ -792,6 +919,28 @@ export async function generateGoldenSet(
       const q = questions[i]!;
       const sample = samples[i];
       const categoryInfo = findCategoryForAgent(q.category);
+
+      // spec §3: Relevance Grading — 生成阶段完成
+      let relevanceGrading: RelevanceGrade[] = [];
+      if (hasJudges && sample) {
+        // 构建候选：生成 chunk + 2-3 个同批次其他 chunk 作为负样本
+        const candidates: Array<{ docId: string; chunkId?: string; text: string; source: "kb" | "web" }> = [
+          { docId: sample.source.name, chunkId: sample.chunk.id, text: sample.chunk.text, source: "kb" },
+        ];
+        // 从同批次其他 chunk 中随机取 2-3 个作为负样本
+        const otherSamples = samples.filter((_, j) => j !== i).slice(0, 3);
+        for (const os of otherSamples) {
+          candidates.push({ docId: os.source.name, chunkId: os.chunk.id, text: os.chunk.text, source: "kb" });
+        }
+
+        try {
+          relevanceGrading = await gradeRelevance(q.query, candidates, judgeApiKeys);
+          logger.info(`[GoldenSet] Graded ${relevanceGrading.length} candidates for "${q.query.slice(0, 40)}..."`);
+        } catch (err) {
+          logger.warn(`[GoldenSet] Grading failed for question "${q.query.slice(0, 40)}...": ${err}`);
+        }
+      }
+
       const goldenQuestion: GoldenQuestion = {
         id: `gs-${randomUUID().slice(0, 8)}`,
         agent: categoryInfo?.agent ?? "chat",
@@ -807,7 +956,7 @@ export async function generateGoldenSet(
         expectedSource: "kb",
         sourceRoutingRationale: q.source_routing_rationale || "答案来自知识库",
         mustIncludeFacts: q.must_include_facts || [],
-        relevanceGrading: [],
+        relevanceGrading,
         verifiedBy: "auto",
       };
       insertGoldenQuestion(goldenQuestion);

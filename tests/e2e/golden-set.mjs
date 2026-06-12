@@ -49,26 +49,20 @@ export async function testGoldenSetUploadKnowledge() {
  */
 export async function testGoldenSetGenerate() {
   const mimoKey = getApiKey("mimo");
-  const geminiKey = getApiKey("gemini");
   const volcengineKey = getApiKey("volcengine");
 
-  if (!mimoKey && !geminiKey && !volcengineKey) {
+  if (!mimoKey && !volcengineKey) {
     log("GoldenSet: Generate", true, "skipped (no API keys)");
     return;
   }
 
   const providerConfigs = [];
   if (mimoKey) {
-    providerConfigs.push({ providerId: "mimo", model: "mimo-v2.5-pro", apiKey: mimoKey, label: "MiMo" });
+    providerConfigs.push({ providerId: "mimo", model: "mimo-v2.5", apiKey: mimoKey, label: "MiMo" });
   }
   if (volcengineKey) {
     providerConfigs.push({ providerId: "volcengine", model: "deepseek-v4-pro-260425", apiKey: volcengineKey, label: "DeepSeek (火山)" });
-  }
-  if (geminiKey) {
-    // BUG-178: 不传 modelFallbacks — server 从 DB settings 读取用户实际配置的 fallback 链
-    providerConfigs.push({
-      providerId: "gemini", model: "gemini-3.5-flash", apiKey: geminiKey, label: "Gemini",
-    });
+    providerConfigs.push({ providerId: "volcengine", model: "doubao-seed-2-0-pro-260215", apiKey: volcengineKey, label: "doubao-seed (火山)" });
   }
 
   // spec §11: 使用 SerpAPI key（与 MCP Web Search 路径一致）

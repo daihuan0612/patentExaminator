@@ -23,7 +23,6 @@ import {
   getApiKey,
   getTestBase,
   SAMPLES_KNOWLEDGE_DIR,
-  GEMINI_FALLBACK_MODELS,  // BUG-178: 仅用于写入 DB settings，不直接传给 generate
 } from "../e2e-shared/index.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -69,21 +68,13 @@ export async function testGoldenEvalUploadKnowledge() {
 
 export async function testGoldenEvalWriteSettings() {
   const mimoKey = getApiKey("mimo");
-  const geminiKey = getApiKey("gemini");
   const volcengineKey = getApiKey("volcengine");
   const serpApiKey = getApiKey("serp");
 
   const providers = [];
   if (mimoKey) providers.push({ providerId: "mimo", apiKeyRef: mimoKey });
   if (volcengineKey) providers.push({ providerId: "volcengine", apiKeyRef: volcengineKey });
-  if (geminiKey) {
-    providers.push({
-      providerId: "gemini",
-      apiKeyRef: geminiKey,
-      modelFallbacks: [...GEMINI_FALLBACK_MODELS],
-      enableModelFallback: true,
-    });
-  }
+  // Gemini API 因超时频繁失败已暂停，替换为火山 doubao-seed（与 DeepSeek 共用 volcengine key）
 
   // spec §11: 写入 SerpAPI search provider（MCP Web Search 路径需要）
   const searchProviders = [];
@@ -112,29 +103,22 @@ export async function testGoldenEvalWriteSettings() {
 
 export async function testGoldenEvalGenerate() {
   const mimoKey = getApiKey("mimo");
-  const geminiKey = getApiKey("gemini");
   const volcengineKey = getApiKey("volcengine");
 
-  if (!mimoKey && !geminiKey && !volcengineKey) {
+  if (!mimoKey && !volcengineKey) {
     log("GoldenEval: Generate", true, "skipped (no API keys)");
     return null;
   }
 
   const providerConfigs = [];
-  if (mimoKey) providerConfigs.push({ providerId: "mimo", model: "mimo-v2.5-pro", apiKey: mimoKey, label: "MiMo" });
+  if (mimoKey) providerConfigs.push({ providerId: "mimo", model: "mimo-v2.5", apiKey: mimoKey, label: "MiMo" });
   if (volcengineKey) providerConfigs.push({ providerId: "volcengine", model: "deepseek-v4-pro-260425", apiKey: volcengineKey, label: "DeepSeek (火山)" });
-  if (geminiKey) {
-    // BUG-178: 不传 modelFallbacks — server 从 DB settings 读取用户实际配置的 fallback 链
-    providerConfigs.push({
-      providerId: "gemini", model: "gemini-3.5-flash", apiKey: geminiKey, label: "Gemini",
-    });
-  }
+  if (volcengineKey) providerConfigs.push({ providerId: "volcengine", model: "doubao-seed-2-0-pro-260215", apiKey: volcengineKey, label: "doubao-seed (火山)" });
 
-  // Multi-judge keys: mimo + volcengine(=DeepSeek) + gemini（spec §3.2: 3 个不同模型家族）
+  // Multi-judge keys: mimo + volcengine（DeepSeek + doubao-seed 共用 key，替换 Gemini）
   const judgeApiKeys = {};
   if (mimoKey) judgeApiKeys.mimo = mimoKey;
   if (volcengineKey) judgeApiKeys.volcengine = volcengineKey;
-  if (geminiKey) judgeApiKeys.gemini = geminiKey;
 
   // spec §11: 使用 SerpAPI key（与 MCP Web Search 路径一致）
   const searchApiKey = getApiKey("serp");
@@ -355,8 +339,7 @@ export async function testGoldenEvalModelCombination() {
 
   // 构建 eval configs — 使用主 LLM 作为 eval config（每个 question 需要 20-90s，太多 configs 会超时）
   const configs = [];
-  if (mimoKey) configs.push({ label: "MiMo-v2.5-pro", providerId: "mimo", modelId: "mimo-v2.5-pro" });
-  else if (geminiKey) configs.push({ label: "Gemini-3.5-flash", providerId: "gemini", modelId: "gemini-3.5-flash" });
+  if (mimoKey) configs.push({ label: "MiMo-v2.5", providerId: "mimo", modelId: "mimo-v2.5" });
   else if (volcengineKey) configs.push({ label: "DeepSeek-v4-pro", providerId: "volcengine", modelId: "deepseek-v4-pro-260425" });
 
   if (configs.length === 0) {
@@ -365,13 +348,12 @@ export async function testGoldenEvalModelCombination() {
   }
 
   // 使用第一个可用 key 作为主 LLM key
-  const apiKey = mimoKey || geminiKey || volcengineKey;
+  const apiKey = mimoKey || volcengineKey;
 
-  // Multi-judge keys: mimo + volcengine(=DeepSeek) + gemini（spec §3.2: 3 个不同模型家族）
+  // Multi-judge keys: mimo + volcengine（DeepSeek + doubao-seed 共用 key，替换 Gemini）
   const judgeApiKeys = {};
   if (mimoKey) judgeApiKeys.mimo = mimoKey;
   if (volcengineKey) judgeApiKeys.volcengine = volcengineKey;
-  if (geminiKey) judgeApiKeys.gemini = geminiKey;
 
   console.log(`[GoldenEval] Running evaluation with ${configs.length} configs against ${gsData.count} questions`);
   console.log(`[GoldenEval] Configs: ${configs.map(c => c.label).join(", ")}`);

@@ -480,7 +480,7 @@ metricsRouter.post("/metrics/golden-set/generate", async (req, res) => {
       : resolveGoldenSetProviders();
 
     if (providerConfigs.length === 0) {
-      return res.status(400).json({ error: "未找到可用于 Golden Set 生成的 Provider（需要 MiMo / DeepSeek / Gemini 之一）" });
+      return res.status(400).json({ error: "未找到可用于 Golden Set 生成的 Provider（需要 MiMo / DeepSeek / doubao-seed 之一）" });
     }
 
     // searchApiKey / judgeApiKeys: 请求体优先（测试脚本），否则从 DB 读（App client）

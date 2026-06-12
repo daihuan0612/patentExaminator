@@ -30,15 +30,23 @@ export interface MultiJudgeResult<T> {
 
 // ── 默认配置 ──────────────────────────────────────────
 
-/** 默认 3 个 judge provider（不同模型家族，decorrelate 偏差） */
-export const DEFAULT_JUDGE_PROVIDERS = ["mimo", "volcengine", "gemini"];
+/** 默认 3 个 judge（不同模型，decorrelate 偏差）
+ *  使用 {providerId, modelId} 元组数组，支持同一 provider 不同模型
+ *  Gemini API 因超时频繁失败，已替换为火山 doubao-seed
+ */
+export const DEFAULT_JUDGE_CONFIGS: Array<{ providerId: string; modelId: string }> = [
+  { providerId: "mimo", modelId: "mimo-v2.5" },
+  { providerId: "volcengine", modelId: "deepseek-v4-pro-260425" },
+  { providerId: "volcengine", modelId: "doubao-seed-2-0-pro-260215" },
+];
 
-/** 各 provider 的默认 judge 模型 */
-export const DEFAULT_JUDGE_MODELS: Record<string, string> = {
-  mimo: "mimo-v2.5-pro",
-  volcengine: "deepseek-v4-pro-260425",
-  gemini: "gemini-2.5-flash",
-};
+/** 向后兼容：provider ID 列表 */
+export const DEFAULT_JUDGE_PROVIDERS = DEFAULT_JUDGE_CONFIGS.map(c => c.providerId);
+
+/** 向后兼容：provider → model 映射（注意：同一 provider 多模型时只保留最后一个） */
+export const DEFAULT_JUDGE_MODELS: Record<string, string> = Object.fromEntries(
+  DEFAULT_JUDGE_CONFIGS.map(c => [c.providerId, c.modelId])
+);
 
 // ── 聚合算法 ──────────────────────────────────────────
 
@@ -100,6 +108,8 @@ export async function callMultiJudge(
   options?: {
     providers?: string[];
     modelIds?: Record<string, string>;
+    /** judge 配置数组（优先于 providers + modelIds，支持同一 provider 不同模型） */
+    judgeConfigs?: Array<{ providerId: string; modelId: string }>;
     temperature?: number;
     maxTokens?: number;
     signal?: AbortSignal;
@@ -109,13 +119,20 @@ export async function callMultiJudge(
     enableModelFallback?: boolean;
   }
 ): Promise<JudgeOutput[]> {
-  const providers = options?.providers ?? DEFAULT_JUDGE_PROVIDERS;
-  const modelIds = options?.modelIds ?? DEFAULT_JUDGE_MODELS;
+  // judgeConfigs 优先（支持同一 provider 不同模型），否则向后兼容 providers + modelIds
+  const judgeCfgs = options?.judgeConfigs
+    ?? (options?.providers
+      ? options.providers.map((p, i) => ({
+        providerId: p,
+        modelId: options?.modelIds?.[p] ?? DEFAULT_JUDGE_CONFIGS[i]?.modelId ?? "",
+      }))
+      : DEFAULT_JUDGE_CONFIGS);
   const temperature = options?.temperature ?? 0;
   const maxTokens = options?.maxTokens ?? 2000;
 
   // 构建每个 judge 的调用任务
-  const judgeTasks = providers.map(async (providerId): Promise<JudgeOutput> => {
+  const judgeTasks = judgeCfgs.map(async (cfg): Promise<JudgeOutput> => {
+    const { providerId, modelId } = cfg;
     const apiKey = judgeApiKeys[providerId];
     if (!apiKey) {
       logger.warn(`[MultiJudge] ${providerId} judge skipped: no API key configured`);
@@ -126,7 +143,7 @@ export async function callMultiJudge(
       const { registry } = await import("../providers/registry.js");
 
       const chatReq: ChatRequest = {
-        modelId: modelIds[providerId] ?? "",
+        modelId,
         messages: [
           { role: "system", content: prompt.system },
           { role: "user", content: prompt.user },
@@ -180,7 +197,7 @@ export async function callMultiJudge(
   return settled.map((result, i) => {
     if (result.status === "fulfilled") return result.value;
     return {
-      providerId: providers[i] ?? "unknown",
+      providerId: judgeCfgs[i]?.providerId ?? "unknown",
       rawText: "",
       success: false,
       error: result.reason instanceof Error ? result.reason.message : String(result.reason),
