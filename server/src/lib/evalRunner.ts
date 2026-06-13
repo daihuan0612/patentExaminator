@@ -337,35 +337,27 @@ async function runSingleEvaluation(
       ? computeWebHitRate(retrievedChunks, question.relevanceGrading, 10)
       : 0;
 
-    // ── nf5: 多 Judge 生成质量指标 ──
+    // ── nf5: 多 Judge 生成质量指标（并行执行）──
     const context = actualSources.join("\n");
     const judgeOpts: { modelFallbacks?: Record<string, string[]>; enableModelFallback?: boolean } = {};
     if (opts.modelFallbacks !== undefined) judgeOpts.modelFallbacks = opts.modelFallbacks;
     if (opts.enableModelFallback !== undefined) judgeOpts.enableModelFallback = opts.enableModelFallback;
 
-    // Faithfulness（multi-judge, reference-free）
-    const faithfulnessResult = await computeFaithfulnessMultiJudge(
-      actualAnswer, context, opts.judgeApiKeys, judgeOpts
-    );
+    // 4 个 judge 指标并行执行（互不依赖，串行浪费 ~60s/题）
+    const [faithfulnessResult, acResult, fcResult, refusalResult] = await Promise.all([
+      computeFaithfulnessMultiJudge(actualAnswer, context, opts.judgeApiKeys, judgeOpts),
+      question.expectedAnswer
+        ? computeAnswerCorrectness(actualAnswer, question.expectedAnswer, opts.judgeApiKeys, judgeOpts)
+        : Promise.resolve({ aggregated: 0, judges: [] }),
+      question.mustIncludeFacts.length > 0
+        ? computeFactCoverage(actualAnswer, question.mustIncludeFacts, opts.judgeApiKeys, judgeOpts)
+        : Promise.resolve({ aggregated: 0, judges: [] }),
+      computeRefusalAccuracy(question.sourceType, actualAnswer, opts.judgeApiKeys, judgeOpts),
+    ]);
     const faithfulness = faithfulnessResult.aggregated;
-
-    // Answer Correctness（multi-judge, 需要参考答案）
-    let answerCorrectness = 0;
-    if (question.expectedAnswer) {
-      const acResult = await computeAnswerCorrectness(
-        actualAnswer, question.expectedAnswer, opts.judgeApiKeys, judgeOpts
-      );
-      answerCorrectness = acResult.aggregated;
-    }
-
-    // Fact Coverage（multi-judge, 需要 mustIncludeFacts）
-    let factCoverage = 0;
-    if (question.mustIncludeFacts.length > 0) {
-      const fcResult = await computeFactCoverage(
-        actualAnswer, question.mustIncludeFacts, opts.judgeApiKeys, judgeOpts
-      );
-      factCoverage = fcResult.aggregated;
-    }
+    const answerCorrectness = acResult.aggregated;
+    const factCoverage = fcResult.aggregated;
+    const refusalAccuracy = refusalResult.aggregated;
 
     // ── nf5: 确定性指标 ──
     const articleAccuracy = computeArticleAccuracy(actualAnswer, question.expectedArticles);
@@ -390,10 +382,6 @@ async function runSingleEvaluation(
       actualSourceFlags.kb && actualSourceFlags.web ? "mixed" :
         actualSourceFlags.kb ? "kb" : "web"
     );
-    const refusalResult = await computeRefusalAccuracy(
-      question.sourceType, actualAnswer, opts.judgeApiKeys, judgeOpts
-    );
-    const refusalAccuracy = refusalResult.aggregated;
 
     const result: EvalResult = {
       goldenId: question.id,
