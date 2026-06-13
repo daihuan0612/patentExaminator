@@ -471,7 +471,6 @@ metricsRouter.post("/metrics/golden-set/generate", async (req, res) => {
 
     const body = req.body as {
       providerConfigs?: Array<{ providerId: string; model: string; apiKey: string; label: string; modelFallbacks?: string[]; enableModelFallback?: boolean }>;
-      questionsPerProvider?: number;
       searchApiKey?: string;
       judgeApiKeys?: Record<string, string>;
     };
@@ -480,7 +479,7 @@ metricsRouter.post("/metrics/golden-set/generate", async (req, res) => {
       : resolveGoldenSetProviders();
 
     if (providerConfigs.length === 0) {
-      return res.status(400).json({ error: "未找到可用于 Golden Set 生成的 Provider（需要 MiMo / DeepSeek / doubao-seed 之一）" });
+      return res.status(400).json({ error: "未找到可用于 Golden Set 生成的 Provider（需要 MiMo / DeepSeek 之一）" });
     }
 
     // searchApiKey / judgeApiKeys: 请求体优先（测试脚本），否则从 DB 读（App client）
@@ -536,9 +535,8 @@ metricsRouter.post("/metrics/golden-set/generate", async (req, res) => {
 
     const questions = await generateGoldenSet(
       providerConfigs,
-      body.questionsPerProvider,
       searchApiKey || undefined,
-      "serpapi", // spec §11: 与 MCP Web Search 路径一致
+      "serpapi", // spec §8.1: 与 MCP Web Search 路径一致
     );
 
     // BUG-180: 持久化已移入 generateGoldenSet() 内部（生成完成立即写文件，不等 route return）
@@ -570,6 +568,77 @@ metricsRouter.delete("/metrics/golden-set", async (_req, res) => {
     await clearGoldenSet();
     writeAudit({ op: "DELETE_ALL", store: "metrics_golden_set", caller: "user", dataBefore: before });
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: errMsg(err) });
+  }
+});
+
+// POST /api/metrics/golden-set/grade
+// A.2 Relevance Grading — 独立采样 + 2-judge 打分
+// Body: { judgeApiKeys? }
+metricsRouter.post("/metrics/golden-set/grade", async (req, res) => {
+  try {
+    const { gradeGoldenSet } = await import("../lib/goldenSetGrading.js");
+
+    const judgeApiKeys = (req.body as { judgeApiKeys?: Record<string, string> }).judgeApiKeys || {};
+
+    // 请求体未传 key 时从 DB 读（App client 场景）
+    if (Object.keys(judgeApiKeys).length === 0) {
+      const db = getSyncDb();
+      const settingsRow = db.prepare(
+        "SELECT data FROM sync_data WHERE store_name = 'settings' AND record_id = 'app'"
+      ).get() as { data: string } | undefined;
+      if (settingsRow) {
+        try {
+          const settings = JSON.parse(settingsRow.data) as Record<string, unknown>;
+          const providers = (settings.providers ?? []) as Array<{
+            providerId: string; apiKeyRef?: string;
+          }>;
+          for (const p of providers) {
+            if (p.apiKeyRef) judgeApiKeys[p.providerId] = p.apiKeyRef;
+          }
+        } catch { /* ignore */ }
+      }
+    }
+
+    if (Object.keys(judgeApiKeys).length < 1) {
+      return res.status(400).json({ error: "需要至少 1 个 judge API key（MiMo 或 DeepSeek）" });
+    }
+
+    const results = await gradeGoldenSet(judgeApiKeys);
+    writeAudit({ op: "UPDATE", store: "metrics_golden_set", caller: "user", dataAfter: { graded: results.length } });
+    res.json({ graded: results.length, results });
+  } catch (err) {
+    res.status(500).json({ error: errMsg(err) });
+  }
+});
+
+// GET /api/metrics/golden-set/quality
+// B Golden Set 质量评估 — 确定性检查，不调用 LLM
+metricsRouter.get("/metrics/golden-set/quality", async (_req, res) => {
+  try {
+    const { evaluateGoldenSetQuality } = await import("../lib/goldenSetQuality.js");
+    const report = evaluateGoldenSetQuality();
+    res.json(report);
+  } catch (err) {
+    res.status(500).json({ error: errMsg(err) });
+  }
+});
+
+// POST /api/metrics/golden-set/clean
+// C 清理不合格题目 — 删除 B 阶段检查不通过的题目
+metricsRouter.post("/metrics/golden-set/clean", async (_req, res) => {
+  try {
+    const { cleanGoldenSet } = await import("../lib/goldenSetQuality.js");
+    const result = cleanGoldenSet();
+    writeAudit({
+      op: "DELETE",
+      store: "metrics_golden_set",
+      caller: "user",
+      dataBefore: { totalBefore: result.deleted.length + result.kept },
+      dataAfter: { deleted: result.deleted.length, kept: result.kept },
+    });
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: errMsg(err) });
   }

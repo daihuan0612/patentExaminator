@@ -143,6 +143,7 @@ function upgradeGoldenSetSchema(db: Database.Database): void {
     { name: "must_include_facts",      def: "TEXT DEFAULT '[]'" },
     { name: "relevance_grading",       def: "TEXT DEFAULT '[]'" },
     { name: "verified_by",             def: "TEXT DEFAULT 'auto'" },
+    { name: "context_chunk_ids",       def: "TEXT DEFAULT '[]'" },
   ];
 
   for (const col of columnsToAdd) {

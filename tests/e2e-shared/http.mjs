@@ -6,6 +6,15 @@
  */
 
 import { getTestBase } from "./env.mjs";
+import { Agent, setGlobalDispatcher } from "undici";
+
+// 设置 undici 全局 dispatcher，将 headersTimeout 提高到 10 分钟
+// （默认 300s 会在 grading 252 次 LLM 调用时超时）
+setGlobalDispatcher(new Agent({
+  headersTimeout: 600_000,
+  bodyTimeout: 600_000,
+  connectTimeout: 30_000,
+}));
 
 /** 默认请求超时（60 秒，AI 调用可能较慢） */
 const DEFAULT_TIMEOUT_MS = 60_000;

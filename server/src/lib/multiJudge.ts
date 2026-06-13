@@ -1,12 +1,14 @@
 /**
- * Multi-Judge Infrastructure — 3 个 LLM Provider 并行打分 + 聚合
+ * Multi-Judge Infrastructure — 2 个 LLM Provider 并行打分 + 聚合
  *
- * nf5 规范 §3.2: 每个需要语义判断的指标都由 3 个 LLM provider 独立打分，
+ * spec §5.2: 每个需要语义判断的指标都由 2 个 LLM provider 独立打分，
  * 使用不同模型家族 decorrelate 偏差。
  *
  * 聚合算法：
- * - 离散值（0-3 relevance grade）：Majority Vote → 无多数取中位数
+ * - 离散值（0-3 relevance grade）：算术平均，四舍五入到最近整数
  * - 连续值（0-1 faithfulness/correctness）：算术平均
+ *
+ * 注意：doubao-seed 因 120s 超时频繁已移除，从 3 judge 降为 2 judge。
  */
 import { logger } from "./logger.js";
 import type { ChatRequest } from "../providers/ProviderAdapter.js";
@@ -30,14 +32,10 @@ export interface MultiJudgeResult<T> {
 
 // ── 默认配置 ──────────────────────────────────────────
 
-/** 默认 3 个 judge（不同模型，decorrelate 偏差）
- *  使用 {providerId, modelId} 元组数组，支持同一 provider 不同模型
- *  Gemini API 因超时频繁失败，已替换为火山 doubao-seed
- */
+/** 默认 2-judge 配置（spec §5.2: MiMo + DeepSeek，取平均；doubao-seed 因 120s 超时频繁已移除） */
 export const DEFAULT_JUDGE_CONFIGS: Array<{ providerId: string; modelId: string }> = [
   { providerId: "mimo", modelId: "mimo-v2.5" },
-  { providerId: "volcengine", modelId: "deepseek-v4-flash-260425" },
-  { providerId: "volcengine", modelId: "doubao-seed-2-0-pro-260215" },
+  { providerId: "volcengine", modelId: "deepseek-v3-2-251201" },
 ];
 
 /** 向后兼容：provider ID 列表 */
@@ -51,11 +49,10 @@ export const DEFAULT_JUDGE_MODELS: Record<string, string> = Object.fromEntries(
 // ── 聚合算法 ──────────────────────────────────────────
 
 /**
- * 离散值聚合：Majority Vote → 无多数取中位数
+ * 离散值聚合：算术平均，四舍五入到最近整数
  *
- * 规范 §3.2:
- * - 2 个 judge 给相同分数 → 取该分数
- * - 无多数（3 个各不同）→ 取中位数
+ * spec §5.2: 2 judge 取平均（而非 majority vote），牺牲少量精度换取稳定性。
+ * 保留 3 值分支以向后兼容。
  */
 export function aggregateDiscrete(values: number[]): number {
   if (values.length === 0) return 0;
@@ -97,10 +94,10 @@ export function aggregateContinuous(values: number[]): number {
 // ── 核心调用函数 ──────────────────────────────────────
 
 /**
- * 并行调用 3 个 judge provider，返回各自的原始输出文本
+ * 并行调用 2 个 judge provider，返回各自的原始输出文本
  *
  * 使用 Promise.allSettled 确保任一 provider 失败不阻塞其他。
- * 2/3 成功即可聚合；全部失败时返回空数组。
+ * 全部失败时返回空数组。
  */
 export async function callMultiJudge(
   prompt: { system: string; user: string },

@@ -72,12 +72,10 @@ export async function testGoldenSetGenerate() {
   const startTime = performance.now();
   console.log(`[Perf] Golden Set 生成开始: ${new Date().toISOString()}`);
   console.log(`[Perf] Providers: ${providerConfigs.map(p => p.label).join(", ")}`);
-  console.log(`[Perf] Questions per provider: 2`);
   console.log(`[Perf] Search API key (SerpAPI): ${searchApiKey ? "✓" : "✗ (web types will be skipped)"}`);
 
   const res = await postJSON("/metrics/golden-set/generate", {
     providerConfigs,
-    questionsPerProvider: 2,
     ...(searchApiKey && { searchApiKey }),
   }, undefined, TIMEOUT_MS);
   const data = await safeJson(res, "GoldenSet Generate");
@@ -107,7 +105,6 @@ export async function testGoldenSetGenerate() {
   const perfData = {
     timestamp: new Date().toISOString(),
     providers: providerConfigs.map(p => p.label),
-    questionsPerProvider: 2,
     totalQuestions: data.count || 0,
     durationMs: Math.round(durationMs),
     durationSec: parseFloat(durationSec),

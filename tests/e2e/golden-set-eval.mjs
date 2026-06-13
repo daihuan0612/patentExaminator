@@ -115,52 +115,43 @@ export async function testGoldenEvalGenerate() {
   if (volcengineKey) providerConfigs.push({ providerId: "volcengine", model: "deepseek-v4-flash-260425", apiKey: volcengineKey, label: "DeepSeek (火山)" });
   if (volcengineKey) providerConfigs.push({ providerId: "volcengine", model: "doubao-seed-2-0-pro-260215", apiKey: volcengineKey, label: "doubao-seed (火山)" });
 
-  // Multi-judge keys: mimo + volcengine（DeepSeek + doubao-seed 共用 key，替换 Gemini）
-  const judgeApiKeys = {};
-  if (mimoKey) judgeApiKeys.mimo = mimoKey;
-  if (volcengineKey) judgeApiKeys.volcengine = volcengineKey;
-
-  // spec §11: 使用 SerpAPI key（与 MCP Web Search 路径一致）
+  // spec §8.1: 使用 SerpAPI key（与 MCP Web Search 路径一致）
   const searchApiKey = getApiKey("serp");
 
   console.log(`[GoldenEval] Providers: ${providerConfigs.map(p => p.label).join(", ")}`);
   console.log(`[GoldenEval] Questions per provider: 7 (matrix allocation)`);
   console.log(`[GoldenEval] Search API key: ${searchApiKey ? "✓" : "✗ (web types will be skipped)"}`);
-  console.log(`[GoldenEval] Judge providers: ${Object.keys(judgeApiKeys).join(", ")} (${Object.keys(judgeApiKeys).length} judges)`);
+  console.log(`[GoldenEval] A.1 only (no grading — grading is A.2 step)`);
 
   const startTime = performance.now();
   const res = await postJSON("/metrics/golden-set/generate", {
     providerConfigs,
     ...(searchApiKey && { searchApiKey }),
-    ...(Object.keys(judgeApiKeys).length > 0 && { judgeApiKeys }),
   }, undefined, TIMEOUT_MS);
   const data = await safeJson(res, "GoldenEval Generate");
   const durationMs = performance.now() - startTime;
 
   const hasQuestions = data.count > 0 && Array.isArray(data.questions) && data.questions.length > 0;
-  log("GoldenEval: Generate", hasQuestions,
+  log("GoldenEval: Generate (A.1)", hasQuestions,
     hasQuestions ? `count=${data.count}, duration=${(durationMs / 1000).toFixed(1)}s` : JSON.stringify(data));
 
   if (!hasQuestions) return null;
 
-  // ── Spec compliance checks ──
+  // ── Spec compliance checks (A.1) ──
   // 1. Multi-provider: 至少 2 个 provider 生成了题目
   const generatedBySet = new Set(data.questions.map(q => q.generatedBy));
   log("GoldenEval: Multi-provider generation", generatedBySet.size >= 2,
     `providers=[${[...generatedBySet].join(", ")}], count=${generatedBySet.size} (spec: ≥2)`);
 
-  // 2. Multi-judge: relevanceGrading 非空（3 个 judge 打分了）
+  // 2. A.1 不做 grading — relevanceGrading 应为空
   const questionsWithGrading = data.questions.filter(q => (q.relevanceGrading || []).length > 0);
-  const gradingRatio = questionsWithGrading.length / data.questions.length;
-  log("GoldenEval: Multi-judge relevance grading", gradingRatio > 0,
-    `${questionsWithGrading.length}/${data.questions.length} questions have grading (${(gradingRatio * 100).toFixed(0)}%)`);
+  log("GoldenEval: A.1 no grading (spec §5.1)", questionsWithGrading.length === 0,
+    `${questionsWithGrading.length}/${data.questions.length} have grading (expected 0)`);
 
   // 3. SourceType 分布：至少 3 种 sourceType
   const sourceTypeSet = new Set(data.questions.map(q => q.sourceType));
   log("GoldenEval: SourceType diversity", sourceTypeSet.size >= 3,
     `types=[${[...sourceTypeSet].join(", ")}], count=${sourceTypeSet.size} (spec: ≥3)`);
-
-  if (!hasQuestions) return null;
 
   // 持久化 golden set
   const ts = timestamp();
@@ -172,153 +163,111 @@ export async function testGoldenEvalGenerate() {
     questions: data.questions,
   });
 
-  log("GoldenEval: Golden set persisted", true, goldenSetFile);
+  log("GoldenEval: Golden set persisted (A.1)", true, goldenSetFile);
+  return data;
+}
+
+// ── Step 2.5: A.2 Relevance Grading ───────────────────────────────────
+
+export async function testGoldenEvalGrading() {
+  const mimoKey = getApiKey("mimo");
+  const volcengineKey = getApiKey("volcengine");
+
+  // 检查是否有 golden set
+  const gsRes = await getJSON("/metrics/golden-set");
+  const gsData = await safeJson(gsRes, "GoldenEval Grading check");
+  if (gsData.count === 0) {
+    log("GoldenEval: A.2 Grading", true, "skipped (no golden set)");
+    return null;
+  }
+
+  // spec §5.2: 2 judge（MiMo + DeepSeek）
+  const judgeApiKeys = {};
+  if (mimoKey) judgeApiKeys.mimo = mimoKey;
+  if (volcengineKey) judgeApiKeys.volcengine = volcengineKey;
+
+  if (Object.keys(judgeApiKeys).length === 0) {
+    log("GoldenEval: A.2 Grading", true, "skipped (no judge API keys)");
+    return null;
+  }
+
+  console.log(`[GoldenEval] A.2 Grading: ${gsData.count} questions, judges=${Object.keys(judgeApiKeys).join(", ")}`);
+
+  const startTime = performance.now();
+  const res = await postJSON("/metrics/golden-set/grade", {
+    judgeApiKeys,
+  }, undefined, TIMEOUT_MS);
+  const data = await safeJson(res, "GoldenEval A.2 Grading");
+  const durationMs = performance.now() - startTime;
+
+  const hasResults = data.graded > 0;
+  log("GoldenEval: A.2 Grading", hasResults,
+    hasResults
+      ? `graded=${data.graded}, duration=${(durationMs / 1000).toFixed(1)}s`
+      : JSON.stringify(data));
+
+  if (!hasResults) return null;
+
+  // Spec compliance: 每题至少 1 个 grade≥2 的候选（spec §3.1 S5）
+  const gradingDetails = data.results || [];
+  const withGoodGrade = gradingDetails.filter(r =>
+    (r.grading || []).some(g => g.grade >= 2)
+  ).length;
+  log("GoldenEval: A.2 min grade≥2", withGoodGrade > 0,
+    `${withGoodGrade}/${gradingDetails.length} questions have grade≥2 candidate`);
+
+  // Judge 一致性：2 judge 打分差异 ≤ 2（spec §5.3 B9）
+  let consistentCount = 0;
+  for (const r of gradingDetails) {
+    const grading = r.grading || [];
+    let allConsistent = true;
+    for (const g of grading) {
+      if (g.judges && g.judges.length >= 2) {
+        const grades = g.judges.filter(j => j.grade !== null).map(j => j.grade);
+        if (grades.length >= 2) {
+          const maxDiff = Math.max(...grades) - Math.min(...grades);
+          if (maxDiff > 2) { allConsistent = false; break; }
+        }
+      }
+    }
+    if (allConsistent) consistentCount++;
+  }
+  log("GoldenEval: A.2 judge consistency", consistentCount === gradingDetails.length,
+    `${consistentCount}/${gradingDetails.length} questions have consistent judges`);
+
   return data;
 }
 
 // ── Step 3: Golden Set Quality Evaluation ─────────────────────────────
 
 export async function testGoldenEvalQuality() {
-  // 读取已生成的 golden set
-  const res = await getJSON("/metrics/golden-set");
-  const data = await safeJson(res, "GoldenEval Quality");
+  // 调用 B 阶段质量评估 API（spec §5.3: 10 项确定性检查，不调用 LLM）
+  const res = await getJSON("/metrics/golden-set/quality");
+  const report = await safeJson(res, "GoldenEval Quality");
 
-  if (data.count === 0) {
-    log("GoldenEval: Quality report", true, "skipped (no golden set)");
+  if (report.totalQuestions === 0) {
+    log("GoldenEval: B Quality report", true, "skipped (no golden set)");
     return;
   }
 
-  const questions = data.questions;
   const ts = timestamp();
+  const reportFile = saveJsonFile(`golden-quality-${ts}.json`, report);
 
-  // ── 质量检查维度 ──
+  // 断言（spec §5.3）
+  log("GoldenEval: B Quality overall", report.passed,
+    `recommendation=${report.recommendation}`);
 
-  // 1. 结构完整性
-  const requiredFields = ["id", "query", "expectedAnswer", "category", "difficulty", "generatedBy"];
-  const nf5Fields = ["sourceType", "expectedSource", "mustIncludeFacts"];
-  const structureResults = questions.map(q => {
-    const missingRequired = requiredFields.filter(f => !q[f] || (typeof q[f] === "string" && q[f].trim() === ""));
-    const missingNf5 = nf5Fields.filter(f => !q[f] || (Array.isArray(q[f]) && q[f].length === 0));
-    return {
-      id: q.id,
-      requiredMissing: missingRequired,
-      nf5Missing: missingNf5,
-      complete: missingRequired.length === 0,
-    };
-  });
-  const structureScore = structureResults.filter(r => r.complete).length / structureResults.length;
-
-  // 2. 内容质量
-  const contentResults = questions.map(q => {
-    const answerLen = (q.expectedAnswer || "").length;
-    const factsCount = (q.mustIncludeFacts || []).length;
-    const articlesCount = (q.expectedArticles || []).length;
-    return {
-      id: q.id,
-      answerLength: answerLen,
-      answerValid: answerLen >= 50,
-      factsCount,
-      factsValid: factsCount >= 2,
-      articlesCount,
-      hasSourceRouting: !!(q.sourceRoutingRationale || q.source_routing_rationale),
-    };
-  });
-  const contentScore = contentResults.filter(r => r.answerValid && r.factsValid).length / contentResults.length;
-
-  // 3. Category 多样性
-  const categories = {};
-  for (const q of questions) {
-    categories[q.category] = (categories[q.category] || 0) + 1;
-  }
-  const categoryCount = Object.keys(categories).length;
-  const categoryDiversityScore = Math.min(categoryCount / 3, 1); // 至少 3 类为满分
-
-  // 4. Provider 多样性
-  const providers = {};
-  for (const q of questions) {
-    providers[q.generatedBy] = (providers[q.generatedBy] || 0) + 1;
-  }
-  const providerCount = Object.keys(providers).length;
-  const providerDiversityScore = Math.min(providerCount / 2, 1); // 至少 2 provider 为满分
-
-  // 5. Source Type 分布
-  const sourceTypes = {};
-  for (const q of questions) {
-    const st = q.sourceType || q.source_type || "unknown";
-    sourceTypes[st] = (sourceTypes[st] || 0) + 1;
-  }
-
-  // 6. Relevance Grading 完整性
-  const gradingResults = questions.map(q => {
-    const grading = q.relevanceGrading || q.relevance_grading || [];
-    return {
-      id: q.id,
-      gradingCount: grading.length,
-      hasGrading: grading.length > 0,
-    };
-  });
-  const gradingScore = gradingResults.filter(r => r.hasGrading).length / gradingResults.length;
-
-  // 综合分数
-  const overallScore = (
-    structureScore * 0.25 +
-    contentScore * 0.25 +
-    categoryDiversityScore * 0.15 +
-    providerDiversityScore * 0.10 +
-    gradingScore * 0.25
-  );
-
-  const qualityReport = {
-    timestamp: new Date().toISOString(),
-    totalQuestions: questions.length,
-    overallScore: Math.round(overallScore * 100) / 100,
-    dimensions: {
-      structure: {
-        score: Math.round(structureScore * 100) / 100,
-        weight: 0.25,
-        details: structureResults,
-      },
-      content: {
-        score: Math.round(contentScore * 100) / 100,
-        weight: 0.25,
-        details: contentResults,
-      },
-      categoryDiversity: {
-        score: Math.round(categoryDiversityScore * 100) / 100,
-        weight: 0.15,
-        distribution: categories,
-        uniqueCount: categoryCount,
-      },
-      providerDiversity: {
-        score: Math.round(providerDiversityScore * 100) / 100,
-        weight: 0.10,
-        distribution: providers,
-        uniqueCount: providerCount,
-      },
-      sourceTypeDistribution: sourceTypes,
-      relevanceGrading: {
-        score: Math.round(gradingScore * 100) / 100,
-        weight: 0.25,
-        details: gradingResults,
-      },
-    },
-  };
-
-  const reportFile = saveJsonFile(`golden-quality-${ts}.json`, qualityReport);
-
-  // 断言（spec compliance）
-  log("GoldenEval: Quality overall score", overallScore >= 0.5,
-    `score=${qualityReport.overallScore} (threshold: 0.5)`);
-  log("GoldenEval: Structure completeness", structureScore >= 0.8,
-    `${Math.round(structureScore * 100)}% questions have all required fields`);
-  log("GoldenEval: Content quality", contentScore >= 0.5,
-    `${Math.round(contentScore * 100)}% questions have valid answers & facts`);
-  log("GoldenEval: Category diversity", categoryCount >= 2,
-    `${categoryCount} categories: ${JSON.stringify(categories)} (spec: ≥2)`);
-  log("GoldenEval: Provider diversity (multi-provider)", providerCount >= 2,
-    `${providerCount} providers: ${JSON.stringify(providers)} (spec: ≥2)`);
-  log("GoldenEval: Multi-judge relevance grading", gradingScore > 0,
-    `${Math.round(gradingScore * 100)}% questions have relevanceGrading (spec: >0%)`);
+  const checks = report.checks || {};
+  log("GoldenEval: B1 count", checks.B1_count?.passed, checks.B1_count?.detail);
+  log("GoldenEval: B2 matrix", checks.B2_matrix?.passed, checks.B2_matrix?.detail);
+  log("GoldenEval: B3 query quality", checks.B3_query_quality?.passed, checks.B3_query_quality?.detail);
+  log("GoldenEval: B4 answer quality", checks.B4_answer_quality?.passed, checks.B4_answer_quality?.detail);
+  log("GoldenEval: B5 facts quality", checks.B5_facts_quality?.passed, checks.B5_facts_quality?.detail);
+  log("GoldenEval: B6 grading nonempty", checks.B6_grading_nonempty?.passed, checks.B6_grading_nonempty?.detail);
+  log("GoldenEval: B7 grading distribution", checks.B7_grading_distribution?.passed, checks.B7_grading_distribution?.detail);
+  log("GoldenEval: B8 min grade", checks.B8_min_grade?.passed, checks.B8_min_grade?.detail);
+  log("GoldenEval: B9 judge consistency", checks.B9_judge_consistency?.passed, checks.B9_judge_consistency?.detail);
+  log("GoldenEval: B10 no duplicates", checks.B10_no_duplicates?.passed, checks.B10_no_duplicates?.detail);
   log("GoldenEval: Quality report persisted", true, reportFile);
 }
 
@@ -350,14 +299,14 @@ export async function testGoldenEvalModelCombination() {
   // 使用第一个可用 key 作为主 LLM key
   const apiKey = mimoKey || volcengineKey;
 
-  // Multi-judge keys: mimo + volcengine（DeepSeek + doubao-seed 共用 key，替换 Gemini）
+  // spec §5.2: 2 judge（MiMo + DeepSeek），取平均
   const judgeApiKeys = {};
   if (mimoKey) judgeApiKeys.mimo = mimoKey;
   if (volcengineKey) judgeApiKeys.volcengine = volcengineKey;
 
   console.log(`[GoldenEval] Running evaluation with ${configs.length} configs against ${gsData.count} questions`);
   console.log(`[GoldenEval] Configs: ${configs.map(c => c.label).join(", ")}`);
-  console.log(`[GoldenEval] Judge providers: ${Object.keys(judgeApiKeys).join(", ")} (${Object.keys(judgeApiKeys).length} judges)`);
+  console.log(`[GoldenEval] Judge providers: ${Object.keys(judgeApiKeys).join(", ")} (2 judges)`);
 
   const startTime = performance.now();
   // 每个 question 需要 20-90s（含 RAG + groundedness + multi-judge），maxConcurrency=3 并行

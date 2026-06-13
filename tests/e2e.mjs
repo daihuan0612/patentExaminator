@@ -151,6 +151,7 @@ import {
   testGoldenEvalUploadKnowledge,
   testGoldenEvalWriteSettings,
   testGoldenEvalGenerate,
+  testGoldenEvalGrading,
   testGoldenEvalQuality,
   testGoldenEvalModelCombination,
   testGoldenEvalCleanup,
@@ -452,6 +453,7 @@ async function main() {
     await withTimeout(() => maybe(testGoldenEvalUploadKnowledge));
     await withTimeout(() => maybe(testGoldenEvalWriteSettings)); // BUG-3: 写入 settings 到隔离 DB
     await withTimeout(() => maybe(testGoldenEvalGenerate), GOLDEN_EVAL_TIMEOUT);
+    await withTimeout(() => maybe(testGoldenEvalGrading), GOLDEN_EVAL_TIMEOUT);  // A.2: 独立采样 + 2-judge grading
     await withTimeout(() => maybe(testGoldenEvalQuality));
     await withTimeout(() => maybe(testGoldenEvalModelCombination), GOLDEN_EVAL_TIMEOUT);
     await withTimeout(() => maybe(testGoldenEvalCleanup));

@@ -249,6 +249,18 @@ export function getChunksBySourceId(sourceId: string, limit = 20): Array<{
   }>;
 }
 
+/** 按 ID 批量查询 chunks（用于 A.2 grading 正样本查找） */
+export function getChunksByIds(ids: string[]): Array<{
+  id: string; sourceId: string; text: string;
+}> {
+  if (ids.length === 0) return [];
+  const db = getKnowledgeDb();
+  const placeholders = ids.map(() => "?").join(",");
+  return db.prepare(
+    `SELECT id, source_id as sourceId, text FROM kb_chunks WHERE id IN (${placeholders})`
+  ).all(...ids) as Array<{ id: string; sourceId: string; text: string }>;
+}
+
 /** 获取 chunk 及其 parent chunk 的文本（用于 Parent-Child 注入） */
 export function getChunksWithParent(chunkIds: string[]): Map<string, { childText: string; parentText: string; metadata: string }> {
   const db = getKnowledgeDb();

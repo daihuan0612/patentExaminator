@@ -14,8 +14,7 @@ import type { ProviderId } from "@shared/types/agents";
 
 // ── Types ──────────────────────────────────────────────
 
-import type { SourceType, ExpectedSource, RelevanceGrade, JudgeResult } from "@shared/types/metrics";
-import { callMultiJudge, aggregateDiscrete, DEFAULT_JUDGE_CONFIGS } from "./multiJudge.js";
+import type { SourceType, ExpectedSource, RelevanceGrade } from "@shared/types/metrics";
 
 export interface GoldenQuestion {
   id: string;
@@ -35,69 +34,152 @@ export interface GoldenQuestion {
   mustIncludeFacts: string[];
   relevanceGrading: RelevanceGrade[];
   verifiedBy: string;
+  contextChunkIds: string[];  // A.1 生成时使用的 KB chunk IDs（A.2 grading 正样本，仅 kb_only）
 }
 
-// ── Question Categories ────────────────────────────────
+// ── Matrix Allocation (spec §4.4) ──────────────────────
 
-interface QuestionCategory {
+/** spec §4.4: 21-cell 矩阵中的一个 cell */
+interface MatrixCell {
+  sourceType: SourceType;
   category: string;
-  agent: string;
-  description: string;
-  sampleQueries: string[];
 }
 
-const QUESTION_CATEGORIES: QuestionCategory[] = [
-  {
-    category: "新颖性",
-    agent: "novelty",
-    description: "新颖性判断 -- 单独对比、全部技术特征被公开",
-    sampleQueries: [
-      "如何判断一项权利要求是否具备新颖性？",
-      "新颖性审查中“单独对比”原则如何适用？",
-      "抵触申请的判断标准是什么？",
-    ],
-  },
-  {
-    category: "创造性",
-    agent: "inventive",
-    description: "创造性三步法 -- 最接近现有技术 -> 区别特征 -> 技术启示",
-    sampleQueries: [
-      "创造性三步法的具体步骤是什么？",
-      "如何认定区别特征是否具有技术启示？",
-      "预料不到的技术效果如何影响创造性判断？",
-    ],
-  },
-  {
-    category: "权利要求",
-    agent: "claim-chart",
-    description: "权利要求解读、特征拆解、保护范围",
-    sampleQueries: [
-      "权利要求应当满足哪些条件？",
-      "如何进行权利要求特征拆解？",
-      "功能性限定的权利要求如何理解？",
-    ],
-  },
-  {
-    category: "形式缺陷",
-    agent: "defects",
-    description: "说明书充分公开、权利要求清楚、支持、修改超范围",
-    sampleQueries: [
-      "说明书充分公开的判断标准是什么？",
-      "权利要求不清楚的典型情形有哪些？",
-      "修改超范围如何判断？",
-    ],
-  },
-  {
-    category: "程序",
-    agent: "chat",
-    description: "复审程序、期限、文件要求",
-    sampleQueries: [
-      "复审请求需要提交哪些文件？",
-      "复审程序中申请人可以修改权利要求吗？",
-      "复审决定的类型有哪些？",
-    ],
-  },
-];
+/**
+ * spec §4.4: sourceType × category 矩阵（21 个非零 cell）
+ *
+ * 分配策略：round-robin 分给 N 个 provider，每个 provider 7 题。
+ * 如果 provider 不足 3 个，多余的 cell 分配给最后一个 provider。
+ */
+function buildMatrixAllocation(providerCount: number): MatrixCell[][] {
+  const ALL_CELLS: MatrixCell[] = [
+    // R1: kb_only × 5 categories
+    { sourceType: "kb_only", category: "新颖性" },
+    { sourceType: "kb_only", category: "创造性" },
+    { sourceType: "kb_only", category: "权利要求" },
+    { sourceType: "kb_only", category: "形式缺陷" },
+    { sourceType: "kb_only", category: "程序" },
+    // R2: web_only × 5 categories
+    { sourceType: "web_only", category: "新颖性" },
+    { sourceType: "web_only", category: "创造性" },
+    { sourceType: "web_only", category: "权利要求" },
+    { sourceType: "web_only", category: "形式缺陷" },
+    { sourceType: "web_only", category: "程序" },
+    // R3: cross_source × 5 categories
+    { sourceType: "cross_source", category: "新颖性" },
+    { sourceType: "cross_source", category: "创造性" },
+    { sourceType: "cross_source", category: "权利要求" },
+    { sourceType: "cross_source", category: "形式缺陷" },
+    { sourceType: "cross_source", category: "程序" },
+    // R4: conflict × 3 categories
+    { sourceType: "conflict", category: "新颖性" },
+    { sourceType: "conflict", category: "创造性" },
+    { sourceType: "conflict", category: "权利要求" },
+    // R5: no_answer × 3 categories
+    { sourceType: "no_answer", category: "创造性" },
+    { sourceType: "no_answer", category: "创造性" },
+    { sourceType: "no_answer", category: "程序" },
+  ];
+
+  // Round-robin 分配
+  const allocation: MatrixCell[][] = Array.from({ length: providerCount }, () => []);
+  for (let i = 0; i < ALL_CELLS.length; i++) {
+    allocation[i % providerCount]!.push(ALL_CELLS[i]!);
+  }
+
+  // 日志
+  for (let i = 0; i < allocation.length; i++) {
+    const cells = allocation[i]!;
+    const byType: Record<string, number> = {};
+    for (const c of cells) byType[c.sourceType] = (byType[c.sourceType] ?? 0) + 1;
+    logger.info(`[GoldenSet] Provider ${i}: ${cells.length} cells — ${JSON.stringify(byType)}`);
+  }
+
+  return allocation;
+}
+
+/** sourceType → expectedSource 映射 */
+function mapExpectedSource(st: SourceType): ExpectedSource {
+  if (st === "kb_only") return "kb";
+  if (st === "web_only") return "web";
+  if (st === "cross_source" || st === "conflict") return "kb+web";
+  return "any"; // no_answer
+}
+
+/** sourceType → sourceRoutingRationale 映射 */
+function mapSourceRoutingRationale(st: SourceType): string {
+  switch (st) {
+    case "kb_only": return "答案来自知识库";
+    case "web_only": return "答案来自 web 搜索";
+    case "cross_source": return "答案需要综合知识库和 web 搜索结果";
+    case "conflict": return "知识库和 web 搜索结果存在矛盾，需选择权威来源";
+    case "no_answer": return "知识库和 web 搜索均无法可靠回答此问题";
+  }
+}
+
+// ── Context Collection ─────────────────────────────────
+
+/** 单个 cell 的上下文材料 */
+interface CellContext {
+  kbChunks: Array<{ chunk: ChunkRow; source: SourceRow }>;
+  webResults: Array<{ title: string; url: string; content: string }>;
+}
+
+/**
+ * 为每个 cell 收集上下文：
+ * - kb_only → KB chunks
+ * - web_only → web results（无 searchApiKey 时 fallback 到 KB chunks）
+ * - cross_source → KB + web
+ * - conflict → KB + web（天然矛盾）
+ * - no_answer → 随机不相关 KB chunks
+ */
+function collectCellContexts(
+  cells: MatrixCell[],
+  webResults: Array<{ title: string; url: string; content: string }>,
+  hasWebSearch: boolean,
+): CellContext[] {
+  return cells.map(cell => {
+    switch (cell.sourceType) {
+      case "kb_only":
+        return { kbChunks: sampleChunks(2), webResults: [] };
+
+      case "web_only":
+        if (hasWebSearch && webResults.length > 0) {
+          return { kbChunks: [], webResults: webResults.slice(0, 3) };
+        }
+        // Fallback: 无 web 结果时用 KB chunks
+        return { kbChunks: sampleChunks(2), webResults: [] };
+
+      case "cross_source":
+        return {
+          kbChunks: sampleChunks(2),
+          webResults: hasWebSearch ? webResults.slice(0, 3) : [],
+        };
+
+      case "conflict":
+        return {
+          kbChunks: sampleChunks(2),
+          webResults: hasWebSearch ? webResults.slice(0, 3) : [],
+        };
+
+      case "no_answer": {
+        // 随机不相关 chunks
+        const chunks = sampleChunks(2);
+        return { kbChunks: chunks, webResults: [] };
+      }
+    }
+  });
+}
+
+// ── Question Categories (用于 prompt 示例) ──────────────
+
+const CATEGORY_DESCRIPTIONS: Record<string, string> = {
+  "新颖性": "新颖性判断 -- 单独对比原则、全部技术特征被公开、抵触申请",
+  "创造性": "创造性三步法 -- 最接近现有技术、区别特征、技术启示、预料不到的技术效果",
+  "权利要求": "权利要求解读、特征拆解、保护范围、功能性限定",
+  "形式缺陷": "说明书充分公开、权利要求清楚、支持、修改超范围",
+  "程序": "复审程序、期限、文件要求、当事人变更",
+};
 
 // ── LLM Providers for Generation ───────────────────────
 
@@ -185,7 +267,7 @@ export function resolveGoldenSetProviders(): GoldenSetProviderConfig[] {
   // DeepSeek 只从火山引擎 provider 取，不从 deepseek provider 取
   if (apiKeys["volcengine"]) {
     configs.push({
-      providerId: "volcengine", model: "deepseek-v4-flash-260425", apiKey: apiKeys["volcengine"], label: "DeepSeek",
+      providerId: "volcengine", model: "deepseek-v3-2-251201", apiKey: apiKeys["volcengine"], label: "DeepSeek",
       ...(fallbacks["volcengine"] && { modelFallbacks: fallbacks["volcengine"] }),
       ...(enableFallback["volcengine"] && { enableModelFallback: true }),
     });
@@ -235,8 +317,8 @@ function insertGoldenQuestion(q: GoldenQuestion): void {
       (id, agent, query, expected_answer, expected_sources, expected_articles,
        category, difficulty, generated_by,
        source_type, expected_source, source_routing_rationale,
-       must_include_facts, relevance_grading, verified_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       must_include_facts, relevance_grading, verified_by, context_chunk_ids)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     q.id,
     q.agent,
@@ -253,6 +335,7 @@ function insertGoldenQuestion(q: GoldenQuestion): void {
     JSON.stringify(q.mustIncludeFacts),
     JSON.stringify(q.relevanceGrading),
     q.verifiedBy,
+    JSON.stringify(q.contextChunkIds),
   );
 }
 
@@ -262,7 +345,7 @@ function loadAllGoldenQuestions(): GoldenQuestion[] {
     `SELECT id, agent, query, expected_answer, expected_sources, expected_articles,
             category, difficulty, generated_by,
             source_type, expected_source, source_routing_rationale,
-            must_include_facts, relevance_grading, verified_by
+            must_include_facts, relevance_grading, verified_by, context_chunk_ids
      FROM metrics_golden_set ORDER BY created_at`
   ).all() as Array<{
     id: string;
@@ -280,6 +363,7 @@ function loadAllGoldenQuestions(): GoldenQuestion[] {
     must_include_facts: string;
     relevance_grading: string;
     verified_by: string;
+    context_chunk_ids: string;
   }>;
 
   return rows.map((r) => ({
@@ -299,6 +383,7 @@ function loadAllGoldenQuestions(): GoldenQuestion[] {
     mustIncludeFacts: safeParseJson(r.must_include_facts, []),
     relevanceGrading: safeParseJson(r.relevance_grading, []),
     verifiedBy: r.verified_by || "auto",
+    contextChunkIds: safeParseJson(r.context_chunk_ids, []),
   }));
 }
 
@@ -348,128 +433,6 @@ function sampleChunks(count: number): Array<{ chunk: ChunkRow; source: SourceRow
   return results.slice(0, count);
 }
 
-// ── Relevance Grading (spec §3) ──────────────────────────
-
-const GRADING_SYSTEM_PROMPT = `你是专利复审领域的评估专家。给定一个问题和一段文本，请判断该文本对回答问题的相关程度。
-
-评分标准：
-- 0分：完全不相关，内容与问题无关
-- 1分：边际相关，提及了相关主题但不直接回答问题
-- 2分：部分相关，包含回答问题所需的部分信息
-- 3分：高度相关，直接且完整地回答了问题
-
-请输出 JSON：
-{
-  "grade": 0|1|2|3,
-  "rationale": "打分理由"
-}`;
-
-function buildGradingUserPrompt(query: string, chunkText: string): string {
-  return `问题：${query}\n\n文本：${chunkText}`;
-}
-
-/** 从 DB settings 解析 judge API keys（spec §3.2: MiMo + DeepSeek + doubao-seed） */
-function resolveJudgeApiKeys(): Record<string, string> {
-  const db = getSyncDb();
-  const settingsRow = db.prepare(
-    "SELECT data FROM sync_data WHERE store_name = 'settings' AND record_id = 'app'"
-  ).get() as { data: string } | undefined;
-
-  if (!settingsRow) return {};
-
-  try {
-    const settings = JSON.parse(settingsRow.data) as Record<string, unknown>;
-    const providers = (settings.providers ?? []) as Array<{
-      providerId: string; apiKeyRef?: string;
-    }>;
-    const keys: Record<string, string> = {};
-    for (const p of providers) {
-      if (p.apiKeyRef) keys[p.providerId] = p.apiKeyRef;
-    }
-    return keys;
-  } catch {
-    return {};
-  }
-}
-
-/**
- * 对一组候选 chunks 进行 relevance grading（spec §3.3）
- *
- * 1. 3 个 judge 对每个候选独立打分（0-3）
- * 2. Majority Vote 聚合
- * 3. 返回 RelevanceGrade[]
- */
-async function gradeRelevance(
-  query: string,
-  candidates: Array<{ docId: string; chunkId?: string; text: string; source: "kb" | "web" }>,
-  judgeApiKeys: Record<string, string>,
-): Promise<RelevanceGrade[]> {
-  if (candidates.length === 0) return [];
-
-  const grades: RelevanceGrade[] = [];
-
-  for (const candidate of candidates) {
-    const userPrompt = buildGradingUserPrompt(query, candidate.text);
-
-    const judgeOutputs = await callMultiJudge(
-      { system: GRADING_SYSTEM_PROMPT, user: userPrompt },
-      judgeApiKeys,
-      { judgeConfigs: DEFAULT_JUDGE_CONFIGS, temperature: 0, maxTokens: 500 },
-    );
-
-    // 解析每个 judge 的打分
-    const judgeResults: JudgeResult[] = [];
-    const numericGrades: number[] = [];
-
-    for (const output of judgeOutputs) {
-      if (!output.success) {
-        judgeResults.push({
-          provider: output.providerId,
-          grade: null,
-          rationale: `judge_failed: ${output.error}`,
-        });
-        continue;
-      }
-
-      try {
-        // 提取 JSON（judge 可能返回 markdown 包裹的 JSON）
-        const jsonMatch = output.rawText.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) throw new Error("No JSON found in response");
-        const parsed = JSON.parse(jsonMatch[0]) as { grade: number; rationale: string };
-        const grade = Math.max(0, Math.min(3, Math.round(parsed.grade))) as 0 | 1 | 2 | 3;
-        judgeResults.push({
-          provider: output.providerId,
-          grade,
-          rationale: parsed.rationale || "",
-        });
-        numericGrades.push(grade);
-      } catch {
-        judgeResults.push({
-          provider: output.providerId,
-          grade: null,
-          rationale: "parse_failed",
-        });
-      }
-    }
-
-    // 聚合：至少 2 个 judge 成功才打分
-    const aggregatedGrade = numericGrades.length >= 2
-      ? aggregateDiscrete(numericGrades) as 0 | 1 | 2 | 3
-      : 0;
-
-    grades.push({
-      source: candidate.source,
-      docId: candidate.docId,
-      chunkId: candidate.chunkId,
-      grade: aggregatedGrade,
-      rationale: judgeResults.map(j => `${j.provider}:${j.grade ?? "fail"}(${j.rationale})`).join("; "),
-      judges: judgeResults,
-    });
-  }
-
-  return grades;
-}
-
 // ── LLM Call ───────────────────────────────────────────
 
 interface GeneratedQuestion {
@@ -481,6 +444,156 @@ interface GeneratedQuestion {
   // ── nf5 新增 ──
   must_include_facts: string[];
   source_routing_rationale: string;
+}
+
+// ── 约束修复 ────────────────────────────────────────────
+
+const ANSWER_MIN_LEN = 200;
+const ANSWER_MAX_LEN = 500;
+const FACTS_MIN = 3;
+const FACTS_MAX = 8;
+
+/**
+ * 在句号处截断文本到 maxLen 字符（保留完整句子）
+ */
+function truncateAtSentence(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  // 从 maxLen 位置往前找最后一个句号
+  const truncated = text.slice(0, maxLen);
+  const lastPeriod = Math.max(
+    truncated.lastIndexOf("。"),
+    truncated.lastIndexOf("；"),
+    truncated.lastIndexOf("！"),
+    truncated.lastIndexOf("？"),
+  );
+  return lastPeriod > maxLen * 0.6 ? truncated.slice(0, lastPeriod + 1) : truncated;
+}
+
+/**
+ * 调 LLM 扩写短答案或补充 facts
+ */
+async function repairWithLLM(
+  config: LLMProviderConfig,
+  query: string,
+  answer: string,
+  facts: string[],
+  issue: "short_answer" | "few_facts",
+): Promise<{ answer: string; facts: string[] } | null> {
+  try {
+    const prompt = issue === "short_answer"
+      ? `以下是一个专利复审问题和参考答案。答案太短（当前 ${answer.length} 字，需要 ${ANSWER_MIN_LEN}-${ANSWER_MAX_LEN} 字），请扩写到 200-300 字，保持原意不变，补充必要的法律依据和分析。
+
+问题：${query}
+
+原答案：${answer}
+
+请输出 JSON：
+{
+  "answer": "扩写后的答案"
+}`
+      : `以下是一个专利复审问题和参考答案。请基于答案内容，提取或补充到 ${FACTS_MIN}-${FACTS_MAX} 个关键事实点。
+
+问题：${query}
+答案：${answer}
+
+现有 facts：${JSON.stringify(facts)}
+
+请输出 JSON：
+{
+  "facts": ["事实1", "事实2", "事实3", ...]
+}`;
+
+    const result = await registry.runWithFallback(
+      [config.providerId],
+      {
+        modelId: config.defaultModel,
+        messages: [
+          { role: "system", content: "你是专利复审评估集生成助手。严格输出 JSON，不要输出其他内容。" },
+          { role: "user", content: prompt },
+        ],
+        apiKey: config.apiKey,
+        temperature: 0.5,
+        maxTokens: 1024,
+      },
+      config.modelFallbacks ? { [config.providerId]: config.modelFallbacks } : undefined,
+      config.enableModelFallback !== undefined
+        ? { [config.providerId]: config.enableModelFallback }
+        : undefined,
+    );
+
+    const resp = result.response;
+    if (resp.error) {
+      logger.warn(`[GoldenSet] Repair LLM error: ${resp.error.message}`);
+      return null;
+    }
+
+    const text = resp.text.trim();
+    // 提取 JSON
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    if (issue === "short_answer" && typeof parsed.answer === "string") {
+      return { answer: parsed.answer, facts };
+    }
+    if (issue === "few_facts" && Array.isArray(parsed.facts)) {
+      const newFacts = parsed.facts.filter((f: unknown) => typeof f === "string");
+      return { answer, facts: newFacts };
+    }
+    return null;
+  } catch (err) {
+    logger.warn(`[GoldenSet] Repair failed: ${err}`);
+    return null;
+  }
+}
+
+/**
+ * 验证并修复单个问题的约束（answer 长度、facts 数量）
+ *
+ * 对违反约束的字段进行修复：
+ * - 答案太长：在句号处截断
+ * - 答案太短：调 LLM 扩写
+ * - Facts 太多：保留前 N 个
+ * - Facts 太少：调 LLM 补充
+ */
+async function repairQuestionConstraints(
+  q: GeneratedQuestion,
+  config: LLMProviderConfig,
+): Promise<GeneratedQuestion> {
+  let { expected_answer, must_include_facts } = q;
+
+  // ── 答案长度修复 ──
+  if (expected_answer.length > ANSWER_MAX_LEN) {
+    const before = expected_answer.length;
+    expected_answer = truncateAtSentence(expected_answer, ANSWER_MAX_LEN);
+    logger.info(`[GoldenSet] Answer truncated: ${before} → ${expected_answer.length} chars`);
+  } else if (expected_answer.length < ANSWER_MIN_LEN) {
+    logger.info(`[GoldenSet] Answer too short (${expected_answer.length} chars), attempting LLM repair`);
+    const repaired = await repairWithLLM(config, q.query, expected_answer, must_include_facts, "short_answer");
+    if (repaired && repaired.answer.length >= ANSWER_MIN_LEN) {
+      expected_answer = repaired.answer;
+      logger.info(`[GoldenSet] Answer expanded to ${expected_answer.length} chars`);
+    } else {
+      logger.warn(`[GoldenSet] Answer repair failed or still too short, keeping original`);
+    }
+  }
+
+  // ── Facts 数量修复 ──
+  if (must_include_facts.length > FACTS_MAX) {
+    must_include_facts = must_include_facts.slice(0, FACTS_MAX);
+    logger.info(`[GoldenSet] Facts trimmed to ${FACTS_MAX}`);
+  } else if (must_include_facts.length < FACTS_MIN) {
+    logger.info(`[GoldenSet] Too few facts (${must_include_facts.length}), attempting LLM repair`);
+    const repaired = await repairWithLLM(config, q.query, expected_answer, must_include_facts, "few_facts");
+    if (repaired && repaired.facts.length >= FACTS_MIN) {
+      must_include_facts = repaired.facts;
+      logger.info(`[GoldenSet] Facts expanded to ${must_include_facts.length}`);
+    } else {
+      logger.warn(`[GoldenSet] Facts repair failed or still too few, keeping original`);
+    }
+  }
+
+  return { ...q, expected_answer, must_include_facts };
 }
 
 /** 从 metadata 中提取 section 信息 */
@@ -497,80 +610,121 @@ function extractSection(metadata: string): string {
   }
 }
 
-/** 单个问题的 prompt（用于串行回退）— nf5: 200-500 字参考答案 + mustIncludeFacts */
-function buildSinglePrompt(text: string, fileName: string, section: string): string {
-  return `你是一个专利复审评估集生成器。给定以下法律/审查文本，请生成一个专利审查员在复审工作中可能会问的问题，使得这段文本是回答该问题的最佳来源。
-
-要求：
-1. 问题必须是审查员在实际复审工作中会遇到的真实问题
-2. 问题应该具体、明确，不要过于宽泛
-3. 参考答案应完整准确（200-500字），引用具体法条
-4. 列出答案必须包含的 3-8 个关键事实点
-5. 标注适用的法条
-6. 分类必须是以下之一：新颖性、创造性、权利要求、形式缺陷、程序
-7. 难度根据问题的专业程度判断
-
-文本内容：
-${text}
-
-来源文件：${fileName}
-所属章节：${section}
-
-请严格输出以下 JSON 格式，不要输出其他内容：
-{
-  "query": "审查员问题",
-  "expected_answer": "完整参考答案（200-500字）",
-  "category": "新颖性|创造性|权利要求|形式缺陷|程序",
-  "difficulty": "easy|medium|hard",
-  "expected_articles": ["第X条", "第X条第X款"],
-  "must_include_facts": ["事实1", "事实2", "事实3"],
-  "source_routing_rationale": "为什么这个问题的答案来自知识库"
-}`;
-}
-
-/** 批量问题的 prompt */
-function buildBatchPrompt(
-  samples: Array<{ chunk: ChunkRow; source: SourceRow }>,
-  count: number,
+/**
+ * 构建矩阵驱动的批量 prompt（spec §4.4 + §5.1）
+ *
+ * 每个 cell 有明确的 category 和 sourceType，LLM 必须按指定分类生成。
+ * 上下文根据 sourceType 提供：KB chunks、web results、或两者混合。
+ */
+function buildCellBatchPrompt(
+  cells: MatrixCell[],
+  contexts: CellContext[],
 ): string {
-  const chunkTexts = samples.map((s, i) => {
-    const section = extractSection(s.chunk.metadata);
+  const cellDescriptions = cells.map((cell, i) => {
+    const ctx = contexts[i]!;
+    const catDesc = CATEGORY_DESCRIPTIONS[cell.category] ?? cell.category;
+
+    let contextBlock = "";
+    if (ctx.kbChunks.length > 0) {
+      contextBlock += "\n【知识库来源】\n" + ctx.kbChunks.map((s, j) => {
+        const section = extractSection(s.chunk.metadata);
+        return `KB-${j + 1} [${s.source.name}] ${section}:\n${s.chunk.text}`;
+      }).join("\n\n");
+    }
+    if (ctx.webResults.length > 0) {
+      contextBlock += "\n【Web 搜索结果】\n" + ctx.webResults.map((w, j) =>
+        `Web-${j + 1} [${w.title}](${w.url}):\n${w.content}`
+      ).join("\n\n");
+    }
+    if (!contextBlock) {
+      contextBlock = "\n（无相关上下文 — 请生成一个知识库和 web 搜索均无法可靠回答的问题）";
+    }
+
+    const sourceTypeHint = cell.sourceType === "no_answer"
+      ? "⚠️ 这是一个「无法回答」类问题：请生成一个当前上下文无法可靠回答的问题，参考答案应明确指出信息不足。"
+      : cell.sourceType === "conflict"
+        ? "⚠️ 这是一个「信息冲突」类问题：上下文中可能存在矛盾信息，参考答案应选择权威来源并解释理由。"
+        : "";
+
     return `
---- Chunk ${i + 1} ---
-文件：${s.source.name}
-章节：${section}
-${s.chunk.text}`;
+━━━ 题目 ${i + 1} ━━━
+指定分类：${cell.category}（${catDesc}）
+来源类型：${cell.sourceType}
+${sourceTypeHint}
+${contextBlock}`;
   }).join("\n");
 
-  return `你是一个专利复审评估集生成器。给定以下 ${count} 个法律/审查文本片段，
-请为每个片段生成一个专利审查员在复审工作中可能会问的问题。
+  return `你是专利复审评估集生成器。下面为 ${cells.length} 个题目分别提供了指定的分类和参考上下文。
+请为每个题目生成一个审查员问题，问题必须与指定分类直接相关。
+
+${cellDescriptions}
 
 要求：
 1. 每个问题必须是审查员在实际复审工作中会遇到的真实问题
-2. 问题应该具体、明确，不要过于宽泛
+2. 问题必须属于指定的分类（不要自行更改分类）
 3. 参考答案应完整准确（200-500字），引用具体法条
 4. 列出答案必须包含的 3-8 个关键事实点
-5. 标注适用的法条
-6. 分类必须是以下之一：新颖性、创造性、权利要求、形式缺陷、程序
-7. 难度根据问题的专业程度判断
-8. 必须生成恰好 ${count} 个问题，顺序与提供的文本片段对应
-
-文本内容：
-${chunkTexts}
+5. 标注适用的法条（格式：第X条第X款，使用中文数字如"第二条第二款"）
+6. 难度根据问题的专业程度判断（easy/medium/hard）
+7. 必须生成恰好 ${cells.length} 个问题，顺序与提供的题目对应
 
 请严格输出以下 JSON 数组格式，不要输出其他内容：
 [
   {
     "query": "审查员问题",
     "expected_answer": "完整参考答案（200-500字）",
-    "category": "新颖性|创造性|权利要求|形式缺陷|程序",
     "difficulty": "easy|medium|hard",
-    "expected_articles": ["第X条", "第X条第X款"],
-    "must_include_facts": ["事实1", "事实2", "事实3"],
-    "source_routing_rationale": "为什么这个问题的答案来自知识库"
+    "expected_articles": ["第X条第X款"],
+    "must_include_facts": ["事实1", "事实2", "事实3"]
   },
-  // ... 共 ${count} 个对象
+  // ... 共 ${cells.length} 个对象（不要输出 category 和 source_routing_rationale，由系统自动填充）
 ]`;
+}
+
+/** 串行回退：单个 cell 的 prompt */
+function buildCellSinglePrompt(cell: MatrixCell, ctx: CellContext): string {
+  const catDesc = CATEGORY_DESCRIPTIONS[cell.category] ?? cell.category;
+
+  let contextBlock = "";
+  if (ctx.kbChunks.length > 0) {
+    contextBlock += "\n【知识库来源】\n" + ctx.kbChunks.map((s, j) => {
+      const section = extractSection(s.chunk.metadata);
+      return `KB-${j + 1} [${s.source.name}] ${section}:\n${s.chunk.text}`;
+    }).join("\n\n");
+  }
+  if (ctx.webResults.length > 0) {
+    contextBlock += "\n【Web 搜索结果】\n" + ctx.webResults.map((w, j) =>
+      `Web-${j + 1} [${w.title}](${w.url}):\n${w.content}`
+    ).join("\n\n");
+  }
+
+  const sourceTypeHint = cell.sourceType === "no_answer"
+    ? "⚠️ 这是一个「无法回答」类问题：请生成一个当前上下文无法可靠回答的问题。"
+    : cell.sourceType === "conflict"
+      ? "⚠️ 这是一个「信息冲突」类问题：上下文中可能存在矛盾信息。"
+      : "";
+
+  return `你是专利复审评估集生成器。请为以下指定分类生成一个审查员问题。
+
+指定分类：${cell.category}（${catDesc}）
+来源类型：${cell.sourceType}
+${sourceTypeHint}
+${contextBlock}
+
+要求：
+1. 问题必须属于指定分类
+2. 参考答案应完整准确（200-500字），引用具体法条
+3. 列出 3-8 个关键事实点
+4. 标注适用法条（格式：第X条第X款，使用中文数字）
+
+请严格输出以下 JSON 格式：
+{
+  "query": "审查员问题",
+  "expected_answer": "完整参考答案（200-500字）",
+  "difficulty": "easy|medium|hard",
+  "expected_articles": ["第X条第X款"],
+  "must_include_facts": ["事实1", "事实2", "事实3"]
+}`;
 }
 
 async function callLLM(
@@ -760,28 +914,24 @@ function validateQuestion(parsed: Record<string, unknown>): GeneratedQuestion | 
   };
 }
 
-// ── Category Mapping ───────────────────────────────────
-
-function findCategoryForAgent(category: string): QuestionCategory | undefined {
-  return QUESTION_CATEGORIES.find((c) => c.category === category);
-}
-
 /** 串行生成回退函数——批量失败时使用 */
 async function generateSerial(
   config: LLMProviderConfig,
-  samples: Array<{ chunk: ChunkRow; source: SourceRow }>,
+  cells: MatrixCell[],
+  contexts: CellContext[],
   targetCount: number,
 ): Promise<GeneratedQuestion[]> {
   const results: GeneratedQuestion[] = [];
 
-  for (const { chunk, source } of samples) {
-    if (results.length >= targetCount) break;
-
-    const section = extractSection(chunk.metadata);
-    const prompt = buildSinglePrompt(chunk.text, source.name, section);
+  for (let i = 0; i < cells.length && results.length < targetCount; i++) {
+    const cell = cells[i]!;
+    const ctx = contexts[i]!;
+    const prompt = buildCellSinglePrompt(cell, ctx);
     const question = await callLLM(config, prompt);
 
     if (question) {
+      // 覆盖 LLM 返回的 category 为矩阵指定值
+      question.category = cell.category;
       results.push(question);
     }
   }
@@ -818,23 +968,21 @@ async function searchWebForQuestion(
 // ── Public API ─────────────────────────────────────────
 
 /**
- * Generate a golden evaluation set for patent re-examination RAG quality.
- * Generates questions using 1-3 LLMs for diversity.
- * Uses different chunks for each LLM to maximize diversity.
- * Results are stored in metrics_golden_set table.
+ * A.1 生成 Golden Set（spec §5.1 + §4.4）
  *
- * 优化版本：3 个 provider 并行执行，每个 provider 批量生成问题（1 次 LLM call）。
+ * 矩阵驱动：按 sourceType × category 矩阵分配 21 个 cell 给 N 个 provider。
+ * 每个 provider 批量生成分配到的问题（1 次 LLM call）。
  * 批量失败时自动回退到串行模式。
  *
+ * ⚠️ 不做的事：不调用 multi-judge，不做 relevance grading。
+ *
  * @param providerConfigs - Provider 配置数组（由 resolveGoldenSetProviders() 生成）
- * @param questionsPerProvider - Number of questions per provider (default 20)
  * @param searchApiKey - 搜索 API key（web_only/cross_source/conflict 需要）
- * @param searchProviderId - 搜索 provider ID（spec §11: 默认 "serpapi"，与 MCP 路径一致）
- * @returns The generated golden questions
+ * @param searchProviderId - 搜索 provider ID（spec §8.1: 默认 "serpapi"，与 MCP 路径一致）
+ * @returns The generated golden questions（relevanceGrading = []）
  */
 export async function generateGoldenSet(
   providerConfigs: GoldenSetProviderConfig[],
-  questionsPerProvider = 20,
   searchApiKey?: string,
   searchProviderId?: string,
 ): Promise<GoldenQuestion[]> {
@@ -845,43 +993,33 @@ export async function generateGoldenSet(
     return [];
   }
 
-  const totalQuestions = questionsPerProvider * providerConfigs.length;
-  logger.info(`[GoldenSet] Generating ${totalQuestions} questions (${questionsPerProvider} per provider x ${providerConfigs.length} providers)`);
+  // spec §4.4: 矩阵分配（21 cells / N providers）
+  const allocation = buildMatrixAllocation(providerConfigs.length);
+  const totalQuestions = allocation.flat().length;
+  logger.info(`[GoldenSet] Generating ${totalQuestions} questions via matrix allocation (${providerConfigs.length} providers)`);
 
-  // spec §11: 检查 web 搜索可用性
+  // spec §8.1: 检查 web 搜索可用性
   const hasWebSearch = !!searchApiKey;
   if (!hasWebSearch) {
-    logger.warn("[GoldenSet] No searchApiKey provided — web_only/cross_source/conflict will fallback to kb_only");
+    logger.warn("[GoldenSet] No searchApiKey — web_only/cross_source/conflict will fallback to kb_only");
   }
-
-  // 为每个 provider 采样独立的 chunks（避免 chunk 共享导致的重复问题）
-  const providerSamples = providerConfigs.map(() => sampleChunks(questionsPerProvider));
 
   // 预获取 web 搜索结果（所有 provider 共享）
   let webResults: Array<{ title: string; url: string; content: string }> = [];
   if (hasWebSearch) {
-    const searchQueries = providerSamples[0]?.slice(0, 5).map(s => {
-      const section = extractSection(s.chunk.metadata);
-      return `${s.source.name} ${section}`.trim();
-    }) ?? [];
-    webResults = await searchWebForQuestion(searchQueries, searchApiKey!, 15, searchProviderId);
-    logger.info(`[GoldenSet] Web search returned ${webResults.length} results`);
-  }
-
-  // spec §3: 解析 judge API keys（用于 relevance grading）
-  const judgeApiKeys = resolveJudgeApiKeys();
-  const hasJudges = Object.keys(judgeApiKeys).length >= 2;
-  if (!hasJudges) {
-    logger.warn("[GoldenSet] Insufficient judge API keys — relevance grading will be skipped");
+    // 从 KB sources 提取搜索关键词
+    const sources = getAllSources();
+    const searchQueries = sources.slice(0, 5).map(s => s.name.replace(/\.\w+$/, ""));
+    if (searchQueries.length > 0) {
+      webResults = await searchWebForQuestion(searchQueries, searchApiKey!, 15, searchProviderId);
+      logger.info(`[GoldenSet] Web search returned ${webResults.length} results`);
+    }
   }
 
   // 并行生成所有 provider 的问题
   const providerPromises = providerConfigs.map(async (pc, providerIndex) => {
-    const samples = providerSamples[providerIndex]!;
-    if (samples.length === 0) {
-      logger.warn(`[GoldenSet] No chunks available for ${pc.label}`);
-      return [];
-    }
+    const cells = allocation[providerIndex]!;
+    if (cells.length === 0) return [];
 
     const llmConfig: LLMProviderConfig = {
       providerId: pc.providerId,
@@ -892,13 +1030,17 @@ export async function generateGoldenSet(
       ...(pc.enableModelFallback !== undefined && { enableModelFallback: pc.enableModelFallback }),
     };
 
-    // 尝试批量生成，失败时逐级减半 batch size: x → x/2 → x/4 → ... → 1
+    // 为每个 cell 收集上下文
+    const contexts = collectCellContexts(cells, webResults, hasWebSearch);
+
+    // 尝试批量生成，失败时逐级减半 batch size
     let questions: GeneratedQuestion[] = [];
-    let batchSize = samples.length;
+    let batchSize = cells.length;
     while (batchSize >= 1) {
-      const batchSamples = samples.slice(0, batchSize);
-      const batchPrompt = buildBatchPrompt(batchSamples, batchSamples.length);
-      questions = await callLLMBatch(llmConfig, batchPrompt, batchSamples.length);
+      const batchCells = cells.slice(0, batchSize);
+      const batchContexts = contexts.slice(0, batchSize);
+      const batchPrompt = buildCellBatchPrompt(batchCells, batchContexts);
+      questions = await callLLMBatch(llmConfig, batchPrompt, batchCells.length);
       if (questions.length > 0) {
         logger.info(`[GoldenSet] ${pc.label}: Batch(${batchSize}) succeeded with ${questions.length} questions`);
         break;
@@ -910,60 +1052,47 @@ export async function generateGoldenSet(
     // 所有 batch 都失败，回退到单题串行（最后手段）
     if (questions.length === 0) {
       logger.info(`[GoldenSet] ${pc.label}: All batches failed, falling back to serial generation`);
-      questions = await generateSerial(llmConfig, samples, questionsPerProvider);
+      questions = await generateSerial(llmConfig, cells, contexts, cells.length);
     }
 
-    // 构建 GoldenQuestion 对象并存储
+    // 修复 answer 长度和 facts 数量约束（并行执行）
+    const repairedQuestions = await Promise.all(
+      questions.map(q => repairQuestionConstraints(q, llmConfig)),
+    );
+
+    // 构建 GoldenQuestion 对象并存储（spec §5.1: relevanceGrading 留空由 A.2 填充）
     const goldenQuestions: GoldenQuestion[] = [];
-    for (let i = 0; i < questions.length; i++) {
-      const q = questions[i]!;
-      const sample = samples[i];
-      const categoryInfo = findCategoryForAgent(q.category);
+    for (let i = 0; i < repairedQuestions.length; i++) {
+      const q = repairedQuestions[i]!;
+      const cell = cells[i]!;
 
-      // spec §3: Relevance Grading — 生成阶段完成
-      let relevanceGrading: RelevanceGrade[] = [];
-      if (hasJudges && sample) {
-        // 构建候选：生成 chunk + 2-3 个同批次其他 chunk 作为负样本
-        const candidates: Array<{ docId: string; chunkId?: string; text: string; source: "kb" | "web" }> = [
-          { docId: sample.source.name, chunkId: sample.chunk.id, text: sample.chunk.text, source: "kb" },
-        ];
-        // 从同批次其他 chunk 中随机取 2-3 个作为负样本
-        const otherSamples = samples.filter((_, j) => j !== i).slice(0, 3);
-        for (const os of otherSamples) {
-          candidates.push({ docId: os.source.name, chunkId: os.chunk.id, text: os.chunk.text, source: "kb" });
-        }
-
-        try {
-          relevanceGrading = await gradeRelevance(q.query, candidates, judgeApiKeys);
-          logger.info(`[GoldenSet] Graded ${relevanceGrading.length} candidates for "${q.query.slice(0, 40)}..."`);
-        } catch (err) {
-          logger.warn(`[GoldenSet] Grading failed for question "${q.query.slice(0, 40)}...": ${err}`);
-        }
-      }
+      // 从 KB chunks 推断 expectedSources
+      const ctx = contexts[i]!;
+      const expectedSources = ctx.kbChunks.map(c => c.source.name);
 
       const goldenQuestion: GoldenQuestion = {
         id: `gs-${randomUUID().slice(0, 8)}`,
-        agent: categoryInfo?.agent ?? "chat",
+        agent: "chat",  // spec §5.1: Phase 1 固定为 "chat"
         query: q.query,
         expectedAnswer: q.expected_answer,
-        expectedSources: [sample?.source.name ?? "unknown"],
+        expectedSources: expectedSources.length > 0 ? expectedSources : ["unknown"],
         expectedArticles: q.expected_articles,
-        category: q.category,
+        category: cell.category,  // 从矩阵分配，不依赖 LLM 输出
         difficulty: q.difficulty,
         generatedBy: pc.label,
-        // ── nf5: 默认 kb_only 类型 ──
-        sourceType: "kb_only",
-        expectedSource: "kb",
-        sourceRoutingRationale: q.source_routing_rationale || "答案来自知识库",
+        sourceType: cell.sourceType,  // 从矩阵分配
+        expectedSource: mapExpectedSource(cell.sourceType),
+        sourceRoutingRationale: mapSourceRoutingRationale(cell.sourceType),
         mustIncludeFacts: q.must_include_facts || [],
-        relevanceGrading,
+        relevanceGrading: [],  // A.2 阶段独立填充
         verifiedBy: "auto",
+        contextChunkIds: ctx.kbChunks.map(c => c.chunk.id),  // A.2 grading 正样本
       };
       insertGoldenQuestion(goldenQuestion);
       goldenQuestions.push(goldenQuestion);
     }
 
-    logger.info(`[GoldenSet] ${pc.label}: generated ${goldenQuestions.length}/${questionsPerProvider} questions`);
+    logger.info(`[GoldenSet] ${pc.label}: generated ${goldenQuestions.length}/${cells.length} questions`);
     return goldenQuestions;
   });
 
@@ -980,7 +1109,15 @@ export async function generateGoldenSet(
     }
   }
 
-  logger.info(`[GoldenSet] Total generated: ${results.length}/${totalQuestions} questions`);
+  // 验证矩阵覆盖
+  const matrixCoverage = new Set(results.map(r => `${r.sourceType}|${r.category}`));
+  const expectedCells = allocation.flat().map(c => `${c.sourceType}|${c.category}`);
+  const missingCells = expectedCells.filter(c => !matrixCoverage.has(c));
+  if (missingCells.length > 0) {
+    logger.warn(`[GoldenSet] Matrix coverage gap: ${missingCells.length} cells missing — ${missingCells.join(", ")}`);
+  }
+
+  logger.info(`[GoldenSet] Total generated: ${results.length}/${totalQuestions} questions, matrix cells covered: ${matrixCoverage.size}`);
   return results;
 }
 

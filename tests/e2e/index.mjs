@@ -131,6 +131,7 @@ export {
   testGoldenEvalUploadKnowledge,
   testGoldenEvalWriteSettings,
   testGoldenEvalGenerate,
+  testGoldenEvalGrading,
   testGoldenEvalQuality,
   testGoldenEvalModelCombination,
   testGoldenEvalCleanup,

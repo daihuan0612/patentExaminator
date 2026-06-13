@@ -19,7 +19,7 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import { loadEnvFile, getApiKey } from "./e2e-shared/env.mjs";
-import { postJSON, getJSON } from "./e2e-shared/http.mjs";
+import { postJSON } from "./e2e-shared/http.mjs";
 import { startIsolatedServer } from "./e2e-shared/server-lifecycle.mjs";
 import { uploadKnowledgeFile, SAMPLES_KNOWLEDGE_DIR } from "./e2e-shared/index.mjs";
 
@@ -100,7 +100,7 @@ async function main() {
     const providerConfigs = [];
     if (mimoKey) providerConfigs.push({ providerId: "mimo", model: "mimo-v2.5", apiKey: mimoKey, label: "MiMo" });
     if (volcengineKey) {
-      providerConfigs.push({ providerId: "volcengine", model: "deepseek-v4-flash-260425", apiKey: volcengineKey, label: "DeepSeek (火山)" });
+      providerConfigs.push({ providerId: "volcengine", model: "deepseek-v3-2-251201", apiKey: volcengineKey, label: "DeepSeek (火山)" });
       providerConfigs.push({ providerId: "volcengine", model: "doubao-seed-2-0-pro-260215", apiKey: volcengineKey, label: "doubao-seed (火山)" });
     }
 
@@ -111,7 +111,6 @@ async function main() {
     // spec §11: 传递 SerpAPI key 用于 web 题型生成
     const genRes = await postJSON("/metrics/golden-set/generate", {
       providerConfigs,
-      questionsPerProvider: 2,
       ...(serpApiKey && { searchApiKey: serpApiKey }),
     }, undefined, 300_000);
     const genData = await safeJson(genRes, "Generate golden set");
@@ -130,12 +129,39 @@ async function main() {
     const gsFile = saveJsonFile(`golden-set-${ts}.json`, {
       timestamp: new Date().toISOString(),
       providerConfigs: providerConfigs.map(p => ({ providerId: p.providerId, model: p.model, label: p.label })),
-      questionsPerProvider: 2,
       totalQuestions: genData.count,
       durationMs: Math.round(genDuration),
       questions: genData.questions,
     });
     evidenceFiles.push(gsFile);
+    console.log();
+
+    // ── Step 2.5: A.2 Relevance Grading ──
+    console.log("━━━ Step 2.5: A.2 Relevance Grading (2-judge) ━━━");
+    const judgeApiKeys = {};
+    if (mimoKey) judgeApiKeys.mimo = mimoKey;
+    if (volcengineKey) judgeApiKeys.volcengine = volcengineKey;
+
+    if (Object.keys(judgeApiKeys).length > 0) {
+      const gradeStart = performance.now();
+      const gradeRes = await postJSON("/metrics/golden-set/grade", {
+        judgeApiKeys,
+      }, undefined, 300_000);
+      const gradeData = await safeJson(gradeRes, "A.2 Grading");
+      const gradeDuration = performance.now() - gradeStart;
+      console.log(`✅ Graded ${gradeData.graded || 0} questions in ${(gradeDuration / 1000).toFixed(1)}s`);
+
+      // 更新 genData 中的 relevanceGrading（后续 quality check 需要）
+      if (gradeData.results) {
+        const gradingMap = new Map(gradeData.results.map(r => [r.questionId, r.grading]));
+        for (const q of genData.questions) {
+          const grading = gradingMap.get(q.id);
+          if (grading) q.relevanceGrading = grading;
+        }
+      }
+    } else {
+      console.log("⏭️ 跳过 grading（无 judge API key）");
+    }
     console.log();
 
     // ── Step 3: Quality evaluation ──
@@ -229,7 +255,7 @@ async function main() {
     console.log("━━━ Step 4: Model combination evaluation ━━━");
     const evalConfigs = [];
     if (mimoKey) evalConfigs.push({ label: "MiMo-v2.5", providerId: "mimo", modelId: "mimo-v2.5" });
-    else if (volcengineKey) evalConfigs.push({ label: "DeepSeek-v4-pro", providerId: "volcengine", modelId: "deepseek-v4-flash-260425" });
+    else if (volcengineKey) evalConfigs.push({ label: "DeepSeek-v3.2", providerId: "volcengine", modelId: "deepseek-v3-2-251201" });
 
     const evalApiKey = mimoKey || volcengineKey;
     // 只评估 chat agent（最快，每个问题 ~2 分钟）
@@ -311,11 +337,18 @@ async function main() {
 
   if (evidenceFiles.length >= 3) {
     console.log("\n✅ All 3 evidence files generated successfully.");
-    console.log(`   Location: ${EVAL_REPORTS_DIR}/`);
   } else {
     console.log(`\n⚠️  Only ${evidenceFiles.length}/3 evidence files generated.`);
-    process.exit(1);
   }
+
+  // 打印所有文件的完整路径
+  console.log("\n━━━ 📁 生成文件完整路径 ━━━");
+  for (const f of evidenceFiles) {
+    console.log(`  ${f}`);
+  }
+  console.log(`  Golden Set DB: ${path.resolve(process.cwd(), "data/patent-examiner.db")}`);
+
+  if (evidenceFiles.length < 3) process.exit(1);
 }
 
 main().catch(err => {

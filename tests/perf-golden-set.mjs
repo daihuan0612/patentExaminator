@@ -10,8 +10,13 @@ import { startIsolatedServer } from "./e2e-shared/server-lifecycle.mjs";
 import { uploadKnowledgeFile, SAMPLES_KNOWLEDGE_DIR } from "./e2e-shared/index.mjs";
 // GEMINI_FALLBACK_MODELS 已移除 — Gemini API 暂停使用
 import path from "path";
+import { mkdirSync, writeFileSync } from "fs";
 
 loadEnvFile();
+
+function timestamp() {
+  return new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+}
 
 async function main() {
   console.log("=== Golden Set 生成性能测试 ===\n");
@@ -55,14 +60,14 @@ async function main() {
     const settingsRes = await postJSON("/sync/upload", {
       stores: { settings: [{ id: "app", data: { providers: settingsProviders, searchProviders } }] },
     });
-    const settingsData = await settingsRes.json().catch(() => ({}));
+    await settingsRes.json().catch(() => ({}));
     console.log(`✅ Settings 已写入 (providers=${settingsProviders.length})\n`);
 
     // 构建 provider 配置
     const providerConfigs = [];
     if (mimoKey) providerConfigs.push({ providerId: "mimo", model: "mimo-v2.5", apiKey: mimoKey, label: "MiMo" });
     if (volcengineKey) {
-      providerConfigs.push({ providerId: "volcengine", model: "deepseek-v4-flash-260425", apiKey: volcengineKey, label: "DeepSeek" });
+      providerConfigs.push({ providerId: "volcengine", model: "deepseek-v3-2-251201", apiKey: volcengineKey, label: "DeepSeek" });
       providerConfigs.push({ providerId: "volcengine", model: "doubao-seed-2-0-pro-260215", apiKey: volcengineKey, label: "doubao-seed" });
     }
 
@@ -76,9 +81,9 @@ async function main() {
 
     const resFull = await postJSON(
       "/metrics/golden-set/generate",
-      { providerConfigs, questionsPerProvider: 7, ...(serpApiKey && { searchApiKey: serpApiKey }) },
+      { providerConfigs, ...(serpApiKey && { searchApiKey: serpApiKey }) },
       undefined,
-      300_000,
+      600_000,
     );
 
     const endFull = performance.now();
@@ -110,13 +115,108 @@ async function main() {
         console.log();
       }
 
-      // 保存到项目目录
-      const outPath = path.join(process.cwd(), "tests", "eval-reports", "golden-set-sample.json");
-      const { mkdirSync, writeFileSync } = await import("fs");
-      mkdirSync(path.dirname(outPath), { recursive: true });
-      writeFileSync(outPath, JSON.stringify(dataFull.questions, null, 2), "utf-8");
-      console.log(`✅ Golden set 已保存: ${outPath}`);
+      console.log(`✅ Golden set 题目已生成: ${dataFull.count} 题`);
     }
+
+    // ── 测试：A.2 Relevance Grading ──
+    console.log("\n━━━ A.2 Relevance Grading（2-judge: MiMo + DeepSeek）━━━");
+    const judgeApiKeys = {};
+    if (mimoKey) judgeApiKeys.mimo = mimoKey;
+    if (volcengineKey) judgeApiKeys.volcengine = volcengineKey;
+
+    if (Object.keys(judgeApiKeys).length > 0 && dataFull.count > 0) {
+      const startGrade = performance.now();
+      const resGrade = await postJSON(
+        "/metrics/golden-set/grade",
+        { judgeApiKeys },
+        undefined,
+        600_000,
+      );
+      const endGrade = performance.now();
+      const dataGrade = await resGrade.json();
+      const durationGrade = endGrade - startGrade;
+
+      console.log(`结果: ${dataGrade.graded || 0} 题已 grading`);
+      console.log(`耗时: ${(durationGrade / 1000).toFixed(1)}s`);
+
+      // 统计 grade 分布
+      if (dataGrade.results) {
+        const gradeDistribution = { 0: 0, 1: 0, 2: 0, 3: 0 };
+        let totalCandidates = 0;
+        for (const r of dataGrade.results) {
+          for (const g of (r.grading || [])) {
+            gradeDistribution[g.grade] = (gradeDistribution[g.grade] || 0) + 1;
+            totalCandidates++;
+          }
+        }
+        console.log(`候选总数: ${totalCandidates}`);
+        console.log(`Grade 分布: ${JSON.stringify(gradeDistribution)}`);
+      }
+    } else {
+      console.log("⏭️ 跳过（无 judge API key 或无题目）");
+    }
+
+    // ── 保存 Golden Set 原始 JSON（A.2 之后，含 grading，调试用）──
+    const ts2 = timestamp();
+    const rawPath = path.join(process.cwd(), "tests", "eval-reports", `golden-set-raw-${ts2}.json`);
+    try {
+      const resExport = await getJSON("/metrics/golden-set");
+      const dataExport = await resExport.json();
+      if (dataExport.questions) {
+        mkdirSync(path.dirname(rawPath), { recursive: true });
+        writeFileSync(rawPath, JSON.stringify(dataExport.questions, null, 2), "utf-8");
+        console.log(`\n✅ 原始 golden set 已保存（含 grading，调试用）: ${rawPath}`);
+      }
+    } catch (e) {
+      console.warn(`\n⚠️ Golden set 导出失败: ${e}`);
+    }
+
+    // ── 测试：B Quality Check ──
+    console.log("\n━━━ B Golden Set 质量评估（确定性检查，无 LLM 调用）━━━");
+    const resQuality = await getJSON("/metrics/golden-set/quality");
+    const dataQuality = await resQuality.json();
+    console.log(`通过: ${dataQuality.passed ? "✅" : "❌"}`);
+    console.log(`建议: ${dataQuality.recommendation}`);
+    if (dataQuality.checks) {
+      for (const [name, check] of Object.entries(dataQuality.checks)) {
+        console.log(`  ${check.passed ? "✅" : "❌"} ${name}: ${check.detail}`);
+      }
+    }
+
+    // 保存 B 质量报告到文件
+    const qualityReportPath = path.join(process.cwd(), "tests", "eval-reports", `quality-report-${ts2}.json`);
+    mkdirSync(path.dirname(qualityReportPath), { recursive: true });
+    writeFileSync(qualityReportPath, JSON.stringify(dataQuality, null, 2), "utf-8");
+
+    // ── C 阶段：清理不合格题目 ──
+    console.log("\n━━━ C 清理不合格题目 ━━━");
+    const resClean = await postJSON("/metrics/golden-set/clean", {});
+    const dataClean = await resClean.json();
+    console.log(`删除: ${dataClean.deleted?.length || 0} 题`);
+    console.log(`保留: ${dataClean.kept || 0} 题`);
+    if (dataClean.deleted?.length > 0) {
+      console.log(`被删题目: ${dataClean.deleted.join(", ")}`);
+    }
+
+    // ── 保存清理后的 Golden Set JSON ──
+    const cleanPath = path.join(process.cwd(), "tests", "eval-reports", `golden-set-${ts2}.json`);
+    try {
+      const resExport2 = await getJSON("/metrics/golden-set");
+      const dataExport2 = await resExport2.json();
+      if (dataExport2.questions) {
+        writeFileSync(cleanPath, JSON.stringify(dataExport2.questions, null, 2), "utf-8");
+        console.log(`\n✅ 清理后 golden set 已保存: ${cleanPath}`);
+      }
+    } catch (e) {
+      console.warn(`\n⚠️ 清理后 golden set 导出失败: ${e}`);
+    }
+
+    // 打印文件位置摘要
+    console.log("\n━━━ 📁 生成文件位置 ━━━");
+    console.log(`  原始 Golden Set: ${rawPath}`);
+    console.log(`  清理 Golden Set: ${cleanPath}`);
+    console.log(`  质量报告:        ${qualityReportPath}`);
+    console.log(`  Golden Set DB:   ${dataQuality.goldenSetPath || "见服务器日志"}`);
 
   } finally {
     await cleanup();
