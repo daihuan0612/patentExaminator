@@ -173,8 +173,12 @@ export const OPENROUTER_FALLBACK_DELAY_INCREMENT = 1000;
 
 // ── 测试服务器配置 ──────────────────────────────────────────────────
 
-/** 默认测试服务器地址 */
-export const DEFAULT_TEST_BASE = "http://localhost:3000/api";
+/**
+ * 默认测试服务器地址（B-042: 禁止默认指向生产数据库）
+ * 必须通过 startIsolatedServer() 或 TEST_BASE 环境变量显式设置。
+ * 留空时 getTestBase() 会抛错，防止意外写入生产数据库。
+ */
+export const DEFAULT_TEST_BASE = "";
 
 // ── 智能测试选择：文件路径 → 测试组映射 ─────────────────────────────
 

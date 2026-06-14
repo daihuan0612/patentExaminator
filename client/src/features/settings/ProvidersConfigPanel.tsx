@@ -291,7 +291,7 @@ export function ProvidersConfigPanel() {
           const provider = ensureProvider(preset.id);
           const isLoading = loadingModels === preset.id;
           const error = modelError[preset.id];
-          const fallbackList = provider.modelFallbacks ?? provider.modelIds;
+          const fallbackList = provider.modelFallbacks ?? provider.modelIds ?? [];
           const modelMetaMap = new Map(
             fallbackList.map((id) => [id, getModelMeta(preset.id, id, modelCatalog)])
           );

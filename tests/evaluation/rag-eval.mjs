@@ -13,11 +13,13 @@
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { getTestBase } from "../e2e-shared/env.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataset = JSON.parse(readFileSync(join(__dirname, "rag-eval-dataset.json"), "utf-8"));
 
-const API_BASE = process.env.API_BASE || "http://localhost:3000";
+// getTestBase() 返回 ".../api" 格式，本脚本 fetch 时手动拼 /api，需去掉后缀
+const API_BASE = process.env.API_BASE || getTestBase().replace(/\/api$/, "");
 const API_KEY = process.argv.find((a) => a.startsWith("--api-key="))?.split("=")[1] || process.env.GEMINI_KEY || "";
 
 async function searchKnowledge(query) {

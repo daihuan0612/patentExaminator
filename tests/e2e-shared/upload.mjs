@@ -24,8 +24,14 @@ import { parseSSEResponse } from "./http.mjs";
  */
 export async function uploadKnowledgeFile(filePath, options = {}) {
   const base = options.baseUrl || getTestBase();
-  if (base.includes("localhost:3000")) {
-    console.warn(`[upload.mjs] ⚠️ upload 指向主服务器! base=${base} | caller: ${new Error().stack?.split("\n")[2]?.trim()}`);
+  if (base.includes("localhost:3000") && !process.env.ALLOW_TEST_PROD) {
+    const caller = new Error().stack?.split("\n")[2]?.trim() || "unknown";
+    throw new Error(
+      `[安全阻断] 测试代码 upload 指向生产数据库！\n` +
+      `  url: ${base}\n` +
+      `  caller: ${caller}\n` +
+      `  修复: 测试必须使用 startIsolatedServer() 或设置 TEST_BASE 环境变量。`
+    );
   }
   const fileName = path.basename(filePath);
 

@@ -7,6 +7,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 import { logger } from "./logger.js";
+import { writeAudit } from "./auditLog.js";
 
 // 支持通过环境变量指定数据库路径（测试隔离）
 const DATA_DIR = process.env.SYNC_DB_DIR ?? path.resolve(process.cwd(), "data");
@@ -210,13 +211,21 @@ function updateLastSyncTime(): void {
 export function uploadAllData(stores: Record<string, Array<{ id: string; data: unknown }>>): { uploaded: number } {
   const db = getSyncDb();
   const upsert = db.prepare("INSERT OR REPLACE INTO sync_data (store_name, record_id, data, updated_at) VALUES (?, ?, ?, datetime('now'))");
+  const selectPrev = db.prepare("SELECT data FROM sync_data WHERE store_name = ? AND record_id = ?");
 
   let total = 0;
   const transaction = db.transaction(() => {
     for (const [storeName, records] of Object.entries(stores)) {
       for (const record of records) {
+        // 读取写入前的数据（审计用）
+        let dataBefore: unknown = undefined;
+        const prev = selectPrev.get(storeName, record.id) as { data: string } | undefined;
+        if (prev) try { dataBefore = JSON.parse(prev.data); } catch { /* ignore */ }
+
         upsert.run(storeName, record.id, JSON.stringify(record.data));
         total++;
+
+        writeAudit({ op: "CREATE", store: storeName, recordId: record.id, caller: "sync/upload", dataBefore, dataAfter: record.data, result: "OK" });
       }
     }
     updateLastSyncTime();

@@ -43,7 +43,6 @@ scripts/
 opencode.json
 
 # Docs (local only, entire directory)
-docs/
 
 # Knowledge base samples (local only, too large for git)
 samples/knowledge-base/

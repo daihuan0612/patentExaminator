@@ -20,6 +20,23 @@ setGlobalDispatcher(new Agent({
 const DEFAULT_TIMEOUT_MS = 60_000;
 
 /**
+ * 写操作生产数据库防护（CLAUDE.md: 自动测试绝对不能写用户生产数据库）
+ * 检测到写操作指向 localhost:3000 且未显式设置 ALLOW_TEST_PROD 时，直接抛异常阻断。
+ */
+function assertNotProdWrite(url, method) {
+  if (url.includes("localhost:3000") && !process.env.ALLOW_TEST_PROD) {
+    const caller = new Error().stack?.split("\n")[3]?.trim() || "unknown";
+    throw new Error(
+      `[安全阻断] 测试代码 ${method} 写操作指向生产数据库！\n` +
+      `  url: ${url}\n` +
+      `  caller: ${caller}\n` +
+      `  修复: 测试必须使用 startIsolatedServer() 或设置 TEST_BASE 环境变量。\n` +
+      `  如确需连接已有服务器，请设置 ALLOW_TEST_PROD=1（仅限 --use-existing-server）。`
+    );
+  }
+}
+
+/**
  * 当前活跃的 AbortSignal（由 withTimeout 设置）
  * postJSON 优先使用此 signal，实现超时真正取消请求
  */
@@ -47,9 +64,7 @@ export function clearActiveAbortSignal() {
 export async function postJSON(pathname, body, baseUrl, timeoutMs) {
   const base = baseUrl || getTestBase();
   const url = `${base}${pathname}`;
-  if (url.includes("localhost:3000")) {
-    console.warn(`[http.mjs] ⚠️ POST 指向主服务器! url=${url} | caller: ${new Error().stack?.split("\n")[2]?.trim()}`);
-  }
+  assertNotProdWrite(url, "POST");
   // 优先使用 withTimeout 设置的全局 AbortSignal，实现超时真正取消
   const signal = activeAbortSignal ?? AbortSignal.timeout(timeoutMs || DEFAULT_TIMEOUT_MS);
   return fetch(url, {
@@ -66,7 +81,7 @@ export async function postJSON(pathname, body, baseUrl, timeoutMs) {
 export async function getJSON(pathname, baseUrl) {
   const base = baseUrl || getTestBase();
   const url = `${base}${pathname}`;
-  if (url.includes("localhost:3000")) {
+  if (url.includes("localhost:3000") && !process.env.ALLOW_TEST_PROD) {
     console.warn(`[http.mjs] ⚠️ GET 指向主服务器! url=${url} | caller: ${new Error().stack?.split("\n")[2]?.trim()}`);
   }
   const signal = activeAbortSignal ?? AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
@@ -81,7 +96,7 @@ export async function getJSON(pathname, baseUrl) {
 export async function getJSONWithParams(pathname, params, baseUrl) {
   const base = baseUrl || getTestBase();
   const fullUrl = `${base}${pathname}`;
-  if (fullUrl.includes("localhost:3000")) {
+  if (fullUrl.includes("localhost:3000") && !process.env.ALLOW_TEST_PROD) {
     console.warn(`[http.mjs] ⚠️ GET+params 指向主服务器! url=${fullUrl} | caller: ${new Error().stack?.split("\n")[2]?.trim()}`);
   }
   const url = new URL(fullUrl);
@@ -97,9 +112,7 @@ export async function getJSONWithParams(pathname, params, baseUrl) {
 export async function uploadFile(pathname, formData, baseUrl) {
   const base = baseUrl || getTestBase();
   const url = `${base}${pathname}`;
-  if (url.includes("localhost:3000")) {
-    console.warn(`[http.mjs] ⚠️ upload 指向主服务器! url=${url} | caller: ${new Error().stack?.split("\n")[2]?.trim()}`);
-  }
+  assertNotProdWrite(url, "UPLOAD");
   return fetch(url, {
     method: "POST",
     body: formData,

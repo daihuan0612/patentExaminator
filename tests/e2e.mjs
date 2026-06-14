@@ -167,7 +167,6 @@ const GEMINI_KEY = getApiKey("gemini");
 const MIMO_KEY = getApiKey("mimo");
 const OPENROUTER_KEY = getApiKey("openrouter");
 const TAVILY_API_KEY = getApiKey("tavily");
-const SERP_API_KEY = getApiKey("serp");
 
 // ── Quality Gate ────────────────────────────────────────────────────
 
@@ -326,6 +325,11 @@ async function main() {
 
   if (useExistingServer) {
     // 向后兼容：连接已有服务器
+    // 必须显式设置 TEST_BASE 和 ALLOW_TEST_PROD，防止意外写入生产数据库
+    if (!process.env.TEST_BASE) {
+      process.env.TEST_BASE = "http://localhost:3000/api";
+    }
+    process.env.ALLOW_TEST_PROD = "1";
     const BASE = getTestBase();
     try {
       const healthRes = await fetch(`${BASE}/health`, { signal: AbortSignal.timeout(5000) });
@@ -483,8 +487,7 @@ async function main() {
       console.log("--- Key Validation ---");
       console.log(`  MiMo_KEY: ${maskKey(MIMO_KEY)}`);
       console.log(`  GEMINI_KEY: ${maskKey(GEMINI_KEY)}`);
-      console.log(`  TAVILY_API_KEY: ${maskKey(TAVILY_API_KEY)}`);
-      console.log(`  SerpAPI_KEY: ${maskKey(SERP_API_KEY)}\n`);
+      console.log(`  TAVILY_API_KEY: ${maskKey(TAVILY_API_KEY)}\n`);
 
       if (!GEMINI_KEY) {
         console.log("ERROR: GEMINI_KEY not set. Required for real mode.\n");
@@ -657,8 +660,7 @@ async function main() {
         console.log("\n--- Real Mode (GEMINI_KEY detected) ---");
         console.log(`  MiMo_KEY: ${maskKey(MIMO_KEY)}`);
         console.log(`  GEMINI_KEY: ${maskKey(GEMINI_KEY)}`);
-        console.log(`  TAVILY_API_KEY: ${maskKey(TAVILY_API_KEY)}`);
-        console.log(`  SerpAPI_KEY: ${maskKey(SERP_API_KEY)}\n`);
+        console.log(`  TAVILY_API_KEY: ${maskKey(TAVILY_API_KEY)}\n`);
         await runRealModeTests();
       } else {
         console.log("\n--- Real Mode (skipped, no GEMINI_KEY) ---");

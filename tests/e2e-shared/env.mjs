@@ -105,11 +105,20 @@ export function getModelId(provider) {
 }
 
 /**
- * 获取测试服务器地址
+ * 获取测试服务器地址（B-042: 测试数据库隔离）
+ * 必须通过 startIsolatedServer() 或 TEST_BASE 环境变量设置。
+ * DEFAULT_TEST_BASE 为空时，未配置的脚本会立即报错，防止意外写入生产数据库。
  */
 export function getTestBase() {
   const fromEnv = process.env.TEST_BASE;
   const result = fromEnv || DEFAULT_TEST_BASE;
+  if (!result) {
+    throw new Error(
+      "[getTestBase] 未设置测试服务器地址！\n" +
+      "  测试必须使用 startIsolatedServer() 启动隔离服务器，或设置 TEST_BASE 环境变量。\n" +
+      "  绝对禁止默认指向 localhost:3000 生产数据库（CLAUDE.md B-042）。"
+    );
+  }
   const source = fromEnv ? "env.TEST_BASE" : "DEFAULT_TEST_BASE(fallback)";
   const stack = new Error().stack?.split("\n").slice(1, 4).map(s => s.trim()).join(" <- ") ?? "?";
   console.log(`[getTestBase] ${source} → ${result} | caller: ${stack}`);
@@ -152,6 +161,5 @@ export function printEnvSummary() {
   console.log(`火山引擎: ${hasApiKey("volcengine") ? `已配置 (${maskKey(getApiKey("volcengine"))})` : "未配置"}`);
   console.log(`OpenRouter: ${hasApiKey("openrouter") ? `已配置 (${maskKey(getApiKey("openrouter"))})` : "未配置"}`);
   console.log(`Tavily: ${hasApiKey("tavily") ? `已配置 (${maskKey(getApiKey("tavily"))})` : "未配置"}`);
-  console.log(`SerpAPI: ${hasApiKey("serp") ? `已配置 (${maskKey(getApiKey("serp"))})` : "未配置"}`);
   console.log("");
 }
