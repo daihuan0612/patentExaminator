@@ -1223,7 +1223,7 @@ searchRouter.post("/search-with-terms", async (req, res) => {
 
 // Verify search API key validity
 const verifyKeySchema = z.object({
-  providerId: z.enum(["tavily", "serpapi", "custom", "epo"]),
+  providerId: z.enum(["tavily", "serpapi", "custom", "epo", "serper"]),
   apiKey: z.string().min(1),
   baseUrl: z.string().optional()
 });
@@ -1289,6 +1289,20 @@ searchRouter.post("/verify-search-key", async (req, res) => {
       } else {
         const text = await response.text().catch(() => "");
         res.json({ ok: false, providerId, error: `EPO 认证失败 (${response.status}): ${text.slice(0, 100)}` });
+      }
+    } else if (providerId === "serper") {
+      const endpoint = (baseUrl || "https://google.serper.dev") + "/search";
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-API-KEY": apiKey },
+        body: JSON.stringify({ q: "test", num: 1 }),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (response.ok) {
+        res.json({ ok: true, providerId, message: "Serper.dev API Key 有效" });
+      } else {
+        const text = await response.text().catch(() => "");
+        res.json({ ok: false, providerId, error: `Key 无效 (${response.status}): ${text.slice(0, 100)}` });
       }
     } else if (providerId === "custom" && baseUrl) {
       const url = new URL(baseUrl);

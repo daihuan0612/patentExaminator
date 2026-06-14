@@ -46,6 +46,7 @@ export async function searchPatents(
     queryList.map((q) => {
       const searchFn = providerId === "tavily" ? searchTavily
         : providerId === "epo" ? searchEpoAdapter
+        : providerId === "serper" ? (k: string, n: number, a: string) => searchSerper(k, n, a, config?.baseUrl)
         : config?.baseUrl ? (k: string, n: number, a: string) => searchCustom(k, n, a, config.baseUrl as string)
         : null;
       if (!searchFn) return Promise.resolve([] as SearchResult[]);
@@ -140,6 +141,41 @@ async function tavilySearch(
     url: r.url,
     content: r.content,
     score: r.score
+  }));
+}
+
+async function searchSerper(
+  query: string,
+  maxResults: number,
+  apiKey: string,
+  baseUrl?: string
+): Promise<SearchResult[]> {
+  const endpoint = (baseUrl || "https://google.serper.dev") + "/search";
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-KEY": apiKey,
+    },
+    body: JSON.stringify({ q: query, num: maxResults }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    logger.error("Serper API error", { status: response.status, text });
+    throw new Error(`Serper API error: ${response.status}`);
+  }
+
+  const data = (await response.json()) as {
+    organic?: Array<{ title: string; link: string; snippet: string; position?: number }>;
+  };
+
+  return (data.organic ?? []).map((r) => ({
+    title: r.title,
+    url: r.link,
+    content: r.snippet,
+    score: r.position ? 1 / r.position : 0,
   }));
 }
 

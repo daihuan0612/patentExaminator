@@ -37,6 +37,7 @@ export const API_KEY_NAMES = {
   openrouter: "Openrouter_KEY",
   tavily: "TAVILY_API_KEY",
   serp: "SerpAPI_KEY",
+  serperdev: "SerperDev_Key",
   epo: "EPO_CONSUMER_KEY",
   epoSecret: "EPO_CONSUMER_SECRET_KEY",
   // 知识库 Embedding 和 Reranker 可以用不同的 key

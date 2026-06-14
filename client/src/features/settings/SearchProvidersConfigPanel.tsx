@@ -16,6 +16,8 @@ export function SearchProvidersConfigPanel() {
   const [secretInput, setSecretInput] = useState("");
   const [verifying, setVerifying] = useState<string | null>(null);
   const [verifyResult, setVerifyResult] = useState<Record<string, VerifyResult>>({});
+  const [editingUrl, setEditingUrl] = useState<string | null>(null);
+  const [urlInput, setUrlInput] = useState("");
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -75,6 +77,12 @@ export function SearchProvidersConfigPanel() {
     setKeyInput("");
     setSecretInput("");
     setVerifyResult((prev) => { const next = { ...prev }; delete next[id]; return next; });
+  };
+
+  const handleSaveUrl = (id: SearchProviderId) => {
+    updateSearchProvider(id, { baseUrl: urlInput });
+    setEditingUrl(null);
+    setUrlInput("");
   };
 
   const handleVerifyKey = async (provider: SearchProviderConnection) => {
@@ -151,14 +159,52 @@ export function SearchProvidersConfigPanel() {
               <div className="provider-card__body">
                 <div className="provider-card__field">
                   <label>Endpoint</label>
-                  <input
-                    type="text"
-                    value={preset.baseUrl}
-                    readOnly
-                    disabled
-                    className="input-readonly"
-                    data-testid={`baseurl-search-${preset.id}`}
-                  />
+                  {preset.id === "serper" ? (
+                    editingUrl === preset.id ? (
+                      <div className="inline-edit">
+                        <input
+                          type="text"
+                          value={urlInput}
+                          onChange={(e) => setUrlInput(e.target.value)}
+                          placeholder={preset.baseUrl}
+                          data-testid={`input-search-url-${preset.id}`}
+                          autoFocus
+                        />
+                        <button type="button" onClick={() => handleSaveUrl(preset.id)}>
+                          保存
+                        </button>
+                        <button type="button" className="btn-text" onClick={() => { setEditingUrl(null); setUrlInput(""); }}>
+                          取消
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="inline-display">
+                        <span className="text-muted">
+                          {provider.baseUrl || preset.baseUrl}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn-text"
+                          onClick={() => {
+                            setEditingUrl(preset.id);
+                            setUrlInput(provider.baseUrl || "");
+                          }}
+                          data-testid={`btn-edit-search-url-${preset.id}`}
+                        >
+                          修改
+                        </button>
+                      </div>
+                    )
+                  ) : (
+                    <input
+                      type="text"
+                      value={preset.baseUrl}
+                      readOnly
+                      disabled
+                      className="input-readonly"
+                      data-testid={`baseurl-search-${preset.id}`}
+                    />
+                  )}
                 </div>
 
                 <div className="provider-card__field">
