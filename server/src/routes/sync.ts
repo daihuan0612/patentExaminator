@@ -30,7 +30,7 @@ syncRouter.get("/sync/status", (_req, res) => {
 });
 
 /** POST /api/sync/upload — 上传全部数据 */
-syncRouter.post("/sync/upload", express.json({ limit: "50mb" }), (req, res) => {
+syncRouter.post("/sync/upload", express.json({ limit: "50mb" }), async (req, res) => {
   try {
     const parsed = syncUploadInputSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -40,6 +40,13 @@ syncRouter.post("/sync/upload", express.json({ limit: "50mb" }), (req, res) => {
     const { stores } = parsed.data;
 
     const result = uploadAllData(stores as Record<string, Array<{ id: string; data: unknown }>>);
+
+    // settings 更新时清除 orchestrator 缓存
+    if ((stores as Record<string, unknown>).settings) {
+      const { clearSettingsCache } = await import("../lib/orchestrator.js");
+      clearSettingsCache();
+    }
+
     res.json({ ok: true, ...result });
   } catch (err) {
     logger.error("Sync upload error: " + errMsg(err));

@@ -356,6 +356,11 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
     let data: Record<string, unknown> = {};
     let lastContentChunk: Record<string, unknown> | undefined;
     const isSSE = buffer.trimStart().startsWith("data: ");
+    // D2: SSE chunk 诊断计数器
+    let sseChunkCount = 0;
+    let sseWithChoicesCount = 0;
+    let sseWithDeltaContentCount = 0;
+    const sseNoChoicesSamples: string[] = []; // 保存前 3 个无 choices 的 chunk 结构
     if (isSSE) {
       for (const line of buffer.split("\n")) {
         const trimmed = line.trim();
@@ -364,9 +369,17 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
         if (payload === "[DONE]") continue;
         try {
           const chunk = JSON.parse(payload) as Record<string, unknown>;
+          sseChunkCount++;
           data = chunk;
           const c = chunk.choices as unknown[] | undefined;
-          if (c && c.length > 0) lastContentChunk = chunk;
+          if (c && c.length > 0) {
+            lastContentChunk = chunk;
+            sseWithChoicesCount++;
+            const delta = (c[0] as Record<string, unknown>)?.delta as Record<string, unknown> | undefined;
+            if (typeof delta?.content === "string" && delta.content) sseWithDeltaContentCount++;
+          } else if (sseNoChoicesSamples.length < 3) {
+            sseNoChoicesSamples.push(JSON.stringify(Object.keys(chunk)));
+          }
         } catch { /* skip */ }
       }
     } else {
@@ -383,6 +396,17 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
       reasoning_tokens?: number; // OpenRouter 顶层字段
     } | undefined;
     console.log(`[${tag}] usage=${usage ? JSON.stringify(usage) : "none"}`);
+    // D2: SSE chunk 诊断 — 当 choices=0 时输出 chunk 统计，帮助定位空响应
+    if (isSSE && sseChunkCount > 0) {
+      const source = lastContentChunk ?? data;
+      const ch = Array.isArray(source.choices) ? source.choices : [];
+      if (ch.length === 0) {
+        logger.warn(`[${tag}] D2 SSE chunk diagnostic: total=${sseChunkCount}, withChoices=${sseWithChoicesCount}, withDeltaContent=${sseWithDeltaContentCount}, noChoicesSamples=${JSON.stringify(sseNoChoicesSamples)}`);
+        // 额外 log: 最后一个 chunk 的顶层 key（排除 choices/usage 以减少噪音）
+        const lastKeys = Object.keys(data).filter(k => k !== "choices" && k !== "usage");
+        logger.warn(`[${tag}] D2 last chunk keys (non-choices/usage): ${JSON.stringify(lastKeys)}`);
+      }
+    }
     const source = lastContentChunk ?? data;
     const choices = Array.isArray(source.choices) ? source.choices : [];
     const firstChoice = choices[0] as Record<string, unknown> | undefined;

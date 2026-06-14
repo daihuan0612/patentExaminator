@@ -129,7 +129,6 @@ describe("agentRun real mode", () => {
     expect(capturedBody).toMatchObject({
       agent: "claim-chart",
       caseId: "g1-led",
-      providerPreference: expect.arrayContaining(["gemini"]),
     });
     global.fetch = originalFetch;
   });

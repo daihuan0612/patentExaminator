@@ -10,12 +10,12 @@
 
 ## 核心原则：测试数据库严格隔离（B-042 + BUG-171）
 
-1. **生产数据库**：`server/data/patent-examiner.db` 和 `server/data/knowledge.db` 是用户数据，**绝对不能被任何自动测试读写**
+1. **生产数据库**：`server/data/patent-examiner.db` 和 `server/data/knowledge.db` 是用户数据，**绝对不能被任何自动测试写**, 但可以读取
 2. **隔离机制**：集成测试必须调用 `resetSyncDbForTesting(":memory:")` / `resetKnowledgeDbForTesting(":memory:")`；E2E 测试必须通过 `startIsolatedServer()` 启动隔离子进程
 3. **AI 自测规则**：Claude 改完代码后验证修改时，**绝对不能**直接 `curl localhost:3000` 打用户正在运行的 dev server，必须走隔离测试路径
 
 ❌ **绝对禁止**：
-- 任何测试直接访问 `server/data/patent-examiner.db` 或 `server/data/knowledge.db`
+- 任何测试直接写 `server/data/patent-examiner.db` 或 `server/data/knowledge.db`，但可以读取
 - 写新集成测试文件时忘记在 `beforeAll` 中调用 `resetSyncDbForTesting()` / `resetKnowledgeDbForTesting()`
 - 用 `curl localhost:3000` 对用户 dev server 做 ad-hoc 验证
 - 用 `npm run test:e2e:legacy` 连接非隔离服务器

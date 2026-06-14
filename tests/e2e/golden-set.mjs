@@ -65,14 +65,13 @@ export async function testGoldenSetGenerate() {
     providerConfigs.push({ providerId: "volcengine", model: "doubao-seed-2-0-pro-260215", apiKey: volcengineKey, label: "doubao-seed (火山)" });
   }
 
-  // spec §11: 使用 SerpAPI key（与 MCP Web Search 路径一致）
-  const searchApiKey = getApiKey("serp");
+  const searchApiKey = getApiKey("tavily");
 
   // 计时开始
   const startTime = performance.now();
-  console.log(`[Perf] Golden Set 生成开始: ${new Date().toISOString()}`);
+  console.log(`[Perf] Golden Set 生成开始: ${new Date().toLocaleString("sv-SE")}`);
   console.log(`[Perf] Providers: ${providerConfigs.map(p => p.label).join(", ")}`);
-  console.log(`[Perf] Search API key (SerpAPI): ${searchApiKey ? "✓" : "✗ (web types will be skipped)"}`);
+  console.log(`[Perf] Search API key (Tavily): ${searchApiKey ? "✓" : "✗ (web types will be skipped)"}`);
 
   const res = await postJSON("/metrics/golden-set/generate", {
     providerConfigs,
@@ -90,7 +89,7 @@ export async function testGoldenSetGenerate() {
     hasQuestions ? `count=${data.count}, providers=${[...new Set(data.questions.map(q => q.generated_by))].join(",")}` : JSON.stringify(data));
 
   // 性能报告
-  console.log(`[Perf] Golden Set 生成完成: ${new Date().toISOString()}`);
+  console.log(`[Perf] Golden Set 生成完成: ${new Date().toLocaleString("sv-SE")}`);
   console.log(`[Perf] 总耗时: ${durationSec}s (${durationMs.toFixed(0)}ms)`);
   console.log(`[Perf] 平均每题: ${(durationMs / (data.count || 1)).toFixed(0)}ms`);
 
@@ -103,7 +102,7 @@ export async function testGoldenSetGenerate() {
 
   // 保存性能数据到文件（可选）
   const perfData = {
-    timestamp: new Date().toISOString(),
+    timestamp: new Date().toLocaleString("sv-SE"),
     providers: providerConfigs.map(p => p.label),
     totalQuestions: data.count || 0,
     durationMs: Math.round(durationMs),

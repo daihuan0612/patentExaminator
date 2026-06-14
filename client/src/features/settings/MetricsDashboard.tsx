@@ -56,7 +56,6 @@ interface EvalConfigSummary {
   avgArticleAccuracy: number;
   avgSourceRoutingAccuracy: number;
   avgKbHitRate: number;
-  avgWebHitRate: number;
 }
 
 interface EvalResult {
@@ -567,7 +566,6 @@ export function MetricsDashboard() {
                         <th>法条准确</th>
                         <th>路由准确</th>
                         <th>KB Hit</th>
-                        <th>Web Hit</th>
                         <th>通过率</th>
                       </tr>
                     </thead>
@@ -583,7 +581,6 @@ export function MetricsDashboard() {
                           <td>{(c.avgArticleAccuracy ?? 0).toFixed(3)}</td>
                           <td>{(c.avgSourceRoutingAccuracy ?? 0).toFixed(3)}</td>
                           <td>{(c.avgKbHitRate ?? 0).toFixed(3)}</td>
-                          <td>{(c.avgWebHitRate ?? 0).toFixed(3)}</td>
                           <td>{(c.passRate * 100).toFixed(0)}%</td>
                         </tr>
                       ))}

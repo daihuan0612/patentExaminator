@@ -129,8 +129,10 @@ class McpClientManager {
     const args = useDist ? [serverDistPath] : ["tsx", serverSrcPath];
     logger.info(`[MCP Client] Using ${useDist ? "compiled JS" : "tsx (dev mode)"}: ${useDist ? serverDistPath : serverSrcPath}`);
 
-    // 传递数据库路径给 MCP 子进程（用 __dirname 算绝对路径，不依赖 cwd）
-    const dbPath = path.resolve(__dirname, "../../data/patent-examiner.db");
+    // B-042: 传递数据库路径给 MCP 子进程
+    // 优先使用 SYNC_DB_PATH（E2E 隔离测试会设置），否则用生产数据库路径
+    const defaultDbPath = path.resolve(__dirname, "../../data/patent-examiner.db");
+    const dbPath = process.env.SYNC_DB_PATH ?? defaultDbPath;
     logger.info(`[MCP Client] DB_PATH for subprocess: ${dbPath}`);
 
     this.transport = new StdioClientTransport({

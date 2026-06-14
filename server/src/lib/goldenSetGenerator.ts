@@ -345,7 +345,8 @@ function insertGoldenQuestion(q: GoldenQuestion): void {
  */
 export function importGoldenQuestions(raw: Array<Record<string, unknown>>): number {
   const db = getSyncDb();
-  // Clear existing first
+  // Clear existing first — 先删 runs（有 FK 引用 golden_set），再删 golden_set
+  db.prepare("DELETE FROM metrics_golden_runs").run();
   db.prepare("DELETE FROM metrics_golden_set").run();
   let count = 0;
   for (const r of raw) {
@@ -980,14 +981,12 @@ async function generateSerial(
 /**
  * 调用 web 搜索获取候选结果
  * 用于 web_only 和 cross_source 题目生成
- *
- * spec §11: 默认使用 SerpAPI，与 MCP Web Search 路径保持一致
  */
 async function searchWebForQuestion(
   queries: string[],
   searchApiKey: string,
   maxResults: number = 5,
-  providerId: string = "serpapi",
+  providerId: string = "tavily",
 ): Promise<Array<{ title: string; url: string; content: string }>> {
   try {
     const response = await searchPatents(queries, maxResults, {

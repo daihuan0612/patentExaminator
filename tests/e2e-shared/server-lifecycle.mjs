@@ -6,7 +6,7 @@
  * 环境变量指向临时目录，实现与 app 生产数据库完全隔离。
  */
 import { spawn } from "child_process";
-import { mkdtempSync, rmSync, mkdirSync, openSync, closeSync, readFileSync, existsSync, readdirSync } from "fs";
+import { mkdtempSync, rmSync, mkdirSync, openSync, closeSync, readFileSync, existsSync, readdirSync, copyFileSync, statSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { fileURLToPath } from "url";
@@ -24,9 +24,11 @@ let activeServer = null;
 
 /**
  * 启动隔离的 E2E 测试服务器
+ * @param {object} [options]
+ * @param {boolean} [options.copyProductionDb=false] - 是否复制生产 DB 副本（settings、知识库、案件数据）
  * @returns {{ port: number, baseUrl: string, cleanup: () => Promise<void> }}
  */
-export async function startIsolatedServer() {
+export async function startIsolatedServer(options = {}) {
   // 1. 创建临时目录
   const tmpDir = mkdtempSync(join(tmpdir(), "patent-examiner-e2e-"));
   const dataDir = join(tmpDir, "data");
@@ -37,12 +39,40 @@ export async function startIsolatedServer() {
   const syncDbPath = join(dataDir, "patent-examiner.db");
   const knowledgeDbPath = join(dataDir, "knowledge.db");
 
+  // 1.5 可选：复制生产 DB 副本
+  console.log(`[server-lifecycle] copyProductionDb option: ${options.copyProductionDb === true}`);
+  if (options.copyProductionDb) {
+    const prodSyncDb = join(PROJECT_ROOT, "server", "data", "patent-examiner.db");
+    const prodKnowledgeDb = join(PROJECT_ROOT, "server", "data", "knowledge.db");
+    console.log(`[server-lifecycle] PROJECT_ROOT: ${PROJECT_ROOT}`);
+    console.log(`[server-lifecycle] prodSyncDb: ${prodSyncDb} exists=${existsSync(prodSyncDb)}`);
+    console.log(`[server-lifecycle] prodKnowledgeDb: ${prodKnowledgeDb} exists=${existsSync(prodKnowledgeDb)}`);
+
+    if (existsSync(prodSyncDb)) {
+      const srcSize = statSync(prodSyncDb).size;
+      copyFileSync(prodSyncDb, syncDbPath);
+      const dstSize = statSync(syncDbPath).size;
+      console.log(`[server-lifecycle] Copied sync DB: ${srcSize} bytes → ${dstSize} bytes ${srcSize === dstSize ? "OK" : "SIZE MISMATCH!"}`);
+    } else {
+      console.error(`[server-lifecycle] WARNING: production sync DB not found, isolated server will start with empty DB`);
+    }
+    if (existsSync(prodKnowledgeDb)) {
+      const srcSize = statSync(prodKnowledgeDb).size;
+      copyFileSync(prodKnowledgeDb, knowledgeDbPath);
+      const dstSize = statSync(knowledgeDbPath).size;
+      console.log(`[server-lifecycle] Copied knowledge DB: ${srcSize} bytes → ${dstSize} bytes ${srcSize === dstSize ? "OK" : "SIZE MISMATCH!"}`);
+    } else {
+      console.error(`[server-lifecycle] WARNING: production knowledge DB not found, isolated server will start with empty KB`);
+    }
+  }
+
   // 2. 子进程 stdout/stderr 重定向到持久化日志目录
   const logDir = join(PROJECT_ROOT, "tests", "logs");
   mkdirSync(logDir, { recursive: true });
 
   // 清理非当天的旧日志
-  const todayPrefix = new Date().toISOString().slice(0, 10); // "2026-06-09"
+  const _now = new Date();
+  const todayPrefix = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}-${String(_now.getDate()).padStart(2, "0")}`;
   try {
     for (const file of readdirSync(logDir)) {
       if (file.startsWith("e2e-") && file.endsWith(".log") && !file.includes(todayPrefix)) {
@@ -51,7 +81,9 @@ export async function startIsolatedServer() {
     }
   } catch {}
 
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const _d = new Date();
+  const _pad = (n) => String(n).padStart(2, "0");
+  const timestamp = `${_d.getFullYear()}-${_pad(_d.getMonth() + 1)}-${_pad(_d.getDate())}T${_pad(_d.getHours())}-${_pad(_d.getMinutes())}-${_pad(_d.getSeconds())}`;
   const serverLogPath = join(logDir, `e2e-${timestamp}.log`);
   const serverLogFd = openSync(serverLogPath, "w");
 
@@ -181,6 +213,19 @@ export function dumpServerLog() {
       console.log(`[server-lifecycle] === End Server Log ===\n`);
     }
   } catch {}
+}
+
+/**
+ * 获取完整的 server log 内容（用于写入测试日志文件）
+ * @returns {string|null}
+ */
+export function getServerLog() {
+  if (!activeServer?.serverLogPath) return null;
+  try {
+    return readFileSync(activeServer.serverLogPath, "utf-8");
+  } catch {
+    return null;
+  }
 }
 
 // 崩溃清理：确保进程退出时清理子进程和临时数据（保留日志）

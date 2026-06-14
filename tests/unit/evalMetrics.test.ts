@@ -6,7 +6,6 @@ import {
   computeNDCGChunkLevel,
   computeRecallChunkLevel,
   computeKBHitRate,
-  computeWebHitRate,
   computeArticleAccuracy,
   computeSourceRoutingAccuracy,
   computeSourceAttributionAccuracy,
@@ -96,17 +95,6 @@ describe("computeKBHitRate", () => {
     ];
     const chunks = [{ id: "c1" }];
     expect(computeKBHitRate(chunks, grading, 10)).toBeCloseTo(1, 2);
-  });
-});
-
-describe("computeWebHitRate", () => {
-  it("computes recall only for Web sources", () => {
-    const grading: RelevanceGrade[] = [
-      { source: "kb", docId: "doc-a", chunkId: "c1", grade: 3, rationale: "" },
-      { source: "web", docId: "url1", grade: 3, rationale: "" },
-    ];
-    const chunks = [{ id: "url1" }];
-    expect(computeWebHitRate(chunks, grading, 10)).toBeCloseTo(1, 2);
   });
 });
 

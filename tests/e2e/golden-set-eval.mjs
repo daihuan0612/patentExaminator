@@ -44,7 +44,9 @@ function saveJsonFile(filename, data) {
 }
 
 function timestamp() {
-  return new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
 }
 
 async function safeJson(res, label) {
@@ -69,17 +71,16 @@ export async function testGoldenEvalUploadKnowledge() {
 export async function testGoldenEvalWriteSettings() {
   const mimoKey = getApiKey("mimo");
   const volcengineKey = getApiKey("volcengine");
-  const serpApiKey = getApiKey("serp");
+  const tavilyKey = getApiKey("tavily");
 
   const providers = [];
   if (mimoKey) providers.push({ providerId: "mimo", apiKeyRef: mimoKey });
   if (volcengineKey) providers.push({ providerId: "volcengine", apiKeyRef: volcengineKey });
   // Gemini API 因超时频繁失败已暂停，替换为火山 doubao-seed（与 DeepSeek 共用 volcengine key）
 
-  // spec §11: 写入 SerpAPI search provider（MCP Web Search 路径需要）
   const searchProviders = [];
-  if (serpApiKey) {
-    searchProviders.push({ providerId: "serpapi", enabled: true, apiKeyRef: serpApiKey });
+  if (tavilyKey) {
+    searchProviders.push({ providerId: "tavily", enabled: true, apiKeyRef: tavilyKey });
   }
 
   if (providers.length === 0 && searchProviders.length === 0) {
@@ -115,8 +116,7 @@ export async function testGoldenEvalGenerate() {
   if (volcengineKey) providerConfigs.push({ providerId: "volcengine", model: "deepseek-v4-flash-260425", apiKey: volcengineKey, label: "DeepSeek (火山)" });
   if (volcengineKey) providerConfigs.push({ providerId: "volcengine", model: "doubao-seed-2-0-pro-260215", apiKey: volcengineKey, label: "doubao-seed (火山)" });
 
-  // spec §8.1: 使用 SerpAPI key（与 MCP Web Search 路径一致）
-  const searchApiKey = getApiKey("serp");
+  const searchApiKey = getApiKey("tavily");
 
   console.log(`[GoldenEval] Providers: ${providerConfigs.map(p => p.label).join(", ")}`);
   console.log(`[GoldenEval] Questions per provider: 7 (matrix allocation)`);
@@ -156,7 +156,7 @@ export async function testGoldenEvalGenerate() {
   // 持久化 golden set
   const ts = timestamp();
   const goldenSetFile = saveJsonFile(`golden-set-${ts}.json`, {
-    timestamp: new Date().toISOString(),
+    timestamp: ts.replace(/-/g, (m, offset) => offset > 9 ? ":" : m),
     providerConfigs: providerConfigs.map(p => ({ providerId: p.providerId, model: p.model, label: p.label })),
     totalQuestions: data.count,
     durationMs: Math.round(durationMs),
@@ -313,7 +313,6 @@ export async function testGoldenEvalModelCombination() {
   const EVAL_API_TIMEOUT = 2_700_000; // 45 分钟
   const res = await postJSON("/metrics/eval/run", {
     configs,
-    apiKey,
     maxConcurrency: 3,
     ...(Object.keys(judgeApiKeys).length > 0 && { judgeApiKeys }),
   }, undefined, EVAL_API_TIMEOUT);
@@ -334,7 +333,7 @@ export async function testGoldenEvalModelCombination() {
     console.log(`  recall=${cfg.avgRecall?.toFixed(3)}, ndcg=${cfg.avgNdcg?.toFixed(3)}, faithfulness=${cfg.avgFaithfulness?.toFixed(3)}`);
     console.log(`  answerCorrectness=${cfg.avgAnswerCorrectness?.toFixed(3)}, factCoverage=${cfg.avgFactCoverage?.toFixed(3)}`);
     console.log(`  articleAccuracy=${cfg.avgArticleAccuracy?.toFixed(3)}, routingAccuracy=${cfg.avgSourceRoutingAccuracy?.toFixed(3)}`);
-    console.log(`  kbHitRate=${cfg.avgKbHitRate?.toFixed(3)}, webHitRate=${cfg.avgWebHitRate?.toFixed(3)}`);
+    console.log(`  kbHitRate=${cfg.avgKbHitRate?.toFixed(3)}`);
     console.log(`  passRate=${(cfg.passRate * 100).toFixed(1)}%, avgDuration=${cfg.avgDurationMs?.toFixed(0)}ms`);
   }
 
@@ -343,7 +342,7 @@ export async function testGoldenEvalModelCombination() {
   const reportFile = saveJsonFile(`eval-report-${ts}.json`, {
     ...report,
     _meta: {
-      generatedAt: new Date().toISOString(),
+      generatedAt: ts.replace(/-/g, (m, offset) => offset > 9 ? ":" : m),
       totalDurationMs: Math.round(durationMs),
       configCount: configs.length,
       questionCount: report.questionCount,

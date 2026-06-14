@@ -16,14 +16,15 @@
 import { loadEnvFile, getApiKey } from "./e2e-shared/env.mjs";
 import { postJSON, getJSON } from "./e2e-shared/http.mjs";
 import { startIsolatedServer } from "./e2e-shared/server-lifecycle.mjs";
-import { uploadKnowledgeFile, SAMPLES_KNOWLEDGE_DIR } from "./e2e-shared/index.mjs";
 import path from "path";
 import { readFileSync, mkdirSync, writeFileSync } from "fs";
 
 loadEnvFile();
 
 function timestamp() {
-  return new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
 }
 
 // 从 quality report 中提取 B7/B8 不合格的题目 ID
@@ -75,34 +76,13 @@ async function main() {
   const expectedFailingIds = getFailingIds(qualityReport);
   console.log(`预期不合格题目 (${expectedFailingIds.size} 题): ${[...expectedFailingIds].join(", ")}\n`);
 
-  // ── Step 1: 启动隔离服务器 ──
-  console.log("启动隔离服务器...");
-  const { baseUrl, cleanup } = await startIsolatedServer();
+  // ── Step 1: 启动隔离服务器（复制生产 DB，保留真实 settings + KB） ──
+  console.log("启动隔离服务器（复制生产 DB）...");
+  const { baseUrl, cleanup } = await startIsolatedServer({ copyProductionDb: true });
   process.env.TEST_BASE = baseUrl;
   console.log(`服务器就绪: ${baseUrl}\n`);
 
   try {
-    // ── Step 2: 上传知识库文件 ──
-    console.log("上传知识库文件...");
-    const filePath = path.join(SAMPLES_KNOWLEDGE_DIR, "专利法_2020修正.txt");
-    const uploadResult = await uploadKnowledgeFile(filePath);
-    if (!uploadResult.ok) {
-      console.error("❌ 上传失败:", uploadResult.error);
-      process.exit(1);
-    }
-    console.log("✅ 知识库文件已上传\n");
-
-    // ── Step 3: 写入 settings ──
-    console.log("写入 settings 到隔离 DB...");
-    const settingsProviders = [];
-    if (mimoKey) settingsProviders.push({ providerId: "mimo", apiKeyRef: mimoKey });
-    if (volcengineKey) settingsProviders.push({ providerId: "volcengine", apiKeyRef: volcengineKey });
-
-    const settingsRes = await postJSON("/sync/upload", {
-      stores: { settings: [{ id: "app", data: { providers: settingsProviders } }] },
-    });
-    await settingsRes.json().catch(() => ({}));
-    console.log(`✅ Settings 已写入 (providers=${settingsProviders.length})\n`);
 
     // ── Step 4: 导入 21 题到 DB ──
     console.log("导入 golden set 到 DB...");

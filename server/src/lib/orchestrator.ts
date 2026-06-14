@@ -94,7 +94,7 @@ export interface AgentRunResponse {
   tokenUsage?: { input: number; output: number; total: number } | undefined;
   attempts?: Array<{ providerId: string; ok: boolean; errorCode?: string }> | undefined;
   error?: { type: string; message: string; code?: string } | undefined;
-  knowledgeCitations?: Array<{ source: string; sourceId?: string; article?: string; score: number; excerpt: string }> | undefined;
+  knowledgeCitations?: Array<{ source: string; sourceId?: string; chunkId?: string; article?: string; score: number; excerpt: string }> | undefined;
   /** NF1: web search 引用 */
   webSearchCitations?: Array<{ title: string; url: string; snippet: string; engine: string }> | undefined;
   /** 合并引用（RAG + Web 按相关性排序，编号 [1]-[N] 与 AI 回答一致） */
@@ -903,7 +903,7 @@ async function enhanceWithKnowledge(
 
     const contextPrefix = getAgentContext(agentType);
     const parts = [prompt, "", `## 参考知识库`, contextPrefix, `以下法规段落与当前分析相关（${topResults.length}条）：`, ""];
-    const citations: Array<{ source: string; sourceId?: string; article?: string; score: number; excerpt: string }> = [];
+    const citations: Array<{ source: string; sourceId?: string; chunkId?: string; article?: string; score: number; excerpt: string }> = [];
 
     logger.info(`[RAG] [Step 5] 构建 ${topResults.length} 条 citations（Parent-Child 模式）...`);
     for (let i = 0; i < topResults.length; i++) {
@@ -927,7 +927,7 @@ async function enhanceWithKnowledge(
       parts.push(`[${i + 1}] ${sourceLabel}（相似度: ${result.score.toFixed(2)}）`);
       for (const line of injectText.split("\n").slice(0, 15)) parts.push(line);
       parts.push("");
-      citations.push({ source, sourceId: chunk.sourceId, article: article || undefined, score: result.score, excerpt: injectText.slice(0, 200) });
+      citations.push({ source, sourceId: chunk.sourceId, chunkId: result.chunkId, article: article || undefined, score: result.score, excerpt: injectText.slice(0, 200) });
     }
 
     logger.info(`[RAG] === 检索完成 === ${citations.length} 条引用注入 prompt`);
@@ -951,10 +951,31 @@ function getAgentContext(agentType: string): string {
   }
 }
 
+// ── Settings 自动读取 ──────────────────────────────────────
+
+import { readSettingsFromDb, fillMissingSettings } from "./settingsReader.js";
+
+// 重新导出，供外部使用
+export { clearSettingsCache } from "./settingsReader.js";
+
 // ── 编排器主函数 ──────────────────────────────────────────
 
 /** 服务端编排入口：构造 prompt → 知识库增强 → 调用 AI */
 export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> {
+  // ── 自动填充缺失的 settings ─────────────────────────────
+  await fillMissingSettings(req);
+  // knowledge 相关字段需要单独处理（fillMissingSettings 不处理）
+  const dbSettings = await readSettingsFromDb();
+  if (req.knowledgeEnabled === undefined) {
+    req.knowledgeEnabled = dbSettings.knowledgeEnabled;
+  }
+  if (req.knowledgeEmbedding === undefined && dbSettings.knowledgeEmbedding) {
+    req.knowledgeEmbedding = dbSettings.knowledgeEmbedding;
+  }
+  if (req.knowledgeReranker === undefined && dbSettings.knowledgeReranker) {
+    req.knowledgeReranker = dbSettings.knowledgeReranker;
+  }
+
   // ── Metrics timing ──────────────────────────────────────
   const timings: RunTimings = {
     promptBuildMs: 0,
@@ -1125,11 +1146,15 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
         timings.llmCallMs = Date.now() - llmStart;
 
         // NF2: Groundedness Detection — 只检查 rerank 后的 top-K（与 AI 看到的一致）
+        const originalAnswer = toolResult.answer;  // 保存原始回答，groundedness 清空时回退
         let finalAnswer = toolResult.answer;
+        // D4: 诊断 — groundedness 前的 answer 内容
         const merged = toolResult.mergedCitations;
         // 拆分为 groundedness 期望的两个数组
         const nf2Citations = merged.filter((c) => c.engine === "rag").map((c) => ({ source: c.title, excerpt: c.snippet, score: 0 }));
         const nf2WebCitations = merged.filter((c) => c.engine !== "rag");
+        logger.info(`[Orchestrator] D4 before groundedness: answerLen=${finalAnswer.length}, answer=${finalAnswer.slice(0, 300)}`);
+        logger.info(`[Orchestrator] D4 nf2Citations=${nf2Citations.length}, nf2WebCitations=${nf2WebCitations.length}`);
 
         // NF2: 跟踪 groundedness 结果，返回给前端显示 badge
         let groundednessResult: { score: number; verdict: "pass" | "partial" | "fail"; removedCount: number } | undefined;
@@ -1217,18 +1242,18 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
                 );
 
                 if (retryGd.verdict !== "fail") {
-                  finalAnswer = retryGd.output;
+                  finalAnswer = retryGd.output || originalAnswer;
                   groundednessResult = { score: retryGd.groundingScore, verdict: retryGd.verdict, removedCount: retryGd.removedClaims.length };
                   logger.info(`[Orchestrator] groundedness 重新生成成功, verdict=${retryGd.verdict}`);
                 } else {
-                  // 仍然 fail → 返回部分回答
-                  finalAnswer = retryGd.output;
+                  // 仍然 fail → 返回部分回答（如果 groundedness 清空了答案，回退到原始回答）
+                  finalAnswer = retryGd.output || originalAnswer;
                   groundednessResult = { score: retryGd.groundingScore, verdict: retryGd.verdict, removedCount: retryGd.removedClaims.length };
-                  logger.warn(`[Orchestrator] groundedness 重新生成仍 fail, 返回部分回答`);
+                  logger.warn(`[Orchestrator] groundedness 重新生成仍 fail, 返回部分回答 (answerLen=${finalAnswer.length})`);
                 }
               }
             } else {
-              finalAnswer = gdResult.output;
+              finalAnswer = gdResult.output || originalAnswer;
               groundednessResult = { score: gdResult.groundingScore, verdict: gdResult.verdict, removedCount: gdResult.removedClaims.length };
               logger.info(`[Orchestrator] groundedness check 完成, verdict=${gdResult.verdict}, score=${gdResult.groundingScore.toFixed(2)}, removed=${gdResult.removedClaims.length}`);
             }
@@ -1237,13 +1262,14 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
           }
           timings.groundednessMs = Date.now() - gndStart;
         }
+        // D4: 诊断 — groundedness 后的最终 answer
+        logger.info(`[Orchestrator] D4 after groundedness: finalAnswerLen=${finalAnswer.length}, finalAnswer=${finalAnswer.slice(0, 300)}`);
 
         // ── Record metrics (tool executor path) ──────────
         timings.totalMs = Date.now() - totalStart;
         const webCitationsForMetrics = merged.filter(c => c.engine !== "rag");
         const searchEngines = [...new Set(webCitationsForMetrics.map(c => c.engine).filter(Boolean))];
-        // MCP web search 固定使用 SerpAPI，格式为 "serpapi:{engine}"
-        const searchProviderStr = searchEngines.map(e => `serpapi:${e}`).join(",") || '';
+        const searchProviderStr = searchEngines.length > 0 ? "tavily" : '';
         try {
           metricsCollector.record({
             agent: req.agent,
@@ -1279,6 +1305,7 @@ export async function runAgent(req: AgentRunRequest): Promise<AgentRunResponse> 
         return {
           ok: true,
           output: { reply: finalAnswer },
+          knowledgeCitations: citations,
           webSearchCitations: webCitationsForMetrics,
           mergedCitations: merged,
           ...(groundednessResult && { groundedness: groundednessResult }),

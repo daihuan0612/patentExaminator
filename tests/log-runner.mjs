@@ -21,7 +21,8 @@ const LOG_DIR = join(__dirname, "logs");
 mkdirSync(LOG_DIR, { recursive: true });
 
 // 清理非当天的旧日志
-const todayPrefix = new Date().toISOString().slice(0, 10);
+const _now = new Date();
+const todayPrefix = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}-${String(_now.getDate()).padStart(2, "0")}`;
 try {
   for (const file of readdirSync(LOG_DIR)) {
     if (file.endsWith(".log") && !file.includes(todayPrefix)) {
@@ -32,7 +33,8 @@ try {
 
 // 生成日志文件名
 const now = new Date();
-const ts = now.toISOString().replace(/[:.]/g, "-").slice(0, 19);
+const pad = (n) => String(n).padStart(2, "0");
+const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
 const testName = process.argv[2]?.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 30) || "test";
 const logFile = join(LOG_DIR, `${testName}-${ts}.log`);
 

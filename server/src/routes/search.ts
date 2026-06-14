@@ -8,6 +8,7 @@ import { extractJsonFromText } from "../lib/jsonExtractor.js";
 import { sanitizeText } from "../security/sanitize.js";
 import { validateExternalUrl, validateProviderBaseUrls, BlockedUrlError } from "../lib/urlValidation.js";
 import { metricsCollector } from "../lib/metricsCollector.js";
+import { fillMissingSettings } from "../lib/settingsReader.js";
 import type { SearchReferencesResponse, SearchReferencesCandidate, SearchSummary, ExtractSearchTermsResponse } from "@shared/types/api";
 import type { ChatRequest, ChatResponse } from "../providers/ProviderAdapter.js";
 
@@ -646,6 +647,9 @@ searchRouter.post("/extract-search-terms", async (req, res) => {
 
   const request = parseResult.data;
 
+  // 自动填充缺失的 provider/model 配置（从 DB 读取）
+  await fillMissingSettings(request);
+
   // Mock mode: return fixture data
   if (request.mock) {
     const mockQueries = request.features.map((f) => `${f.description} 专利`);
@@ -835,6 +839,9 @@ searchRouter.post("/search-with-terms", async (req, res) => {
   }
 
   const request = parseResult.data;
+
+  // 自动填充缺失的 provider/model 配置（从 DB 读取）
+  await fillMissingSettings(request);
 
   // Mock mode: return fixture data
   if (request.mock) {

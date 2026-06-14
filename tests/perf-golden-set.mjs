@@ -7,7 +7,6 @@
 import { loadEnvFile, getApiKey } from "./e2e-shared/env.mjs";
 import { postJSON, getJSON } from "./e2e-shared/http.mjs";
 import { startIsolatedServer } from "./e2e-shared/server-lifecycle.mjs";
-import { uploadKnowledgeFile, SAMPLES_KNOWLEDGE_DIR } from "./e2e-shared/index.mjs";
 // GEMINI_FALLBACK_MODELS 已移除 — Gemini API 暂停使用
 import path from "path";
 import { mkdirSync, writeFileSync } from "fs";
@@ -15,7 +14,9 @@ import { mkdirSync, writeFileSync } from "fs";
 loadEnvFile();
 
 function timestamp() {
-  return new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
 }
 
 async function main() {
@@ -23,45 +24,20 @@ async function main() {
 
   const mimoKey = getApiKey("mimo");
   const volcengineKey = getApiKey("volcengine");
-  const serpApiKey = getApiKey("serp");
+  const tavilyKey = getApiKey("tavily");
 
   if (!mimoKey && !volcengineKey) {
     console.log("❌ 没有找到任何 API key，跳过");
     process.exit(0);
   }
 
-  // 启动隔离服务器
-  console.log("启动隔离服务器...");
-  const { baseUrl, cleanup } = await startIsolatedServer();
+  // 启动隔离服务器（复制生产 DB，保留真实 settings + KB，不重新上传文件）
+  console.log("启动隔离服务器（复制生产 DB）...");
+  const { baseUrl, cleanup } = await startIsolatedServer({ copyProductionDb: true });
   process.env.TEST_BASE = baseUrl;
   console.log(`服务器就绪: ${baseUrl}\n`);
 
   try {
-    // 上传知识库文件
-    console.log("上传知识库文件...");
-    const filePath = path.join(SAMPLES_KNOWLEDGE_DIR, "专利法_2020修正.txt");
-    const uploadResult = await uploadKnowledgeFile(filePath);
-    if (!uploadResult.ok) {
-      console.error("❌ 上传失败:", uploadResult.error);
-      process.exit(1);
-    }
-    console.log("✅ 知识库文件已上传\n");
-
-    // 写入 settings 到隔离 DB（包含 Gemini fallback 链）
-    console.log("写入 settings 到隔离 DB...");
-    const settingsProviders = [];
-    if (mimoKey) settingsProviders.push({ providerId: "mimo", apiKeyRef: mimoKey });
-    if (volcengineKey) settingsProviders.push({ providerId: "volcengine", apiKeyRef: volcengineKey });
-    // Gemini API 因超时频繁失败已暂停，替换为火山 doubao-seed
-    // spec §11: 写入 SerpAPI search provider
-    const searchProviders = [];
-    if (serpApiKey) searchProviders.push({ providerId: "serpapi", enabled: true, apiKeyRef: serpApiKey });
-
-    const settingsRes = await postJSON("/sync/upload", {
-      stores: { settings: [{ id: "app", data: { providers: settingsProviders, searchProviders } }] },
-    });
-    await settingsRes.json().catch(() => ({}));
-    console.log(`✅ Settings 已写入 (providers=${settingsProviders.length})\n`);
 
     // 构建 provider 配置
     const providerConfigs = [];
@@ -72,7 +48,7 @@ async function main() {
     }
 
     console.log(`Providers: ${providerConfigs.map(p => p.label).join(", ")}`);
-    console.log(`SerpAPI: ${serpApiKey ? "已配置" : "未配置（web 题型将跳过）"}`);
+    console.log(`Tavily: ${tavilyKey ? "已配置" : "未配置（web 题型将跳过）"}`);
     console.log(`每个 provider 生成 7 题\n`);
 
     // ── 测试：批量并行模式 ──
@@ -81,7 +57,7 @@ async function main() {
 
     const resFull = await postJSON(
       "/metrics/golden-set/generate",
-      { providerConfigs, ...(serpApiKey && { searchApiKey: serpApiKey }) },
+      { providerConfigs, ...(tavilyKey && { searchApiKey: tavilyKey }) },
       undefined,
       600_000,
     );

@@ -12,14 +12,21 @@
  */
 import { randomUUID } from "node:crypto";
 import { getSyncDb } from "./syncDb.js";
+
+/** 本地时间 ISO-like 格式（不带 Z 后缀） */
+function localISO(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
 import { logger } from "./logger.js";
 import type { AgentRunRequest, AgentRunResponse } from "./orchestrator.js";
 import type { RelevanceGrade, SourceType, ExpectedSource } from "../../../shared/src/types/metrics.js";
+import { getChunksByIds } from "./knowledgeDb.js";
 import {
   computeNDCGChunkLevel,
   computeRecallChunkLevel,
   computeKBHitRate,
-  computeWebHitRate,
   computeFaithfulnessMultiJudge,
   computeAnswerCorrectness,
   computeFactCoverage,
@@ -66,7 +73,6 @@ export interface EvalResult {
   conflictResolution: number;
   refusalAccuracy: number;
   kbHitRate: number;
-  webHitRate: number;
 }
 
 export interface EvalReport {
@@ -91,7 +97,6 @@ export interface EvalConfigSummary {
   avgArticleAccuracy: number;
   avgSourceRoutingAccuracy: number;
   avgKbHitRate: number;
-  avgWebHitRate: number;
 }
 
 interface GoldenQuestion {
@@ -184,30 +189,18 @@ export function loadGoldenSet(): GoldenQuestion[] {
  * @param configs - model configurations to evaluate
  * @param options.maxConcurrency - max parallel evaluations (default 1)
  * @param options.agentFilter - only run questions for this agent type
- * @param options.llmApiKey - API key for LLM calls (CLAUDE.md key isolation)
- * @param options.judgeApiKey - API key for faithfulness judge (defaults to llmApiKey)
- * @param options.knowledgeEnabled - whether to enable RAG
- * @param options.knowledgeEmbedding - embedding config for RAG
- * @param options.knowledgeReranker - reranker config for RAG
+ * @param options.judgeApiKeys - API keys for multi-judge metrics
  */
 export async function runEvaluation(
   configs: EvalConfig[],
   options?: {
     maxConcurrency?: number;
     agentFilter?: string;
-    llmApiKey?: string;
     /** 每个 judge provider 的 API key（MiMo/DeepSeek/Gemini 各自独立） */
     judgeApiKeys?: Record<string, string>;
-    /** 用户在 APP 设置页配置的 fallback 链 */
-    modelFallbacks?: Record<string, string[]>;
-    enableModelFallback?: boolean;
-    knowledgeEnabled?: boolean;
-    knowledgeEmbedding?: { baseUrl: string; apiKey: string; modelId: string };
-    knowledgeReranker?: { baseUrl: string; apiKey: string; modelId: string };
   }
 ): Promise<EvalReport> {
   const maxConcurrency = options?.maxConcurrency ?? 3;
-  const llmApiKey = options?.llmApiKey ?? "";
 
   // Load golden set
   let questions = loadGoldenSet();
@@ -219,7 +212,7 @@ export async function runEvaluation(
     logger.warn("[EvalRunner] No golden questions found. Seed the golden set first.");
     const report: EvalReport = {
       runId: randomUUID(),
-      timestamp: new Date().toISOString(),
+      timestamp: localISO(),
       configs: configs.map((c) => ({
         label: c.label,
         avgRecall: 0, avgNdcg: 0,
@@ -228,7 +221,7 @@ export async function runEvaluation(
         passRate: 0,
         avgAnswerCorrectness: 0, avgFactCoverage: 0,
         avgArticleAccuracy: 0, avgSourceRoutingAccuracy: 0,
-        avgKbHitRate: 0, avgWebHitRate: 0,
+        avgKbHitRate: 0,
       })),
       questionCount: 0,
       questionBreakdown: [],
@@ -248,22 +241,8 @@ export async function runEvaluation(
     // Process questions with concurrency control
     const chunks = chunkArray(questions, maxConcurrency);
     for (const batch of chunks) {
-      const evalOpts: {
-        llmApiKey: string;
-        judgeApiKeys: Record<string, string>;
-        modelFallbacks?: Record<string, string[]>;
-        enableModelFallback?: boolean;
-        knowledgeEnabled: boolean;
-        knowledgeEmbedding?: { baseUrl: string; apiKey: string; modelId: string } | undefined;
-        knowledgeReranker?: { baseUrl: string; apiKey: string; modelId: string } | undefined;
-      } = {
-        llmApiKey,
+      const evalOpts = {
         judgeApiKeys: options?.judgeApiKeys ?? {},
-        knowledgeEnabled: options?.knowledgeEnabled ?? true,
-        knowledgeEmbedding: options?.knowledgeEmbedding,
-        knowledgeReranker: options?.knowledgeReranker,
-        ...(options?.modelFallbacks !== undefined && { modelFallbacks: options.modelFallbacks }),
-        ...(options?.enableModelFallback !== undefined && { enableModelFallback: options.enableModelFallback }),
       };
       const batchResults = await Promise.all(
         batch.map((q) => runSingleEvaluation(q, config, runId, evalOpts))
@@ -289,20 +268,14 @@ async function runSingleEvaluation(
   config: EvalConfig,
   runId: string,
   opts: {
-    llmApiKey: string;
     judgeApiKeys: Record<string, string>;
-    modelFallbacks?: Record<string, string[]>;
-    enableModelFallback?: boolean;
-    knowledgeEnabled: boolean;
-    knowledgeEmbedding?: { baseUrl: string; apiKey: string; modelId: string } | undefined;
-    knowledgeReranker?: { baseUrl: string; apiKey: string; modelId: string } | undefined;
   }
 ): Promise<EvalResult> {
   const startMs = Date.now();
 
   try {
-    // Build the agent request — reuse the actual orchestrator pipeline
-    const agentReq = buildAgentRequest(question, config, opts);
+    // Build the agent request — 只传 question，orchestrator 自动读取 production 配置
+    const agentReq = buildAgentRequest(question, config);
     logger.info(`[EvalRunner]   Q=${question.id} config="${config.label}" agent=${question.agent}`);
 
     // Call the actual RAG pipeline
@@ -324,40 +297,60 @@ async function runSingleEvaluation(
 
     // ── nf5: chunk 级检索指标（统一用 chunk-level，不再计算 file-level） ──
     const retrievedChunks = extractRetrievedChunks(response);
+
+    // 构建 graded chunk ID → text 映射，用于内容相似度 fallback matching
+    const gradedChunkTexts = new Map<string, string>();
+    if (question.relevanceGrading.length > 0) {
+      const gradedIds = question.relevanceGrading.map(g => g.chunkId).filter(Boolean);
+      if (gradedIds.length > 0) {
+        try {
+          const chunks = getChunksByIds(gradedIds);
+          for (const c of chunks) gradedChunkTexts.set(c.id, c.text);
+        } catch (e) {
+          logger.warn(`[EvalRunner] Failed to load graded chunk texts: ${e}`);
+        }
+      }
+    }
+
     const recallAtK = question.relevanceGrading.length > 0
-      ? computeRecallChunkLevel(retrievedChunks, question.relevanceGrading, 10)
+      ? computeRecallChunkLevel(retrievedChunks, question.relevanceGrading, 10, 2, gradedChunkTexts)
       : 0;
     const ndcgAtK = question.relevanceGrading.length > 0
-      ? computeNDCGChunkLevel(retrievedChunks, question.relevanceGrading, 10)
+      ? computeNDCGChunkLevel(retrievedChunks, question.relevanceGrading, 10, gradedChunkTexts)
       : 0;
     const kbHitRate = question.relevanceGrading.length > 0
-      ? computeKBHitRate(retrievedChunks, question.relevanceGrading, 10)
-      : 0;
-    const webHitRate = question.relevanceGrading.length > 0
-      ? computeWebHitRate(retrievedChunks, question.relevanceGrading, 10)
+      ? computeKBHitRate(retrievedChunks, question.relevanceGrading, 10, gradedChunkTexts)
       : 0;
 
     // ── nf5: 多 Judge 生成质量指标（并行执行）──
     const context = actualSources.join("\n");
-    const judgeOpts: { modelFallbacks?: Record<string, string[]>; enableModelFallback?: boolean } = {};
-    if (opts.modelFallbacks !== undefined) judgeOpts.modelFallbacks = opts.modelFallbacks;
-    if (opts.enableModelFallback !== undefined) judgeOpts.enableModelFallback = opts.enableModelFallback;
-
     // 4 个 judge 指标并行执行（互不依赖，串行浪费 ~60s/题）
     const [faithfulnessResult, acResult, fcResult, refusalResult] = await Promise.all([
-      computeFaithfulnessMultiJudge(actualAnswer, context, opts.judgeApiKeys, judgeOpts),
+      computeFaithfulnessMultiJudge(actualAnswer, context, opts.judgeApiKeys),
       question.expectedAnswer
-        ? computeAnswerCorrectness(actualAnswer, question.expectedAnswer, opts.judgeApiKeys, judgeOpts)
+        ? computeAnswerCorrectness(actualAnswer, question.expectedAnswer, opts.judgeApiKeys)
         : Promise.resolve({ aggregated: 0, judges: [] }),
       question.mustIncludeFacts.length > 0
-        ? computeFactCoverage(actualAnswer, question.mustIncludeFacts, opts.judgeApiKeys, judgeOpts)
+        ? computeFactCoverage(actualAnswer, question.mustIncludeFacts, opts.judgeApiKeys)
         : Promise.resolve({ aggregated: 0, judges: [] }),
-      computeRefusalAccuracy(question.sourceType, actualAnswer, opts.judgeApiKeys, judgeOpts),
+      computeRefusalAccuracy(question.sourceType, actualAnswer, opts.judgeApiKeys),
     ]);
     const faithfulness = faithfulnessResult.aggregated;
     const answerCorrectness = acResult.aggregated;
     const factCoverage = fcResult.aggregated;
     const refusalAccuracy = refusalResult.aggregated;
+
+    // 诊断日志：每个 judge 指标的聚合详情
+    const judgeResults: Array<[string, { aggregated: number; individualResults?: Array<{ providerId: string; value: number; success: boolean }>; judgeCount?: number }]> = [
+      ["faithfulness", faithfulnessResult],
+      ["answerCorrectness", acResult],
+      ["factCoverage", fcResult],
+      ["refusalAccuracy", refusalResult],
+    ];
+    for (const [name, res] of judgeResults) {
+      const judges = res.individualResults?.map((r: { providerId: string; value: number; success: boolean }) => `${r.providerId}=${r.value}(${r.success ? "ok" : "fail"})`).join(", ") ?? "skipped";
+      logger.info(`[EvalRunner]   ${name}: aggregated=${res.aggregated}, judges=[${judges}], count=${res.judgeCount ?? 0}`);
+    }
 
     // ── nf5: 确定性指标 ──
     const articleAccuracy = computeArticleAccuracy(actualAnswer, question.expectedArticles);
@@ -401,7 +394,6 @@ async function runSingleEvaluation(
       conflictResolution,
       refusalAccuracy,
       kbHitRate,
-      webHitRate,
     };
 
     saveSingleResult(result, runId, config);
@@ -447,13 +439,12 @@ function buildReport(
       avgArticleAccuracy: avg(successResults.map((r) => r.articleAccuracy)),
       avgSourceRoutingAccuracy: avg(successResults.map((r) => r.sourceRoutingAccuracy)),
       avgKbHitRate: avg(successResults.map((r) => r.kbHitRate)),
-      avgWebHitRate: avg(successResults.map((r) => r.webHitRate)),
     };
   });
 
   return {
     runId,
-    timestamp: new Date().toISOString(),
+    timestamp: localISO(),
     configs: configSummaries,
     questionCount,
     questionBreakdown: results,
@@ -471,8 +462,8 @@ export function saveReport(report: EvalReport): void {
     INSERT INTO metrics_golden_runs (id, golden_id, run_id, timestamp, config_json,
       recall_at_k, mrr, ndcg_at_k, faithfulness, groundedness, actual_answer, actual_sources,
       answer_correctness, fact_coverage, article_accuracy, source_routing_accuracy,
-      source_attribution_accuracy, conflict_resolution, refusal_accuracy, kb_hit_rate, web_hit_rate)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      source_attribution_accuracy, conflict_resolution, refusal_accuracy, kb_hit_rate)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insert = db.transaction(() => {
@@ -501,8 +492,7 @@ export function saveReport(report: EvalReport): void {
         r.sourceAttributionAccuracy,
         r.conflictResolution,
         r.refusalAccuracy,
-        r.kbHitRate,
-        r.webHitRate
+        r.kbHitRate
       );
     }
   });
@@ -521,8 +511,8 @@ function saveSingleResult(result: EvalResult, runId: string, config: EvalConfig)
       INSERT INTO metrics_golden_runs (id, golden_id, run_id, timestamp, config_json,
         recall_at_k, mrr, ndcg_at_k, faithfulness, groundedness, actual_answer, actual_sources,
         answer_correctness, fact_coverage, article_accuracy, source_routing_accuracy,
-        source_attribution_accuracy, conflict_resolution, refusal_accuracy, kb_hit_rate, web_hit_rate)
-      VALUES (?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        source_attribution_accuracy, conflict_resolution, refusal_accuracy, kb_hit_rate)
+      VALUES (?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       randomUUID(),
       result.goldenId,
@@ -546,8 +536,7 @@ function saveSingleResult(result: EvalResult, runId: string, config: EvalConfig)
       result.sourceAttributionAccuracy,
       result.conflictResolution,
       result.refusalAccuracy,
-      result.kbHitRate,
-      result.webHitRate
+      result.kbHitRate
     );
   } catch (err) {
     logger.warn(`[EvalRunner] Failed to save single result: ${err}`);
@@ -569,7 +558,7 @@ export function getReports(): EvalReport[] {
       `SELECT golden_id, config_json, recall_at_k, mrr, ndcg_at_k, faithfulness, groundedness,
               actual_answer, actual_sources,
               answer_correctness, fact_coverage, article_accuracy, source_routing_accuracy,
-              source_attribution_accuracy, conflict_resolution, refusal_accuracy, kb_hit_rate, web_hit_rate
+              source_attribution_accuracy, conflict_resolution, refusal_accuracy, kb_hit_rate
        FROM metrics_golden_runs WHERE run_id = ? ORDER BY golden_id`
     ).all(row.run_id) as Array<{
       golden_id: string;
@@ -589,7 +578,6 @@ export function getReports(): EvalReport[] {
       conflict_resolution: number;
       refusal_accuracy: number;
       kb_hit_rate: number;
-      web_hit_rate: number;
     }>;
 
     const results: EvalResult[] = resultRows.map((r) => {
@@ -612,7 +600,6 @@ export function getReports(): EvalReport[] {
         conflictResolution: r.conflict_resolution ?? 0,
         refusalAccuracy: r.refusal_accuracy ?? 0,
         kbHitRate: r.kb_hit_rate ?? 0,
-        webHitRate: r.web_hit_rate ?? 0,
       };
       if (configMeta.error !== undefined) result.error = configMeta.error;
       return result;
@@ -637,7 +624,6 @@ export function getReports(): EvalReport[] {
         avgArticleAccuracy: avg(successResults.map((r) => r.articleAccuracy)),
         avgSourceRoutingAccuracy: avg(successResults.map((r) => r.sourceRoutingAccuracy)),
         avgKbHitRate: avg(successResults.map((r) => r.kbHitRate)),
-        avgWebHitRate: avg(successResults.map((r) => r.webHitRate)),
       };
     });
 
@@ -657,31 +643,21 @@ export function getReports(): EvalReport[] {
 
 /**
  * Build an AgentRunRequest from a golden question and eval config.
- * Constructs the appropriate request body depending on agent type.
+ * 只传 question 相关数据，其他配置由 orchestrator 从 DB 自动读取。
  */
 function buildAgentRequest(
   question: GoldenQuestion,
-  config: EvalConfig,
-  opts: {
-    llmApiKey: string;
-    knowledgeEnabled: boolean;
-    knowledgeEmbedding?: { baseUrl: string; apiKey: string; modelId: string } | undefined;
-    knowledgeReranker?: { baseUrl: string; apiKey: string; modelId: string } | undefined;
-  }
+  _config: EvalConfig,
 ): AgentRunRequest {
-  // Build agent-specific request payload
   const requestPayload = buildPayloadForAgent(question.agent, question.query);
 
   return {
     agent: question.agent,
     caseId: `eval-${question.id}`,
     request: requestPayload,
-    providerPreference: [config.providerId],
-    modelId: config.modelId,
-    apiKey: opts.llmApiKey,
-    knowledgeEnabled: opts.knowledgeEnabled,
-    ...(opts.knowledgeEmbedding && { knowledgeEmbedding: opts.knowledgeEmbedding }),
-    ...(opts.knowledgeReranker && { knowledgeReranker: opts.knowledgeReranker }),
+    // 不传 providerPreference、modelId、knowledgeEnabled、
+    // knowledgeEmbedding、knowledgeReranker、searchApiKey、webSearchEnabled
+    // orchestrator 从 DB 自动读取所有 production 配置
   };
 }
 
@@ -788,7 +764,6 @@ function buildErrorResult(
     conflictResolution: 0,
     refusalAccuracy: 0,
     kbHitRate: 0,
-    webHitRate: 0,
   };
 }
 
@@ -798,24 +773,24 @@ function buildErrorResult(
  */
 function extractRetrievedChunks(
   response: AgentRunResponse
-): Array<{ id: string }> {
-  const chunks: Array<{ id: string }> = [];
+): Array<{ id: string; text?: string }> {
+  const chunks: Array<{ id: string; text?: string }> = [];
 
   if (response.knowledgeCitations) {
     for (const c of response.knowledgeCitations) {
-      chunks.push({ id: c.sourceId || c.source || "" });
+      chunks.push({ id: c.chunkId || c.sourceId || c.source || "", text: c.excerpt });
     }
   }
 
   if (response.webSearchCitations) {
     for (const c of response.webSearchCitations) {
-      chunks.push({ id: c.url || c.title || "" });
+      chunks.push({ id: c.url || c.title || "", text: c.snippet });
     }
   }
 
   if (response.mergedCitations) {
     for (const c of response.mergedCitations) {
-      chunks.push({ id: c.url || c.title || "" });
+      chunks.push({ id: c.url || c.title || "", text: c.snippet });
     }
   }
 

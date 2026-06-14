@@ -195,7 +195,6 @@ export interface GoldenRunResult {
   conflictResolution: number;
   refusalAccuracy: number;
   kbHitRate: number;
-  webHitRate: number;
 }
 
 export interface EvalReport {
@@ -218,7 +217,6 @@ export interface EvalConfigSummary {
   avgArticleAccuracy: number;
   avgSourceRoutingAccuracy: number;
   avgKbHitRate: number;
-  avgWebHitRate: number;
 }
 
 export interface EvalQuestionRow {

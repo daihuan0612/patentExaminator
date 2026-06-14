@@ -85,7 +85,9 @@ export function backupDatabases() {
   if (!hasChanges()) return false;
 
   mkdirSync(BACKUP_DIR, { recursive: true });
-  const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const _d = new Date();
+  const _pad = (n) => String(n).padStart(2, "0");
+  const ts = `${_d.getFullYear()}-${_pad(_d.getMonth() + 1)}-${_pad(_d.getDate())}T${_pad(_d.getHours())}-${_pad(_d.getMinutes())}-${_pad(_d.getSeconds())}`;
 
   for (const dbFile of DB_FILES) {
     const src = join(DATA_DIR, dbFile);

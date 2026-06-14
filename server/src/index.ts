@@ -112,6 +112,11 @@ const server = app.listen(PORT, () => {
   logger.info(`Server listening on http://localhost:${PORT}`);
   // BUG-141: 异步预加载 cross-encoder reranker 模型（不阻塞启动）
   import("./lib/reranker.js").then(({ preloadCrossEncoder }) => preloadCrossEncoder()).catch(() => {});
+  // 启动时报告知识库状态（便于诊断 copyProductionDb 是否生效）
+  import("./lib/knowledgeDb.js").then(({ getStats }) => {
+    const stats = getStats();
+    logger.info(`[Startup] Knowledge DB: ${stats.sourceCount} sources, ${stats.chunkCount} chunks, ${stats.embeddedCount} embedded`);
+  }).catch(() => {});
 });
 
 function shutdown() {

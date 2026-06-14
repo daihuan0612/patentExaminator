@@ -45,7 +45,6 @@ export async function searchPatents(
   const allResults = await Promise.all(
     queryList.map((q) => {
       const searchFn = providerId === "tavily" ? searchTavily
-        : providerId === "serpapi" ? searchSerpApi
         : providerId === "epo" ? searchEpoAdapter
         : config?.baseUrl ? (k: string, n: number, a: string) => searchCustom(k, n, a, config.baseUrl as string)
         : null;
@@ -142,78 +141,6 @@ async function tavilySearch(
     content: r.content,
     score: r.score
   }));
-}
-
-async function searchSerpApi(
-  query: string,
-  maxResults: number,
-  apiKey: string
-): Promise<SearchResult[]> {
-  // Two-pass: patent-domain + open search, no noise appended
-  const patentResults = await serpApiSearch(query, Math.ceil(maxResults / 2), apiKey);
-  const generalResults = await serpApiSearch(query, maxResults, apiKey);
-
-  // Merge and deduplicate
-  const seen = new Set<string>();
-  const merged: SearchResult[] = [];
-  for (const r of [...patentResults, ...generalResults]) {
-    const key = r.url.toLowerCase();
-    if (!seen.has(key)) {
-      seen.add(key);
-      merged.push(r);
-    }
-  }
-
-  return merged;
-}
-
-async function serpApiSearch(
-  query: string,
-  maxResults: number,
-  apiKey: string
-): Promise<SearchResult[]> {
-  const url = new URL("https://serpapi.com/search");
-  url.searchParams.set("engine", "google");
-  url.searchParams.set("q", query);
-  url.searchParams.set("num", String(maxResults));
-  url.searchParams.set("api_key", apiKey);
-
-  logger.info("SerpAPI request", { query, maxResults, url: url.toString().split(apiKey).join("***") });
-
-  const response = await fetch(url.toString(), {
-    method: "GET",
-    headers: { "Accept": "application/json" },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
-  });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    logger.error("SerpAPI error", { status: response.status, text: text.slice(0, 500) });
-    throw new Error(`SerpAPI error: ${response.status}`);
-  }
-
-  const data = (await response.json()) as {
-    organic_results?: Array<{
-      title?: string;
-      link?: string;
-      snippet?: string;
-    }>;
-    error?: string;
-  };
-
-  if (data.error) {
-    logger.error("SerpAPI returned error", { error: data.error });
-    throw new Error(`SerpAPI error: ${data.error}`);
-  }
-
-  const results = (data.organic_results ?? []).map((r) => ({
-    title: r.title ?? "",
-    url: r.link ?? "",
-    content: r.snippet ?? "",
-    score: 0
-  }));
-  logger.info("SerpAPI returned results", { count: results.length });
-  return results;
 }
 
 async function searchCustom(

@@ -20,7 +20,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const logsDir = join(__dirname, "logs");
 mkdirSync(logsDir, { recursive: true });
 
-const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+const _d = new Date();
+const _pad = (n) => String(n).padStart(2, "0");
+const timestamp = `${_d.getFullYear()}-${_pad(_d.getMonth() + 1)}-${_pad(_d.getDate())}T${_pad(_d.getHours())}-${_pad(_d.getMinutes())}-${_pad(_d.getSeconds())}`;
 
 // 测试配置
 const TEST_CONFIG = {
@@ -95,7 +97,7 @@ async function testWebSearchWithCitations(baseUrl) {
   const logFile = join(logsDir, `citation-test-${timestamp}.log`);
   const logContent = [
     `=== Citation Test ===`,
-    `Time: ${new Date().toISOString()}`,
+    `Time: ${new Date().toLocaleString("sv-SE")}`,
     `Model: ${req.modelId}`,
     `WebSearch: ${req.webSearchEnabled}`,
     ``,
@@ -135,7 +137,7 @@ async function testWebSearchWithCitations(baseUrl) {
 async function main() {
   loadEnvFile();
   log("=== NF1 Citation Test ===");
-  log(`测试时间: ${new Date().toISOString()}`);
+  log(`测试时间: ${new Date().toLocaleString("sv-SE")}`);
   log(`弱模型: ${TEST_CONFIG.weakModel}`);
   log("");
 

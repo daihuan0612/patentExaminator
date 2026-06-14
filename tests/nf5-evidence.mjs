@@ -21,7 +21,6 @@ import { fileURLToPath } from "url";
 import { loadEnvFile, getApiKey } from "./e2e-shared/env.mjs";
 import { postJSON } from "./e2e-shared/http.mjs";
 import { startIsolatedServer } from "./e2e-shared/server-lifecycle.mjs";
-import { uploadKnowledgeFile, SAMPLES_KNOWLEDGE_DIR } from "./e2e-shared/index.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EVAL_REPORTS_DIR = path.join(__dirname, "eval-reports");
@@ -41,7 +40,9 @@ function saveJsonFile(filename, data) {
 }
 
 function timestamp() {
-  return new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
 }
 
 async function safeJson(res, label) {
@@ -63,7 +64,7 @@ async function main() {
 
   const mimoKey = getApiKey("mimo");
   const volcengineKey = getApiKey("volcengine");
-  const serpApiKey = getApiKey("serp");
+  const tavilyKey = getApiKey("tavily");
 
   const availableProviders = [];
   if (mimoKey) availableProviders.push("MiMo");
@@ -76,9 +77,9 @@ async function main() {
     process.exit(0);
   }
 
-  // 1. Start isolated server
+  // 1. Start isolated server（复制生产 DB 副本，包含 settings、知识库、案件数据）
   console.log("\n━━━ Step 0: Starting isolated server ━━━");
-  const { baseUrl, cleanup } = await startIsolatedServer();
+  const { baseUrl, cleanup } = await startIsolatedServer({ copyProductionDb: true });
   process.env.TEST_BASE = baseUrl;
   console.log(`Server ready: ${baseUrl}\n`);
 
@@ -86,14 +87,9 @@ async function main() {
   const startTime = performance.now();
 
   try {
-    // ── Step 1: Upload knowledge ──
-    console.log("━━━ Step 1: Upload knowledge base ━━━");
-    const filePath = path.join(SAMPLES_KNOWLEDGE_DIR, "专利法_2020修正.txt");
-    const uploadResult = await uploadKnowledgeFile(filePath);
-    if (!uploadResult.ok) {
-      throw new Error(`Upload failed: ${uploadResult.error}`);
-    }
-    console.log("✅ Knowledge uploaded\n");
+    // ── Step 1: 知识库已通过 copyProductionDb 复制，无需手动上传 ──
+    console.log("━━━ Step 1: Knowledge base (from production DB copy) ━━━");
+    console.log("✅ Knowledge base already available (copied from production DB)\n");
 
     // ── Step 2: Generate golden set ──
     console.log("━━━ Step 2: Generate golden set ━━━");
@@ -108,10 +104,9 @@ async function main() {
     console.log(`Questions per provider: 2`);
 
     const genStart = performance.now();
-    // spec §11: 传递 SerpAPI key 用于 web 题型生成
     const genRes = await postJSON("/metrics/golden-set/generate", {
       providerConfigs,
-      ...(serpApiKey && { searchApiKey: serpApiKey }),
+      ...(tavilyKey && { searchApiKey: tavilyKey }),
     }, undefined, 300_000);
     const genData = await safeJson(genRes, "Generate golden set");
     const genDuration = performance.now() - genStart;
@@ -127,7 +122,7 @@ async function main() {
     // Persist golden set
     const ts = timestamp();
     const gsFile = saveJsonFile(`golden-set-${ts}.json`, {
-      timestamp: new Date().toISOString(),
+      timestamp: ts.replace(/-/g, (m, offset) => offset > 9 ? ":" : m),
       providerConfigs: providerConfigs.map(p => ({ providerId: p.providerId, model: p.model, label: p.label })),
       totalQuestions: genData.count,
       durationMs: Math.round(genDuration),
@@ -226,7 +221,7 @@ async function main() {
     );
 
     const qualityReport = {
-      timestamp: new Date().toISOString(),
+      timestamp: ts.replace(/-/g, (m, offset) => offset > 9 ? ":" : m),
       totalQuestions: questions.length,
       overallScore: Math.round(overallScore * 100) / 100,
       dimensions: {
@@ -270,7 +265,6 @@ async function main() {
     const evalStart = performance.now();
     const evalRes = await postJSON("/metrics/eval/run", {
       configs: evalConfigs,
-      apiKey: evalApiKey,
       ...(evalAgent && { agentFilter: evalAgent }),
     }, undefined, 900_000); // 15 分钟超时
     const evalData = await safeJson(evalRes, "Evaluation");
@@ -290,7 +284,6 @@ async function main() {
       console.log(`   ├─ Article Accuracy:   ${cfg.avgArticleAccuracy?.toFixed(3) || "N/A"}`);
       console.log(`   ├─ Routing Accuracy:   ${cfg.avgSourceRoutingAccuracy?.toFixed(3) || "N/A"}`);
       console.log(`   ├─ KB Hit Rate:        ${cfg.avgKbHitRate?.toFixed(3) || "N/A"}`);
-      console.log(`   ├─ Web Hit Rate:       ${cfg.avgWebHitRate?.toFixed(3) || "N/A"}`);
       console.log(`   ├─ Pass Rate:          ${(cfg.passRate * 100).toFixed(1)}%`);
       console.log(`   └─ Avg Duration:       ${cfg.avgDurationMs?.toFixed(0)}ms`);
     }
@@ -299,7 +292,7 @@ async function main() {
     const evalFile = saveJsonFile(`eval-report-${ts}.json`, {
       ...evalData,
       _meta: {
-        generatedAt: new Date().toISOString(),
+        generatedAt: ts.replace(/-/g, (m, offset) => offset > 9 ? ":" : m),
         totalDurationMs: Math.round(evalDuration),
         configCount: evalConfigs.length,
         questionCount: evalData.questionCount,

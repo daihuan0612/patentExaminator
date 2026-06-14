@@ -98,7 +98,7 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
         caseId: caseId ?? "",
         claimText,
         features
-      }, settings);
+      });
       if (!isMountedRef.current) return;
       if (!res.ok || res.queries.length === 0) {
         setError(res.error || "AI 提取检索词失败。");
@@ -114,7 +114,7 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
     } finally {
       abortControllersRef.current.delete("extractTerms");
     }
-  }, [claimText, features, caseId, settings, setSearchTerms, setSearchStep]);
+  }, [claimText, features, caseId, setSearchTerms, setSearchStep]);
 
   // Step 2: 用编辑后的检索词执行搜索
   const handleSearchWithTerms = useCallback(async () => {
@@ -152,7 +152,7 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
             searchProviderId: sp.providerId,
             searchApiKey: sp.apiKeyRef,
             ...(sp.baseUrl ? { searchBaseUrl: sp.baseUrl } : {})
-          }, settings).catch((err): SearchReferencesResponse => ({
+          }).catch((err): SearchReferencesResponse => ({
             ok: false,
             candidates: [],
             error: String(err)
@@ -239,7 +239,7 @@ export function ReferenceSearchPanel({ claimText, features }: ReferenceSearchPan
       if (isMountedRef.current) setIsSearching(false);
       abortControllersRef.current.delete("searchWithTerms");
     }
-  }, [searchTerms, caseId, claimText, features, settings, searchSessionId, references.length,
+  }, [searchTerms, caseId, claimText, features, searchSessionId, references.length,
       setIsSearching, setSearchStep, setCandidates, setProviderResults, setSearchSessionId, updateWorkflowState]);
 
   // 回到编辑模式

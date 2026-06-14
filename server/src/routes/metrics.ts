@@ -500,7 +500,7 @@ metricsRouter.post("/metrics/golden-set/generate", async (req, res) => {
           providerId: string; apiKeyRef?: string;
         }>;
         for (const sp of searchProviders) {
-          if (sp.providerId === "serpapi" && sp.apiKeyRef) {
+          if (sp.providerId === "tavily" && sp.apiKeyRef) {
             searchApiKey = sp.apiKeyRef;
             break;
           }
@@ -536,7 +536,7 @@ metricsRouter.post("/metrics/golden-set/generate", async (req, res) => {
     const questions = await generateGoldenSet(
       providerConfigs,
       searchApiKey || undefined,
-      "serpapi", // spec §8.1: 与 MCP Web Search 路径一致
+      "tavily",
     );
 
     // BUG-180: 持久化已移入 generateGoldenSet() 内部（生成完成立即写文件，不等 route return）
@@ -670,43 +670,26 @@ metricsRouter.post("/metrics/golden-set/clean", async (_req, res) => {
 });
 
 // POST /api/metrics/eval/run
-// Run offline evaluation
-// Body: { configs: EvalConfig[], apiKey: string, agentFilter?: string,
-//         judgeApiKeys?, maxConcurrency?, modelFallbacks?, enableModelFallback?,
-//         knowledgeEnabled?, knowledgeEmbedding?, knowledgeReranker? }
+// Run offline evaluation — orchestrator 从 DB 自动读取 production 配置
+// Body: { configs: EvalConfig[], agentFilter?, judgeApiKeys?, maxConcurrency? }
 metricsRouter.post("/metrics/eval/run", async (req, res) => {
   try {
-    const { configs, apiKey, agentFilter, judgeApiKeys, maxConcurrency,
-      modelFallbacks, enableModelFallback,
-      knowledgeEnabled, knowledgeEmbedding, knowledgeReranker } = req.body as {
+    const { configs, agentFilter, judgeApiKeys, maxConcurrency } = req.body as {
       configs?: unknown[];
-      apiKey?: string;
       agentFilter?: string;
       judgeApiKeys?: Record<string, string>;
       maxConcurrency?: number;
-      modelFallbacks?: Record<string, string[]>;
-      enableModelFallback?: boolean;
-      knowledgeEnabled?: boolean;
-      knowledgeEmbedding?: { baseUrl: string; apiKey: string; modelId: string };
-      knowledgeReranker?: { baseUrl: string; apiKey: string; modelId: string };
     };
     if (!configs || !Array.isArray(configs) || configs.length === 0) {
       return res.status(400).json({ error: "需要提供至少一个模型配置" });
     }
-    if (!apiKey) {
-      return res.status(400).json({ error: "需要提供 API key" });
-    }
     const { runEvaluation } = await import("../lib/evalRunner.js");
     const report = await runEvaluation(configs, {
-      llmApiKey: apiKey,
       agentFilter,
       judgeApiKeys,
       maxConcurrency,
-      modelFallbacks,
-      enableModelFallback,
-      knowledgeEnabled,
-      knowledgeEmbedding,
-      knowledgeReranker,
+      // 不传 apiKey、knowledgeEmbedding、knowledgeReranker、searchApiKey、webSearchEnabled
+      // orchestrator 从 DB 自动读取所有 production 配置
     });
     writeAudit({
       op: "CREATE",
@@ -726,7 +709,7 @@ metricsRouter.get("/metrics/eval/reports", async (_req, res) => {
   try {
     const db = getSyncDb();
     const rows = db.prepare(`
-      SELECT DISTINCT id, timestamp, config_json
+      SELECT DISTINCT run_id as id, timestamp, config_json
       FROM metrics_golden_runs
       ORDER BY timestamp DESC LIMIT 20
     `).all() as ReportRow[];
@@ -742,7 +725,7 @@ metricsRouter.get("/metrics/eval/reports/:id", async (req, res) => {
   try {
     const { getReports } = await import("../lib/evalRunner.js");
     const reports = getReports();
-    const report = reports.find((r) => r.id === req.params.id);
+    const report = reports.find((r) => r.runId === req.params.id);
     if (!report) {
       return res.status(404).json({ error: "报告未找到" });
     }

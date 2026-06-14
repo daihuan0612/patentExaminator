@@ -263,7 +263,7 @@ export interface ChatMessage {
     tokenInput: number;
     tokenOutput: number;
   };
-  knowledgeCitations?: Array<{ source: string; sourceId?: string; article?: string; score: number; excerpt: string }>;
+  knowledgeCitations?: Array<{ source: string; sourceId?: string; chunkId?: string; article?: string; score: number; excerpt: string }>;
   webSearchCitations?: Array<{ title: string; url: string; snippet: string; engine: string }>;
   /** 合并引用（RAG + Web 按相关性排序，编号 [1]-[N] 与 AI 回答一致） */
   mergedCitations?: Array<{ title: string; url: string; snippet: string; engine: string }>;

@@ -2,7 +2,7 @@
  * 离线评估指标计算模块（nf5）
  *
  * 实现 golden-set-spec.md §5 定义的全部指标：
- * - 检索质量：NDCG@K（chunk 级）、Recall@K、KB/Web Hit Rate
+ * - 检索质量：NDCG@K（chunk 级）、Recall@K、KB Hit Rate
  * - 生成质量：Faithfulness、Answer Correctness、Fact Coverage（multi-judge）
  * - 确定性指标：Article Accuracy、Source Routing/Attribution Accuracy
  * - 跨源特有：Conflict Resolution、Refusal Accuracy
@@ -14,6 +14,7 @@ import {
   extractJsonFromLLM,
   type MultiJudgeResult,
 } from "./multiJudge.js";
+import { logger } from "./logger.js";
 import type { RelevanceGrade, SourceType, ExpectedSource } from "../../../shared/src/types/metrics.js";
 
 // ── 检索质量指标（chunk 级，基于 relevance grading） ──
@@ -29,30 +30,36 @@ import type { RelevanceGrade, SourceType, ExpectedSource } from "../../../shared
  * @param k - top-K（默认 5）
  */
 export function computeNDCGChunkLevel(
-  retrievedChunks: Array<{ id: string }>,
+  retrievedChunks: Array<{ id: string; text?: string }>,
   relevanceGrading: RelevanceGrade[],
-  k: number = 5
+  k: number = 5,
+  gradedChunkTexts?: Map<string, string>,
 ): number {
   if (relevanceGrading.length === 0) return 1;
   const topK = retrievedChunks.slice(0, k);
 
-  // 构建 chunkId/docId → grade 映射
+  // 构建 chunkId → grade 映射
   const gradeMap = new Map<string, number>();
   for (const g of relevanceGrading) {
-    const key = g.chunkId ?? g.docId;
-    gradeMap.set(key, g.grade);
-    // 也用 docId 做模糊匹配
-    if (g.docId) gradeMap.set(normalizeDocId(g.docId), g.grade);
+    gradeMap.set(g.chunkId, g.grade);
   }
 
   // 为每个检索到的 chunk 分配 relevance
   const relevances: number[] = topK.map((chunk) => {
-    // 精确匹配
+    // 1. 精确 ID 匹配
     if (gradeMap.has(chunk.id)) return gradeMap.get(chunk.id)!;
-    // 模糊匹配
-    const normId = normalizeDocId(chunk.id);
-    for (const [key, grade] of gradeMap) {
-      if (fuzzyDocMatch(normalizeDocId(key), normId)) return grade;
+    // 2. 内容相似度 fallback：不同 chunk ID 但内容相同
+    if (chunk.text && gradedChunkTexts) {
+      let bestSim = 0;
+      let bestGrade = 0;
+      for (const [gid, grade] of gradeMap) {
+        const gtext = gradedChunkTexts.get(gid);
+        if (gtext) {
+          const sim = textSimilarity(chunk.text, gtext);
+          if (sim > bestSim) { bestSim = sim; bestGrade = grade; }
+        }
+      }
+      if (bestSim >= TEXT_SIM_THRESHOLD) return bestGrade;
     }
     return 0;
   });
@@ -73,7 +80,9 @@ export function computeNDCGChunkLevel(
     idcg += (Math.pow(2, idealGrades[i]!) - 1) / Math.log2(i + 2);
   }
 
-  return idcg > 0 ? dcg / idcg : 0;
+  // Cap at 1.0: textSimilarity fallback 可能导致同一 golden chunk 被多个 retrieved chunk 匹配，
+  // 使 DCG 略超 IDCG。NDCG 理论上限是 1.0。
+  return idcg > 0 ? Math.min(1, dcg / idcg) : 0;
 }
 
 /**
@@ -83,10 +92,11 @@ export function computeNDCGChunkLevel(
  * relevant = grade >= gradeThreshold（默认 2）
  */
 export function computeRecallChunkLevel(
-  retrievedChunks: Array<{ id: string }>,
+  retrievedChunks: Array<{ id: string; text?: string }>,
   relevanceGrading: RelevanceGrade[],
   k: number = 10,
-  gradeThreshold: number = 2
+  gradeThreshold: number = 2,
+  gradedChunkTexts?: Map<string, string>,
 ): number {
   if (relevanceGrading.length === 0) return 1;
   const topK = retrievedChunks.slice(0, k);
@@ -96,17 +106,22 @@ export function computeRecallChunkLevel(
 
   const gradeMap = new Map<string, number>();
   for (const g of relevantGrades) {
-    const key = g.chunkId ?? g.docId;
-    gradeMap.set(key, g.grade);
-    if (g.docId) gradeMap.set(normalizeDocId(g.docId), g.grade);
+    gradeMap.set(g.chunkId, g.grade);
   }
 
   let found = 0;
   for (const chunk of topK) {
+    // 1. 精确 ID 匹配
     if (gradeMap.has(chunk.id)) { found++; continue; }
-    const normId = normalizeDocId(chunk.id);
-    for (const key of gradeMap.keys()) {
-      if (fuzzyDocMatch(normalizeDocId(key), normId)) { found++; break; }
+    // 2. 内容相似度 fallback
+    if (chunk.text && gradedChunkTexts) {
+      for (const [gid, _grade] of gradeMap) {
+        const gtext = gradedChunkTexts.get(gid);
+        if (gtext && textSimilarity(chunk.text, gtext) >= TEXT_SIM_THRESHOLD) {
+          found++;
+          break;
+        }
+      }
     }
   }
 
@@ -117,26 +132,14 @@ export function computeRecallChunkLevel(
  * KB Hit Rate — KB 专属题的 Recall@K
  */
 export function computeKBHitRate(
-  retrievedChunks: Array<{ id: string }>,
+  retrievedChunks: Array<{ id: string; text?: string }>,
   relevanceGrading: RelevanceGrade[],
-  k: number = 10
+  k: number = 10,
+  gradedChunkTexts?: Map<string, string>,
 ): number {
   const kbGrades = relevanceGrading.filter((g) => g.source === "kb");
   if (kbGrades.length === 0) return 1;
-  return computeRecallChunkLevel(retrievedChunks, kbGrades, k);
-}
-
-/**
- * Web Hit Rate — Web 专属题的 Recall@K
- */
-export function computeWebHitRate(
-  retrievedChunks: Array<{ id: string }>,
-  relevanceGrading: RelevanceGrade[],
-  k: number = 10
-): number {
-  const webGrades = relevanceGrading.filter((g) => g.source === "web");
-  if (webGrades.length === 0) return 1;
-  return computeRecallChunkLevel(retrievedChunks, webGrades, k);
+  return computeRecallChunkLevel(retrievedChunks, kbGrades, k, 2, gradedChunkTexts);
 }
 
 // ── 生成质量指标（multi-judge） ──
@@ -247,7 +250,10 @@ export async function computeFactCoverage(
   judgeApiKeys: Record<string, string>,
   judgeOpts?: { modelFallbacks?: Record<string, string[]>; enableModelFallback?: boolean }
 ): Promise<MultiJudgeResult<number>> {
-  if (!answer || mustIncludeFacts.length === 0) {
+  if (!answer) {
+    return { aggregated: 0, individualResults: [], judgeCount: 0 };
+  }
+  if (mustIncludeFacts.length === 0) {
     return { aggregated: 1, individualResults: [], judgeCount: 0 };
   }
 
@@ -300,41 +306,194 @@ export async function computeFactCoverage(
 // ── 确定性指标（不需要 judge） ──
 
 /**
- * Article Accuracy — 答案引用的法条与期望法条的匹配度
+ * 中文数字 → 阿拉伯数字映射
+ */
+const CN_NUM_MAP: Record<string, string> = {
+  "一": "1", "二": "2", "三": "3", "四": "4", "五": "5",
+  "六": "6", "七": "7", "八": "8", "九": "9", "十": "10",
+  "十一": "11", "十二": "12", "十三": "13", "十四": "14", "十五": "15",
+  "十六": "16", "十七": "17", "十八": "18", "十九": "19", "二十": "20",
+  "二十一": "21", "二十二": "22", "二十三": "23", "二十四": "24", "二十五": "25",
+  "二十六": "26", "二十七": "27", "二十八": "28", "二十九": "29",
+};
+
+/**
+ * 专利法条文 ↔ 审查指南章节 交叉引用表
  *
- * 公式：expectedArticles 中被答案引用的比例
- * 确定性计算，不需要 LLM judge
+ * key: 专利法条文（如"第二十二条第二款"）
+ * value: 对应的审查指南章节关键词列表
+ *
+ * 来源：《专利审查指南》与《专利法》对照表
+ */
+const LAW_TO_GUIDE_KEYWORDS: Record<string, string[]> = {
+  // 第二十二条：授予专利权的发明和实用新型应当具备新颖性、创造性和实用性
+  "第二十二条": ["新颖性", "创造性", "实用性", "三章", "第四章", "第五章"],
+  "第二十二条第一款": ["新颖性", "创造性", "实用性"],
+  "第二十二条第二款": ["新颖性", "第三章3.1", "单独对比", "现有技术"],
+  "第二十二条第三款": ["创造性", "第四章", "非显而易见", "突出的实质性特点"],
+  "第二十三条": ["外观设计", "新颖性", "区别"],
+  "第二十四条": ["新颖性宽限", "不丧失新颖性"],
+  "第二十五条": ["不授予专利权"],
+  "第二十六条": ["说明书", "权利要求书", "充分公开"],
+  "第二十六条第三款": ["充分公开", "清楚", "完整", "实现"],
+  "第二十六条第四款": ["权利要求", "清楚", "简要", "支持"],
+  "第三十三条": ["修改", "超范围"],
+  "第三十八条": ["驳回"],
+  "第四十一条": ["复审"],
+  "第六十四条": ["保护范围", "权利要求"],
+};
+
+/**
+ * 从法条/章节引用中提取编号（数字部分）
+ * 如 "第二十二条第二款" → "22-2", "第6.1节" → "6.1"
+ */
+function extractArticleNumber(ref: string): string {
+  // 匹配 "第N条" 或 "第N条第M款" 格式
+  const lawMatch = ref.match(/第([一二三四五六七八九十百]+)条(?:第([一二三四五六七八九十百]+)款)?/);
+  if (lawMatch) {
+    const article = CN_NUM_MAP[lawMatch[1]!] ?? lawMatch[1]!;
+    const clause = lawMatch[2] ? `-${CN_NUM_MAP[lawMatch[2]!] ?? lawMatch[2]}` : "";
+    return article + clause;
+  }
+  // 匹配 "第N.M节" 或 "N.M" 格式（审查指南）
+  const guideMatch = ref.match(/(\d+(?:\.\d+)?)/);
+  if (guideMatch) return guideMatch[1]!;
+  return "";
+}
+
+/**
+ * 检查法条引用与答案中的引用是否匹配（支持交叉引用）
+ *
+ * 匹配策略（按优先级）：
+ * 1. 直接字符串包含
+ * 2. 编号格式统一后匹配（"第九条" ↔ "第9条"）
+ * 3. 同一法条的不同款匹配（答案引用法条，expected 是其中一款）
+ * 4. 交叉引用：专利法条文 ↔ 审查指南章节（通过共享关键词）
  */
 export function computeArticleAccuracy(
   answer: string,
   expectedArticles: string[]
 ): number {
-  if (!answer || expectedArticles.length === 0) return 1;
+  if (!answer) return 0;
+  if (expectedArticles.length === 0) return 1;
 
   const normAnswer = answer.toLowerCase();
+  // 提取答案中所有法条/章节引用
+  const answerRefs = extractAllArticleRefs(answer);
   let matched = 0;
 
   for (const article of expectedArticles) {
     const normArticle = article.toLowerCase().trim();
     if (!normArticle) continue;
-    // 模糊匹配：答案中包含法条引用
+
+    // 策略 1：直接字符串包含
     if (normAnswer.includes(normArticle)) {
       matched++;
       continue;
     }
-    // 尝试提取法条编号匹配（如"第九条" ↔ "第9条"）
-    const normalized = normArticle.replace(/[一二三四五六七八九十百]+/g, (m) => {
-      const map: Record<string, string> = {
-        "一": "1", "二": "2", "三": "3", "四": "4", "五": "5",
-        "六": "6", "七": "7", "八": "8", "九": "9", "十": "10",
-        "百": "100",
-      };
-      return map[m] ?? m;
-    });
-    if (normAnswer.includes(normalized)) matched++;
+
+    // 策略 2：编号格式统一后匹配（"第二十二条第二款" ↔ "第22条第2款"）
+    const normalized = normalizeArticleRef(normArticle);
+    if (normalized && normAnswer.includes(normalized)) {
+      matched++;
+      continue;
+    }
+
+    // 策略 3：提取编号比较（"第二十二条第二款" → "22-2"）
+    const expectedNum = extractArticleNumber(article);
+    if (expectedNum) {
+      const answerNums = answerRefs.map(extractArticleNumber).filter(Boolean);
+      if (answerNums.some((n) => n === expectedNum || expectedNum.startsWith(n) || n.startsWith(expectedNum))) {
+        matched++;
+        continue;
+      }
+    }
+
+    // 策略 4：交叉引用 — 专利法条文 ↔ 审查指南章节
+    // 如果 expected 是法条，检查答案是否引用了对应的审查指南章节
+    if (checkCrossReference(article, answerRefs, normAnswer)) {
+      matched++;
+      continue;
+    }
   }
 
   return matched / expectedArticles.length;
+}
+
+/**
+ * 从文本中提取所有法条/章节引用
+ * 匹配：第N条、第N条第M款、第N.M节、第N章、第N节 等
+ */
+function extractAllArticleRefs(text: string): string[] {
+  const refs: string[] = [];
+  // 第N条（第M款）
+  const lawPattern = /第[一二三四五六七八九十百\d]+条(?:第[一二三四五六七八九十百\d]+款)?/g;
+  let match: RegExpExecArray | null;
+  while ((match = lawPattern.exec(text)) !== null) {
+    refs.push(match[0]);
+  }
+  // 第N.M节、第N章
+  const guidePattern = /第?\d+(?:\.\d+)?(?:节|章|部分)/g;
+  while ((match = guidePattern.exec(text)) !== null) {
+    refs.push(match[0]);
+  }
+  // 审查指南特定格式：如 "第二部分第三章3.1节"
+  const guideSection = /第[一二三四五六七八九十百]+部分第[一二三四五六七八九十百]+章[\d.]*节?/g;
+  while ((match = guideSection.exec(text)) !== null) {
+    refs.push(match[0]);
+  }
+  return refs;
+}
+
+/**
+ * 将中文法条编号转为阿拉伯数字格式
+ * "第二十二条第二款" → "第22条第2款"
+ */
+function normalizeArticleRef(ref: string): string {
+  return ref.replace(/[一二三四五六七八九十百]+/g, (m) => CN_NUM_MAP[m] ?? m);
+}
+
+/**
+ * 检查交叉引用：expected 法条 vs answer 中的审查指南引用
+ *
+ * 逻辑：如果 expected 是专利法条文，而 answer 引用了审查指南章节，
+ * 通过交叉引用表检查两者是否指向同一法律概念。
+ */
+function checkCrossReference(
+  expectedArticle: string,
+  answerRefs: string[],
+  normAnswer: string
+): boolean {
+  // 查找 expected 对应的审查指南关键词
+  const expectedNorm = expectedArticle.toLowerCase();
+  for (const [law, keywords] of Object.entries(LAW_TO_GUIDE_KEYWORDS)) {
+    if (expectedNorm.includes(law.toLowerCase()) || law.toLowerCase().includes(expectedNorm)) {
+      // 检查答案中是否有引用审查指南且包含对应关键词
+      for (const ref of answerRefs) {
+        if (ref.includes("审查指南") || ref.includes("指南") || /\d+\.\d+/.test(ref)) {
+          // 答案引用了审查指南，检查是否包含相关关键词
+          if (keywords.some((kw) => normAnswer.includes(kw.toLowerCase()))) {
+            return true;
+          }
+        }
+      }
+      // 也检查答案中是否有同一条法律的其他款（如 expected 是"第二十二条第二款"，
+      // 答案只引用了"第二十二条"，也算部分匹配）
+      const lawNum = extractArticleNumber(law);
+      if (lawNum) {
+        for (const ref of answerRefs) {
+          const refNum = extractArticleNumber(ref);
+          if (refNum && (lawNum.startsWith(refNum) || refNum.startsWith(lawNum))) {
+            // 同一条法律，检查关键词
+            if (keywords.some((kw) => normAnswer.includes(kw.toLowerCase()))) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+  }
+  return false;
 }
 
 /**
@@ -458,9 +617,39 @@ function parseScoreFromJson(rawText: string): number | null {
   if (json && typeof json.score === "number") {
     return Math.max(0, Math.min(1, json.score));
   }
+  // 诊断日志：解析失败时输出 rawText 前 200 字符
+  const preview = rawText.slice(0, 200).replace(/\n/g, "\\n");
+  logger.warn(`[parseScoreFromJson] failed: json=${JSON.stringify(json)?.slice(0, 100)}, rawText(200)=${preview}`);
   return null;
 }
 
+/**
+ * 字符 bigram Jaccard 相似度 — 纯 CPU，不需 LLM
+ * 用于 chunk 内容匹配：不同 chunk ID 但内容高度相似时应视为匹配
+ */
+export function textSimilarity(a: string, b: string): number {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  // 取前 500 字符足够区分内容，避免长文本性能问题
+  const sa = a.slice(0, 500);
+  const sb = b.slice(0, 500);
+  const bigrams = (s: string): Set<string> => {
+    const set = new Set<string>();
+    for (let i = 0; i < s.length - 1; i++) set.add(s[i]! + s[i + 1]!);
+    return set;
+  };
+  const setA = bigrams(sa);
+  const setB = bigrams(sb);
+  let intersection = 0;
+  for (const bg of setA) if (setB.has(bg)) intersection++;
+  const union = setA.size + setB.size - intersection;
+  return union > 0 ? intersection / union : 0;
+}
+
+/** 文本相似度阈值：超过此值视为同一内容的不同 chunk */
+const TEXT_SIM_THRESHOLD = 0.4;
+
+/** Source name 归一化（去扩展名、折叠空白）— 用于 source attribution 匹配 */
 function normalizeDocId(docId: string): string {
   return docId
     .toLowerCase()
@@ -469,11 +658,11 @@ function normalizeDocId(docId: string): string {
     .trim();
 }
 
+/** Source name fuzzy match — 用于 source attribution 匹配 */
 function fuzzyDocMatch(a: string, b: string): boolean {
   if (!a || !b) return false;
   if (a === b) return true;
   if (a.includes(b) || b.includes(a)) return true;
-  // Token overlap: split by space only (keep hyphens as part of tokens)
   const tokensA = new Set(a.split(/\s+/).filter((t) => t.length >= 2));
   const tokensB = b.split(/\s+/).filter((t) => t.length >= 2);
   if (tokensB.length === 0) return false;

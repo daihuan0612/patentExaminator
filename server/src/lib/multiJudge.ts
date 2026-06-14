@@ -11,6 +11,7 @@
  * 注意：doubao-seed 因 120s 超时频繁已移除，从 3 judge 降为 2 judge。
  */
 import { logger } from "./logger.js";
+import { extractJsonFromText } from "./jsonExtractor.js";
 import type { ChatRequest } from "../providers/ProviderAdapter.js";
 
 // ── 类型定义 ──────────────────────────────────────────
@@ -239,6 +240,9 @@ export async function multiJudgeDiscrete(
         validValues.push(parsed);
         continue;
       }
+      logger.warn(`[MultiJudge] ${output.providerId} score parse failed, rawText (first 300): ${output.rawText.slice(0, 300)}`);
+    } else {
+      logger.warn(`[MultiJudge] ${output.providerId} judge failed: success=${output.success}, error=${output.error}`);
     }
     individualResults.push({
       providerId: output.providerId,
@@ -287,6 +291,9 @@ export async function multiJudgeContinuous(
         validValues.push(parsed);
         continue;
       }
+      logger.warn(`[MultiJudge] ${output.providerId} score parse failed, rawText (first 300): ${output.rawText.slice(0, 300)}`);
+    } else {
+      logger.warn(`[MultiJudge] ${output.providerId} judge failed: success=${output.success}, error=${output.error}`);
     }
     individualResults.push({
       providerId: output.providerId,
@@ -304,33 +311,12 @@ export async function multiJudgeContinuous(
 
 /**
  * 从 LLM 输出中提取 JSON 对象
- * 处理 markdown 代码块、前后缀文本等情况
+ * 复用 jsonExtractor.ts 的成熟方案：balanced brace matching + repairJsonLiterals
  */
 export function extractJsonFromLLM(text: string): Record<string, unknown> | null {
-  // 直接尝试解析
-  try {
-    const parsed = JSON.parse(text);
-    if (typeof parsed === "object" && parsed !== null) return parsed as Record<string, unknown>;
-  } catch { /* continue */ }
-
-  // 提取 ```json ... ``` 代码块
-  const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
-  if (fenceMatch?.[1]) {
-    try {
-      const parsed = JSON.parse(fenceMatch[1].trim());
-      if (typeof parsed === "object" && parsed !== null) return parsed as Record<string, unknown>;
-    } catch { /* continue */ }
+  const result = extractJsonFromText(text);
+  if (result && typeof result.parsed === "object" && result.parsed !== null) {
+    return result.parsed as Record<string, unknown>;
   }
-
-  // 提取第一个 { 到最后一个 }
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start !== -1 && end > start) {
-    try {
-      const parsed = JSON.parse(text.substring(start, end + 1));
-      if (typeof parsed === "object" && parsed !== null) return parsed as Record<string, unknown>;
-    } catch { /* continue */ }
-  }
-
   return null;
 }

@@ -385,9 +385,22 @@ export async function checkGroundedness(
   logger.info(
     `[Groundedness] 开始检查: ${sentences.length} 个句子, ${groundingDocs.length} 个 grounding documents (RAG=${ragCount}, Web=${webCount})`
   );
+  // D4: 诊断 — 打印句子和 grounding docs 内容
+  for (let i = 0; i < sentences.length; i++) {
+    logger.info(`[Groundedness] D4 sentence[${i}]: ${sentences[i].slice(0, 200)}`);
+  }
+  for (let i = 0; i < groundingDocs.length; i++) {
+    logger.info(`[Groundedness] D4 doc[${i}]: source=${groundingDocs[i].source}, excerpt=${groundingDocs[i].excerpt.slice(0, 150)}`);
+  }
 
   // 调用 LLM Judge
   const judgeResult = await callJudge(sentences, groundingDocs, config);
+
+  // D4: 诊断 — 打印 judge 结果
+  logger.info(`[Groundedness] D4 judge: groundedRatio=${judgeResult.groundedRatio}, overallVerdict=${judgeResult.overallVerdict}, claims=${judgeResult.claims.length}`);
+  for (const cv of judgeResult.claims) {
+    logger.info(`[Groundedness] D4 claim: verdict=${cv.verdict}, text=${cv.text.slice(0, 100)}, reason=${(cv.reason || "").slice(0, 100)}`);
+  }
 
   // 过滤
   const filtered = filterUngrounded(output, sentences, judgeResult);

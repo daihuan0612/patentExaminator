@@ -236,6 +236,11 @@ export async function executeWithTools(input: ToolExecutorInput): Promise<ToolEx
   // 即使 LLM 在 tool loop 中已返回直接回答，仍需 re-inject 以确保 [N] 引用标记
   if (toolRounds > 0 && citations.length > 0) {
     logger.info(`[ToolExecutor] Re-inject: injecting ${citations.length} docs (${countSources(citations)}), final call without tools`);
+    // D4: 诊断 — 打印 re-inject 的文档内容
+    for (let i = 0; i < citations.length; i++) {
+      const c = citations[i];
+      logger.info(`[ToolExecutor] D4 re-inject[${i}]: engine=${c.engine}, title=${c.title?.slice(0, 80)}, snippet=${c.snippet?.slice(0, 150)}`);
+    }
     const docsSection = citations
       .map((c, i) => {
         const link = c.url ? `[${c.title}](${c.url})` : c.title;
@@ -291,6 +296,18 @@ export async function executeWithTools(input: ToolExecutorInput): Promise<ToolEx
     }
     const finalResult = await callLLM({ messages });
     finalAnswer = finalResult.text;
+
+    // D3: 空响应重试 — LLM 有时返回空 content（特别是 3 次+ 调用后），重试一次
+    if (!finalAnswer) {
+      logger.warn(`[ToolExecutor] D3: final LLM call returned empty, retrying once (messages=${messages.length})`);
+      const retryResult = await callLLM({ messages });
+      finalAnswer = retryResult.text;
+      if (!finalAnswer) {
+        logger.error(`[ToolExecutor] D3: retry also returned empty, giving up (messages=${messages.length})`);
+      } else {
+        logger.info(`[ToolExecutor] D3: retry succeeded, answerLen=${finalAnswer.length}`);
+      }
+    }
   }
 
   logger.info(`[ToolExecutor] Done: toolRounds=${toolRounds}, webResults=${webSearchResults.length}, mcpTools=${tools.length}, answerLen=${finalAnswer.length}`);

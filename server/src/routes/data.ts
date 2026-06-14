@@ -8,6 +8,7 @@ import {
   getSyncDb,
 } from "../lib/syncDb.js";
 import { logger } from "../lib/logger.js";
+import { clearSettingsCache } from "../lib/orchestrator.js";
 import { writeAudit } from "../lib/auditLog.js";
 import { dataQueryInputSchema, dataCreateInputSchema, storeNameSchema, recordIdSchema, dataUpdateInputSchema } from "../../../shared/src/schemas/api-input.schema.js";
 
@@ -153,6 +154,9 @@ dataRouter.post("/data/:store", express.json(), (req, res) => {
     db.prepare("INSERT OR REPLACE INTO sync_data (store_name, record_id, data, updated_at) VALUES (?, ?, ?, datetime('now'))")
       .run(store, id, JSON.stringify(data));
 
+    // settings 更新时清除 orchestrator 缓存
+    if (store === "settings") clearSettingsCache();
+
     writeAudit({ op: "CREATE", store, recordId: id, caller: req.header("X-Caller") ?? "unknown", dataBefore, dataAfter: data, result: "OK" });
 
     res.json({ ok: true, id });
@@ -244,6 +248,9 @@ dataRouter.patch("/data/:store/:id", express.json(), (req, res) => {
 
     db.prepare("INSERT OR REPLACE INTO sync_data (store_name, record_id, data, updated_at) VALUES (?, ?, ?, datetime('now'))")
       .run(store, id, JSON.stringify(merged));
+
+    // settings 更新时清除 orchestrator 缓存
+    if (store === "settings") clearSettingsCache();
 
     writeAudit({ op: "UPDATE", store, recordId: id, caller: req.header("X-Caller") ?? "unknown", dataBefore: existing, dataAfter: patch, result: "OK (PATCH)" });
 

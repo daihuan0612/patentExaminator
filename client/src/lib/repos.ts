@@ -438,59 +438,6 @@ export let lastWebSearchCitations: Array<{ title: string; url: string; snippet: 
 /** 最近一次合并引用（RAG + Web 按相关性排序） */
 export let lastMergedCitations: Array<{ title: string; url: string; snippet: string; engine: string }> = [];
 
-// ── Settings → Provider 解析 ────────────────────────
-
-function resolveAgent(
-  agent: string,
-  settings: AppSettings
-): { providerId: ProviderId; modelId: string; maxTokens?: number } | null {
-  const assignment = (settings.agents ?? []).find((a) => a.agent === agent);
-  if (!assignment) return null;
-  const providerId = assignment.providerOrder[0] ?? getDefaultProvider(settings);
-  const providerSetting = settings.providers.find((p) => p.providerId === providerId);
-  // agent 级别 modelId 优先于 provider 级别 defaultModelId
-  const modelId = assignment.modelId || providerSetting?.defaultModelId || "";
-  return { providerId, modelId, maxTokens: assignment.maxTokens };
-}
-
-function getDefaultProvider(settings: AppSettings): ProviderId {
-  const enabled = settings.providers.filter((p) => p.enabled && p.apiKeyRef);
-  return (enabled[0]?.providerId as ProviderId) ?? "gemini";
-}
-
-function getDefaultModel(settings: AppSettings): string {
-  const enabled = settings.providers.filter((p) => p.enabled && p.apiKeyRef);
-  return enabled[0]?.defaultModelId ?? "gemini-3.1-flash-lite-preview";
-}
-
-function getEnabledProviders(settings: AppSettings): ProviderId[] {
-  return settings.providers.filter((p) => p.enabled && p.apiKeyRef).map((p) => p.providerId as ProviderId);
-}
-
-function getFirstApiKey(settings: AppSettings): string {
-  const enabled = settings.providers.filter((p) => p.enabled && p.apiKeyRef);
-  return enabled[0]?.apiKeyRef ?? "";
-}
-
-function buildProviderPreference(primaryProvider: ProviderId, settings: AppSettings): ProviderId[] {
-  const enabled = getEnabledProviders(settings);
-  return settings.enableProviderFallback !== false
-    ? [primaryProvider, ...enabled.filter((p) => p !== primaryProvider)]
-    : [primaryProvider];
-}
-
-function buildProviderOptions(settings: AppSettings) {
-  const modelFallbacks: Partial<Record<ProviderId, string[]>> = {};
-  const enableModelFallback: Partial<Record<ProviderId, boolean>> = {};
-  const providerBaseUrls: Partial<Record<ProviderId, string>> = {};
-  for (const p of settings.providers) {
-    modelFallbacks[p.providerId] = p.modelFallbacks ?? p.modelIds;
-    enableModelFallback[p.providerId] = p.enableModelFallback ?? true;
-    if (p.baseUrl) providerBaseUrls[p.providerId] = p.baseUrl;
-  }
-  return { modelFallbacks, enableModelFallback, providerBaseUrls };
-}
-
 // ── 错误分类 ────────────────────────────────────────
 
 function classifyGatewayError(
@@ -582,36 +529,15 @@ export async function agentRun<T>(
 
   await waitForServerReady(gatewayUrl);
 
-  const resolved = resolveAgent(agent, settings) ?? {
-    providerId: getDefaultProvider(settings),
-    modelId: getDefaultModel(settings),
-    maxTokens: undefined,
-  };
-  const providerPreference = buildProviderPreference(
-    (options?.providerId ?? resolved.providerId) as ProviderId,
-    settings
-  );
-
-  // 知识库 embedding/reranker 配置
-  const knowledgeProviders = (settings as unknown as Record<string, unknown>).knowledgeProviders as Array<{ providerType: string; providerId: string; enabled: boolean; apiKeyRef: string; baseUrl: string; modelId: string }> | undefined;
-  const embProvider = knowledgeProviders?.find((p) => p.providerType === "embedding" && p.enabled && p.apiKeyRef);
-  const rerankerProvider = knowledgeProviders?.find((p) => p.providerType === "reranker" && p.enabled && p.apiKeyRef);
-
+  // Server 从 DB 自动读取 provider/embedding/reranker 配置，client 只传 question 相关数据
   const body = {
     agent,
     caseId: id,
     request,
-    providerPreference,
-    modelId: options?.modelId ?? resolved.modelId,
-    ...(resolved.maxTokens != null ? { maxTokens: resolved.maxTokens } : {}),
-    ...buildProviderOptions(settings),
-    knowledgeEnabled: settings.knowledge?.enabled ?? false,
-    ...(embProvider ? { knowledgeEmbedding: { baseUrl: embProvider.baseUrl, apiKey: embProvider.apiKeyRef, modelId: embProvider.modelId } } : {}),
-    ...(rerankerProvider ? { knowledgeReranker: { baseUrl: rerankerProvider.baseUrl, apiKey: rerankerProvider.apiKeyRef, modelId: rerankerProvider.modelId } } : {}),
     ...(settings.mode === "mock" ? { mock: true } : {}),
   };
 
-  log("Calling agent gateway", { agent, providerPreference, modelId: body.modelId, caseId: id });
+  log("Calling agent gateway", { agent, caseId: id });
 
   const doFetch = async (): Promise<Response> => {
     return fetch(`${gatewayUrl}/agent/run`, {
@@ -680,7 +606,7 @@ export async function agentRun<T>(
 
   // Track token usage
   if (data.tokenUsage && id) {
-    await trackTokenUsage(id, agent, body.modelId ?? "unknown", data.tokenUsage, data.attempts?.[0]?.providerId ?? "unknown");
+    await trackTokenUsage(id, agent, options?.modelId ?? "unknown", data.tokenUsage, data.attempts?.[0]?.providerId ?? "unknown");
   }
 
   // Track provider errors (even when overall request succeeded via fallback)
@@ -708,10 +634,13 @@ export async function agentRun<T>(
 /** 提取检索词 — 调用 /api/extract-search-terms */
 export async function extractSearchTerms(
   request: ExtractSearchTermsRequest,
-  settings: AppSettings,
-  options?: AgentRunOptions
+  _options?: AgentRunOptions
 ): Promise<ExtractSearchTermsResponse> {
-  const result = await postJson<ExtractSearchTermsResponse>("/api/extract-search-terms", buildSearchBase(request, settings, "search-references", options));
+  const result = await postJson<ExtractSearchTermsResponse>("/api/extract-search-terms", {
+    caseId: request.caseId,
+    claimText: request.claimText,
+    features: request.features,
+  });
   await trackProviderErrors(result.attempts, "search-references", request.caseId);
   return result;
 }
@@ -719,11 +648,12 @@ export async function extractSearchTerms(
 /** 用检索词搜索 — 调用 /api/search-with-terms */
 export async function searchWithTerms(
   request: SearchWithTermsRequest,
-  settings: AppSettings,
-  options?: AgentRunOptions
+  _options?: AgentRunOptions
 ): Promise<SearchReferencesResponse> {
   const result = await postJson<SearchReferencesResponse>("/api/search-with-terms", {
-    ...buildSearchBase(request, settings, "search-references", options),
+    caseId: request.caseId,
+    claimText: request.claimText,
+    features: request.features,
     searchQueries: request.searchQueries,
     maxResults: request.maxResults ?? 5,
     searchProviderId: request.searchProviderId,
@@ -735,29 +665,6 @@ export async function searchWithTerms(
 }
 
 // ── 内部 helpers ─────────────────────────────────────
-
-function buildSearchBase(
-  request: { caseId: string; claimText: string; features: unknown[] },
-  settings: AppSettings,
-  agent: string,
-  options?: AgentRunOptions
-) {
-  const resolved = resolveAgent(agent, settings) ?? {
-    providerId: getDefaultProvider(settings),
-    modelId: getDefaultModel(settings),
-  };
-  const providerId = (options?.providerId ?? resolved.providerId) as ProviderId;
-  const modelId = options?.modelId ?? resolved.modelId;
-  return {
-    caseId: request.caseId,
-    claimText: request.claimText,
-    features: request.features,
-    providerPreference: buildProviderPreference(providerId, settings),
-    modelId,
-    llmApiKey: getFirstApiKey(settings) || undefined,
-    ...buildProviderOptions(settings),
-  };
-}
 
 async function postJson<T>(path: string, body: Record<string, unknown>): Promise<T> {
   const doFetch = async (): Promise<Response> => {
