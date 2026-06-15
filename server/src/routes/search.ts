@@ -57,8 +57,8 @@ const searchRequestSchema = z.object({
   claimText: z.string().min(1),
   features: z.array(z.object({ featureCode: z.string(), description: z.string() })),
   maxResults: z.number().int().min(1).max(10).optional().default(5),
-  providerPreference: z.array(z.string()).optional().default(["gemini", "mimo"]),
-  modelId: z.string().optional().default("gemini-2.5-flash-lite"),
+  providerPreference: z.array(z.string()).optional(),
+  modelId: z.string().optional(),
   searchProviderId: z.string().optional(),
   searchApiKey: z.string().optional(),
   searchBaseUrl: z.string().optional(),
@@ -99,26 +99,27 @@ searchRouter.post("/search-references", async (req, res) => {
     return;
   }
 
-  // Resolve LLM provider
-  // Priority: 1) llmApiKey from request body (APP mode) — use for all providers, 2) server keyStore (dev mode)
+  // Resolve LLM provider — 优先用请求中的 preference，否则从 DB 读取已启用的 provider
+  const { readSettingsFromDb } = await import("../lib/settingsReader.js");
   const providerKeys = new Map<string, string>();
+  const preference = request.providerPreference && request.providerPreference.length > 0
+    ? request.providerPreference
+    : (await readSettingsFromDb()).providerPreference ?? [];
   if (request.llmApiKey) {
-    // Frontend sent a single LLM key — use it for the first available provider in the registry
-    for (const pid of request.providerPreference) {
+    for (const pid of preference) {
       if (registry.get(pid)) {
         providerKeys.set(pid, request.llmApiKey);
         break;
       }
     }
   }
-  // Fall back to server keyStore for remaining providers
-  for (const pid of request.providerPreference) {
+  for (const pid of preference) {
     if (!providerKeys.has(pid)) {
       const key = getApiKey(pid);
       if (key) providerKeys.set(pid, key);
     }
   }
-  const availableProviders = request.providerPreference.filter((p) => providerKeys.has(p));
+  const availableProviders = preference.filter((p) => providerKeys.has(p));
   if (availableProviders.length === 0) {
     res.status(400).json({
       ok: false,
@@ -151,7 +152,7 @@ searchRouter.post("/search-references", async (req, res) => {
         agent: "reference-search",
         caseId: request.caseId,
         providerId: refFirstProvider ?? "",
-        modelId: request.modelId,
+        modelId: request.modelId ?? "",
         searchProvider: searchProviderId,
         rerankerType: "",
         embeddingModel: "",
@@ -205,7 +206,7 @@ searchRouter.post("/search-references", async (req, res) => {
     if (!apiKey) throw new Error(`No API key for provider ${refFirstProvider}`);
 
     const extractReq: ChatRequest = {
-      modelId: request.modelId,
+      modelId: request.modelId ?? "",
       messages: [{ role: "user", content: extractPrompt }],
       maxTokens: 8192,
       apiKey,
@@ -313,7 +314,7 @@ searchRouter.post("/search-references", async (req, res) => {
         );
         
         const translateReq: ChatRequest = {
-          modelId: request.modelId,
+          modelId: request.modelId ?? "",
           messages: [{ role: "user", content: translatePrompt }],
           maxTokens: 4096,
           apiKey,
@@ -441,7 +442,7 @@ searchRouter.post("/search-references", async (req, res) => {
     );
 
     const filterReq: ChatRequest = {
-      modelId: request.modelId,
+      modelId: request.modelId ?? "",
       messages: [{ role: "user", content: filterPrompt }],
       maxTokens: 8192,
       apiKey,
@@ -624,8 +625,8 @@ const extractTermsSchema = z.object({
   caseId: z.string(),
   claimText: z.string().min(1),
   features: z.array(z.object({ featureCode: z.string(), description: z.string() })),
-  providerPreference: z.array(z.string()).optional().default(["gemini", "mimo"]),
-  modelId: z.string().optional().default("gemini-2.5-flash-lite"),
+  providerPreference: z.array(z.string()).optional(),
+  modelId: z.string().optional(),
   llmApiKey: z.string().optional(),
   mock: z.boolean().optional(),
   modelFallbacks: z.record(z.string(), z.array(z.string())).optional(),
@@ -664,23 +665,27 @@ searchRouter.post("/extract-search-terms", async (req, res) => {
   // SSRF protection
   validateProviderBaseUrls(request.providerBaseUrls as Record<string, string> | undefined);
 
-  // Resolve LLM provider
+  // Resolve LLM provider — 优先用请求中的 preference，否则从 DB 读取已启用的 provider
+  const { readSettingsFromDb } = await import("../lib/settingsReader.js");
   const providerKeys = new Map<string, string>();
+  const preference = request.providerPreference && request.providerPreference.length > 0
+    ? request.providerPreference
+    : (await readSettingsFromDb()).providerPreference ?? [];
   if (request.llmApiKey) {
-    for (const pid of request.providerPreference) {
+    for (const pid of preference) {
       if (registry.get(pid)) {
         providerKeys.set(pid, request.llmApiKey);
         break;
       }
     }
   }
-  for (const pid of request.providerPreference) {
+  for (const pid of preference) {
     if (!providerKeys.has(pid)) {
       const key = getApiKey(pid);
       if (key) providerKeys.set(pid, key);
     }
   }
-  const availableProviders = request.providerPreference.filter((p) => providerKeys.has(p));
+  const availableProviders = preference.filter((p) => providerKeys.has(p));
   if (availableProviders.length === 0) {
     res.status(400).json({
       ok: false,
@@ -722,7 +727,7 @@ searchRouter.post("/extract-search-terms", async (req, res) => {
     if (!apiKey) throw new Error(`No API key for provider ${firstProvider}`);
 
     const extractReq: ChatRequest = {
-      modelId: request.modelId,
+      modelId: request.modelId ?? "",
       messages: [{ role: "user", content: extractPrompt }],
       maxTokens: 8192,
       apiKey,
@@ -820,8 +825,8 @@ const searchWithTermsSchema = z.object({
   searchBaseUrl: z.string().optional(),
   llmApiKey: z.string().optional(),
   mock: z.boolean().optional(),
-  providerPreference: z.array(z.string()).optional().default(["gemini", "mimo"]),
-  modelId: z.string().optional().default("gemini-2.5-flash-lite"),
+  providerPreference: z.array(z.string()).optional(),
+  modelId: z.string().optional(),
   modelFallbacks: z.record(z.string(), z.array(z.string())).optional(),
   enableModelFallback: z.record(z.string(), z.boolean()).optional(),
   providerBaseUrls: z.record(z.string(), z.string()).optional()
@@ -887,23 +892,27 @@ searchRouter.post("/search-with-terms", async (req, res) => {
     return;
   }
 
-  // Resolve LLM provider
+  // Resolve LLM provider — 优先用请求中的 preference，否则从 DB 读取已启用的 provider
+  const { readSettingsFromDb: readSettings } = await import("../lib/settingsReader.js");
   const providerKeys = new Map<string, string>();
+  const preference = request.providerPreference && request.providerPreference.length > 0
+    ? request.providerPreference
+    : (await readSettings()).providerPreference ?? [];
   if (request.llmApiKey) {
-    for (const pid of request.providerPreference) {
+    for (const pid of preference) {
       if (registry.get(pid)) {
         providerKeys.set(pid, request.llmApiKey);
         break;
       }
     }
   }
-  for (const pid of request.providerPreference) {
+  for (const pid of preference) {
     if (!providerKeys.has(pid)) {
       const key = getApiKey(pid);
       if (key) providerKeys.set(pid, key);
     }
   }
-  const availableProviders = request.providerPreference.filter((p) => providerKeys.has(p));
+  const availableProviders = preference.filter((p) => providerKeys.has(p));
   if (availableProviders.length === 0) {
     res.status(400).json({
       ok: false,
@@ -936,7 +945,7 @@ searchRouter.post("/search-with-terms", async (req, res) => {
         agent: "reference-search",
         caseId: request.caseId,
         providerId: firstProvider ?? "",
-        modelId: request.modelId,
+        modelId: request.modelId ?? "",
         searchProvider: searchProviderId,
         rerankerType: "",
         embeddingModel: "",
@@ -984,7 +993,7 @@ searchRouter.post("/search-with-terms", async (req, res) => {
           `输出 JSON: {"translations":["词1","词2",...]}`
         );
         const translateReq: ChatRequest = {
-          modelId: request.modelId,
+          modelId: request.modelId ?? "",
           messages: [{ role: "user", content: translatePrompt }],
           maxTokens: 4096,
           apiKey,
@@ -1103,7 +1112,7 @@ searchRouter.post("/search-with-terms", async (req, res) => {
     const apiKey = providerKeys.get(firstProvider);
     if (!apiKey) throw new Error(`No API key for provider ${firstProvider}`);
     const filterReq: ChatRequest = {
-      modelId: request.modelId,
+      modelId: request.modelId ?? "",
       messages: [{ role: "user", content: filterPrompt }],
       maxTokens: 8192,
       apiKey,

@@ -117,7 +117,7 @@ async function main(): Promise<void> {
           isError: true,
         };
       }
-      stderrLog(`web_search called: query="${query}", max_results=${max_results}`);
+      stderrLog(`web_search called: provider=serper, baseUrl=${config.baseUrl}, query="${query}", max_results=${max_results}`);
       try {
         const results = await searchSerper(query, max_results ?? 5, config.apiKey, config.baseUrl);
 
