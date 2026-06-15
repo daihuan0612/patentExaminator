@@ -21,21 +21,17 @@ function localISO(): string {
 }
 import { logger } from "./logger.js";
 import type { AgentRunRequest, AgentRunResponse } from "./orchestrator.js";
-import type { RelevanceGrade, SourceType, ExpectedSource } from "../../../shared/src/types/metrics.js";
-import { getChunksByIds } from "./knowledgeDb.js";
+import type { SourceType, ExpectedSource } from "../../../shared/src/types/metrics.js";
 import {
-  computeNDCGChunkLevel,
-  computeRecallChunkLevel,
-  computeKBHitRate,
-  computeFaithfulnessMultiJudge,
-  computeAnswerCorrectness,
-  computeFactCoverage,
+  computeRetrievalMetricsBatch,
+  computeSemanticMetricsBatch,
   computeArticleAccuracy,
   computeSourceRoutingAccuracy,
   computeSourceAttributionAccuracy,
   computeConflictResolution,
   computeRefusalAccuracy,
 } from "./evalMetrics.js";
+import type { MultiJudgeResult } from "./multiJudge.js";
 
 // ── Type definitions ──────────────────────────────────────
 
@@ -53,8 +49,9 @@ export interface EvalResult {
   query: string;
   configLabel: string;
   // Chunk-level retrieval metrics（统一用 chunk-level，不再计算 file-level）
-  recallAtK: number;          // chunk-level recall（基于 relevanceGrading）
-  ndcgAtK: number;            // chunk-level NDCG（基于 relevanceGrading）
+  // kb_only 题目有值，其他类型为 undefined（不计入均值）
+  recallAtK: number | undefined;  // chunk-level recall（实时 LLM judge 评估）
+  ndcgAtK: number | undefined;    // chunk-level NDCG（实时 LLM judge 评估）
   // Generation metrics
   faithfulness: number;       // LLM-as-judge 0-1
   // Performance
@@ -71,8 +68,8 @@ export interface EvalResult {
   sourceRoutingAccuracy: number;
   sourceAttributionAccuracy: number;
   conflictResolution: number;
-  refusalAccuracy: number;
-  kbHitRate: number;
+  refusalAccuracy: number | undefined;
+  kbHitRate: number | undefined;
 }
 
 export interface EvalReport {
@@ -114,8 +111,8 @@ interface GoldenQuestion {
   expectedSource: ExpectedSource;
   sourceRoutingRationale: string;
   mustIncludeFacts: string[];
-  relevanceGrading: RelevanceGrade[];
   verifiedBy: string;
+  contextChunkIds?: string[];  // 调试用
 }
 
 // ── Golden set loading ────────────────────────────────────
@@ -128,7 +125,7 @@ export function loadGoldenSet(): GoldenQuestion[] {
   const rows = db.prepare(
     `SELECT id, agent, query, expected_answer, expected_sources, expected_articles,
             category, difficulty, source_type, expected_source, source_routing_rationale,
-            must_include_facts, relevance_grading, verified_by
+            must_include_facts, verified_by, context_chunk_ids
      FROM metrics_golden_set
      ORDER BY category, id`
   ).all() as Array<{
@@ -144,8 +141,8 @@ export function loadGoldenSet(): GoldenQuestion[] {
     expected_source: string;
     source_routing_rationale: string;
     must_include_facts: string;
-    relevance_grading: string;
     verified_by: string;
+    context_chunk_ids: string;
   }>;
 
   return rows.map((r) => ({
@@ -161,8 +158,8 @@ export function loadGoldenSet(): GoldenQuestion[] {
     expectedSource: (r.expected_source || "kb") as ExpectedSource,
     sourceRoutingRationale: r.source_routing_rationale || "",
     mustIncludeFacts: parseJsonArray(r.must_include_facts),
-    relevanceGrading: parseJsonSafe<RelevanceGrade[]>(r.relevance_grading, []),
     verifiedBy: r.verified_by || "auto",
+    contextChunkIds: parseJsonArray(r.context_chunk_ids),
   }));
 }
 
@@ -195,12 +192,16 @@ export async function runEvaluation(
   configs: EvalConfig[],
   options?: {
     maxConcurrency?: number;
+    /** 批次间延迟（毫秒），避免触发 provider rate limit */
+    batchDelayMs?: number;
     agentFilter?: string;
     /** 每个 judge provider 的 API key（MiMo/DeepSeek/Gemini 各自独立） */
     judgeApiKeys?: Record<string, string>;
   }
 ): Promise<EvalReport> {
   const maxConcurrency = options?.maxConcurrency ?? 3;
+  const batchDelayMs = options?.batchDelayMs ?? 5000;
+  const judgeApiKeys = options?.judgeApiKeys ?? {};
 
   // Load golden set
   let questions = loadGoldenSet();
@@ -238,16 +239,186 @@ export async function runEvaluation(
   for (const config of configs) {
     logger.info(`[EvalRunner] Running config: "${config.label}" (provider=${config.providerId}, model=${config.modelId})`);
 
-    // Process questions with concurrency control
+    // Phase 1: 批量 RAG 生成（已有并发控制）
+    const ragResults = new Map<string, {
+      question: GoldenQuestion;
+      response: AgentRunResponse;
+      durationMs: number;
+    }>();
+
     const chunks = chunkArray(questions, maxConcurrency);
     for (const batch of chunks) {
-      const evalOpts = {
-        judgeApiKeys: options?.judgeApiKeys ?? {},
+      const batchPromises = batch.map(async (question) => {
+        const startMs = Date.now();
+        try {
+          const agentReq = buildAgentRequest(question, config);
+          const { runAgent } = await import("./orchestrator.js");
+          const response = await runAgent(agentReq);
+          const durationMs = Date.now() - startMs;
+          return { question, response, durationMs };
+        } catch (err) {
+          const durationMs = Date.now() - startMs;
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          return { question, response: { ok: false, error: { message: errorMsg } } as AgentRunResponse, durationMs };
+        }
+      });
+
+      const batchResults = await Promise.all(batchPromises);
+      for (const r of batchResults) {
+        ragResults.set(r.question.id, r);
+      }
+
+      // 批次间延迟，避免触发 provider rate limit
+      if (batchDelayMs > 0) {
+        logger.info(`[EvalRunner] Batch done, waiting ${batchDelayMs}ms before next batch...`);
+        await new Promise(resolve => setTimeout(resolve, batchDelayMs));
+      }
+    }
+
+    // Phase 2: 批量检索指标评估（所有题目，包括 KB chunks 和 web search results）
+    const retrievalBatchData: Array<{
+      questionId: string;
+      query: string;
+      chunks: Array<{ id: string; text?: string }>;
+    }> = [];
+
+    for (const q of questions) {
+      const ragResult = ragResults.get(q.id);
+      if (ragResult?.response.ok) {
+        // 提取所有 citations（KB chunks + web search results）
+        const chunks = extractRetrievedChunks(ragResult.response);
+        if (chunks.length > 0) {
+          retrievalBatchData.push({ questionId: q.id, query: q.query, chunks });
+        }
+      }
+    }
+
+    // 一次性评估所有题目的检索指标
+    const retrievalMetricsMap = retrievalBatchData.length > 0
+      ? await computeRetrievalMetricsBatch(retrievalBatchData, judgeApiKeys, 10)
+      : new Map();
+
+    // Phase 3: 批量语义指标评估（分批，每批 7 题）
+    const semanticBatchSize = 7;
+    const semanticMetricsMap = new Map<string, {
+      faithfulness: MultiJudgeResult<number>;
+      answerCorrectness: MultiJudgeResult<number>;
+      factCoverage: MultiJudgeResult<number>;
+    }>();
+
+    for (let i = 0; i < questions.length; i += semanticBatchSize) {
+      const batchQuestions = questions.slice(i, i + semanticBatchSize);
+      const batchData: Array<{
+        questionId: string;
+        answer: string;
+        context: string;
+        expectedAnswer?: string;
+        mustIncludeFacts?: string[];
+      }> = [];
+
+      for (const q of batchQuestions) {
+        const ragResult = ragResults.get(q.id);
+        if (ragResult?.response.ok) {
+          const answer = extractAnswer(ragResult.response);
+          const sources = extractSources(ragResult.response);
+          batchData.push({
+            questionId: q.id,
+            answer,
+            context: sources.join("\n"),
+            expectedAnswer: q.expectedAnswer,
+            mustIncludeFacts: q.mustIncludeFacts.length > 0 ? q.mustIncludeFacts : undefined,
+          });
+        }
+      }
+
+      if (batchData.length > 0) {
+        const batchResults = await computeSemanticMetricsBatch(batchData, judgeApiKeys);
+        for (const [id, metrics] of batchResults) {
+          semanticMetricsMap.set(id, metrics);
+        }
+      }
+    }
+
+    // Phase 4: 组装最终结果
+    for (const question of questions) {
+      const ragResult = ragResults.get(question.id);
+      if (!ragResult) continue;
+
+      const { response, durationMs } = ragResult;
+
+      if (!response.ok) {
+        const result = buildErrorResult(question, config, durationMs, response.error?.message);
+        saveSingleResult(result, runId, config);
+        allResults.push(result);
+        continue;
+      }
+
+      const actualAnswer = extractAnswer(response);
+      const actualSources = extractSources(response);
+
+      // 获取预计算的指标
+      const retrievalMetrics = retrievalMetricsMap.get(question.id);
+      const semanticMetrics = semanticMetricsMap.get(question.id);
+
+      const recallAtK = retrievalMetrics?.recall;
+      const ndcgAtK = retrievalMetrics?.ndcg;
+      const kbHitRate = question.sourceType === "kb_only" ? recallAtK : undefined;
+
+      const faithfulness = semanticMetrics?.faithfulness.aggregated ?? 0;
+      const answerCorrectness = semanticMetrics?.answerCorrectness.aggregated ?? 0;
+      const factCoverage = semanticMetrics?.factCoverage.aggregated ?? 0;
+
+      // 确定性指标（不需要 LLM）
+      const articleAccuracy = computeArticleAccuracy(actualAnswer, question.expectedArticles);
+      const actualSourceFlags = {
+        kb: response.knowledgeCitations ? response.knowledgeCitations.length > 0 : false,
+        web: response.webSearchCitations ? response.webSearchCitations.length > 0 : false,
       };
-      const batchResults = await Promise.all(
-        batch.map((q) => runSingleEvaluation(q, config, runId, evalOpts))
+      const sourceRoutingAccuracy = computeSourceRoutingAccuracy(question.expectedSource, actualSourceFlags);
+
+      const allCandidateSources = [...new Set([...question.expectedSources, ...actualSources])];
+      const citedSources = extractCitedSourcesFromAnswer(actualAnswer, allCandidateSources);
+      const sourceAttributionAccuracy = computeSourceAttributionAccuracy(citedSources, actualSources);
+
+      const conflictResolution = computeConflictResolution(
+        question.sourceType, question.expectedSource,
+        actualSourceFlags.kb && actualSourceFlags.web ? "mixed" : actualSourceFlags.kb ? "kb" : "web"
       );
-      allResults.push(...batchResults);
+
+      // Refusal Accuracy 单独调用（仅 no_answer 题需要）
+      let refusalAccuracy: number | undefined;
+      if (question.sourceType === "no_answer" && actualAnswer.trim().length > 0) {
+        const refusalResult = await computeRefusalAccuracy(question.sourceType, actualAnswer, judgeApiKeys);
+        refusalAccuracy = refusalResult.aggregated;
+      }
+
+      const result: EvalResult = {
+        goldenId: question.id,
+        query: question.query,
+        configLabel: config.label,
+        recallAtK,
+        ndcgAtK,
+        faithfulness,
+        durationMs,
+        actualAnswer: actualAnswer.slice(0, 2000),
+        actualSources,
+        answerCorrectness,
+        factCoverage,
+        articleAccuracy,
+        sourceRoutingAccuracy,
+        sourceAttributionAccuracy,
+        conflictResolution,
+        refusalAccuracy,
+        kbHitRate,
+      };
+
+      saveSingleResult(result, runId, config);
+      allResults.push(result);
+
+      const recallStr = recallAtK !== undefined ? recallAtK.toFixed(2) : "N/A";
+      const ndcgStr = ndcgAtK !== undefined ? ndcgAtK.toFixed(2) : "N/A";
+      const status = response.ok ? "OK" : "MISS";
+      logger.info(`[EvalRunner]   Q=${question.id} ${status}: recall=${recallStr} ndcg=${ndcgStr} faith=${faithfulness.toFixed(2)} ${durationMs}ms`);
     }
   }
 
@@ -259,158 +430,6 @@ export async function runEvaluation(
 
   logger.info(`[EvalRunner] Evaluation complete: ${allResults.length} results, report=${report.runId}`);
   return report;
-}
-
-// ── Single question evaluation ────────────────────────────
-
-async function runSingleEvaluation(
-  question: GoldenQuestion,
-  config: EvalConfig,
-  runId: string,
-  opts: {
-    judgeApiKeys: Record<string, string>;
-  }
-): Promise<EvalResult> {
-  const startMs = Date.now();
-
-  try {
-    // Build the agent request — 只传 question，orchestrator 自动读取 production 配置
-    const agentReq = buildAgentRequest(question, config);
-    logger.info(`[EvalRunner]   Q=${question.id} config="${config.label}" agent=${question.agent}`);
-
-    // Call the actual RAG pipeline
-    const { runAgent } = await import("./orchestrator.js");
-    const response = await runAgent(agentReq);
-
-    const durationMs = Date.now() - startMs;
-
-    if (!response.ok) {
-      logger.warn(`[EvalRunner]   Q=${question.id} failed: ${response.error?.message}`);
-      const result = buildErrorResult(question, config, durationMs, response.error?.message);
-      saveSingleResult(result, runId, config);
-      return result;
-    }
-
-    // Extract answer and sources from response
-    const actualAnswer = extractAnswer(response);
-    const actualSources = extractSources(response);
-
-    // ── nf5: chunk 级检索指标（统一用 chunk-level，不再计算 file-level） ──
-    const retrievedChunks = extractRetrievedChunks(response);
-
-    // 构建 graded chunk ID → text 映射，用于内容相似度 fallback matching
-    const gradedChunkTexts = new Map<string, string>();
-    if (question.relevanceGrading.length > 0) {
-      const gradedIds = question.relevanceGrading.map(g => g.chunkId).filter(Boolean);
-      if (gradedIds.length > 0) {
-        try {
-          const chunks = getChunksByIds(gradedIds);
-          for (const c of chunks) gradedChunkTexts.set(c.id, c.text);
-        } catch (e) {
-          logger.warn(`[EvalRunner] Failed to load graded chunk texts: ${e}`);
-        }
-      }
-    }
-
-    const recallAtK = question.relevanceGrading.length > 0
-      ? computeRecallChunkLevel(retrievedChunks, question.relevanceGrading, 10, 2, gradedChunkTexts)
-      : 0;
-    const ndcgAtK = question.relevanceGrading.length > 0
-      ? computeNDCGChunkLevel(retrievedChunks, question.relevanceGrading, 10, gradedChunkTexts)
-      : 0;
-    const kbHitRate = question.relevanceGrading.length > 0
-      ? computeKBHitRate(retrievedChunks, question.relevanceGrading, 10, gradedChunkTexts)
-      : 0;
-
-    // ── nf5: 多 Judge 生成质量指标（并行执行）──
-    const context = actualSources.join("\n");
-    // 4 个 judge 指标并行执行（互不依赖，串行浪费 ~60s/题）
-    const [faithfulnessResult, acResult, fcResult, refusalResult] = await Promise.all([
-      computeFaithfulnessMultiJudge(actualAnswer, context, opts.judgeApiKeys),
-      question.expectedAnswer
-        ? computeAnswerCorrectness(actualAnswer, question.expectedAnswer, opts.judgeApiKeys)
-        : Promise.resolve({ aggregated: 0, judges: [] }),
-      question.mustIncludeFacts.length > 0
-        ? computeFactCoverage(actualAnswer, question.mustIncludeFacts, opts.judgeApiKeys)
-        : Promise.resolve({ aggregated: 0, judges: [] }),
-      computeRefusalAccuracy(question.sourceType, actualAnswer, opts.judgeApiKeys),
-    ]);
-    const faithfulness = faithfulnessResult.aggregated;
-    const answerCorrectness = acResult.aggregated;
-    const factCoverage = fcResult.aggregated;
-    const refusalAccuracy = refusalResult.aggregated;
-
-    // 诊断日志：每个 judge 指标的聚合详情
-    const judgeResults: Array<[string, { aggregated: number; individualResults?: Array<{ providerId: string; value: number; success: boolean }>; judgeCount?: number }]> = [
-      ["faithfulness", faithfulnessResult],
-      ["answerCorrectness", acResult],
-      ["factCoverage", fcResult],
-      ["refusalAccuracy", refusalResult],
-    ];
-    for (const [name, res] of judgeResults) {
-      const judges = res.individualResults?.map((r: { providerId: string; value: number; success: boolean }) => `${r.providerId}=${r.value}(${r.success ? "ok" : "fail"})`).join(", ") ?? "skipped";
-      logger.info(`[EvalRunner]   ${name}: aggregated=${res.aggregated}, judges=[${judges}], count=${res.judgeCount ?? 0}`);
-    }
-
-    // ── nf5: 确定性指标 ──
-    const articleAccuracy = computeArticleAccuracy(actualAnswer, question.expectedArticles);
-
-    const actualSourceFlags = {
-      kb: response.knowledgeCitations ? response.knowledgeCitations.length > 0 : false,
-      web: response.webSearchCitations ? response.webSearchCitations.length > 0 : false,
-    };
-    const sourceRoutingAccuracy = computeSourceRoutingAccuracy(
-      question.expectedSource, actualSourceFlags
-    );
-
-    // Issue 1 修复：从答案文本中提取引用的来源，与实际检索到的来源对比
-    const allCandidateSources = [...new Set([...question.expectedSources, ...actualSources])];
-    const citedSources = extractCitedSourcesFromAnswer(actualAnswer, allCandidateSources);
-    const sourceAttributionAccuracy = computeSourceAttributionAccuracy(
-      citedSources, actualSources
-    );
-
-    const conflictResolution = computeConflictResolution(
-      question.sourceType, question.expectedSource,
-      actualSourceFlags.kb && actualSourceFlags.web ? "mixed" :
-        actualSourceFlags.kb ? "kb" : "web"
-    );
-
-    const result: EvalResult = {
-      goldenId: question.id,
-      query: question.query,
-      configLabel: config.label,
-      recallAtK,
-      ndcgAtK,
-      faithfulness,
-      durationMs,
-      actualAnswer: actualAnswer.slice(0, 2000),
-      actualSources,
-      answerCorrectness,
-      factCoverage,
-      articleAccuracy,
-      sourceRoutingAccuracy,
-      sourceAttributionAccuracy,
-      conflictResolution,
-      refusalAccuracy,
-      kbHitRate,
-    };
-
-    saveSingleResult(result, runId, config);
-
-    const status = recallAtK > 0 ? "OK" : "MISS";
-    logger.info(`[EvalRunner]   Q=${question.id} ${status}: recall=${recallAtK.toFixed(2)} ndcg=${ndcgAtK.toFixed(2)} faith=${faithfulness.toFixed(2)} ${durationMs}ms`);
-
-    return result;
-  } catch (err) {
-    const durationMs = Date.now() - startMs;
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    logger.warn(`[EvalRunner]   Q=${question.id} error: ${errorMsg}`);
-
-    const result = buildErrorResult(question, config, durationMs, errorMsg);
-    saveSingleResult(result, runId, config);
-    return result;
-  }
 }
 
 // ── Report building ───────────────────────────────────────
@@ -427,8 +446,8 @@ function buildReport(
 
     return {
       label: config.label,
-      avgRecall: avg(successResults.map((r) => r.recallAtK)),
-      avgNdcg: avg(successResults.map((r) => r.ndcgAtK)),
+      avgRecall: avg(successResults.map((r) => r.recallAtK).filter((v): v is number => v !== undefined)),
+      avgNdcg: avg(successResults.map((r) => r.ndcgAtK).filter((v): v is number => v !== undefined)),
       avgFaithfulness: avg(successResults.map((r) => r.faithfulness)),
       avgDurationMs: avg(configResults.map((r) => r.durationMs)),
       passRate: configResults.length > 0
@@ -438,7 +457,7 @@ function buildReport(
       avgFactCoverage: avg(successResults.map((r) => r.factCoverage)),
       avgArticleAccuracy: avg(successResults.map((r) => r.articleAccuracy)),
       avgSourceRoutingAccuracy: avg(successResults.map((r) => r.sourceRoutingAccuracy)),
-      avgKbHitRate: avg(successResults.map((r) => r.kbHitRate)),
+      avgKbHitRate: avg(successResults.map((r) => r.kbHitRate).filter((v): v is number => v !== undefined)),
     };
   });
 
@@ -612,8 +631,8 @@ export function getReports(): EvalReport[] {
       const successResults = configResults.filter((r) => !r.error);
       return {
         label,
-        avgRecall: avg(successResults.map((r) => r.recallAtK)),
-        avgNdcg: avg(successResults.map((r) => r.ndcgAtK)),
+        avgRecall: avg(successResults.map((r) => r.recallAtK).filter((v): v is number => v !== undefined)),
+        avgNdcg: avg(successResults.map((r) => r.ndcgAtK).filter((v): v is number => v !== undefined)),
         avgFaithfulness: avg(successResults.map((r) => r.faithfulness)),
         avgDurationMs: avg(configResults.map((r) => r.durationMs)),
         passRate: configResults.length > 0
@@ -623,7 +642,7 @@ export function getReports(): EvalReport[] {
         avgFactCoverage: avg(successResults.map((r) => r.factCoverage)),
         avgArticleAccuracy: avg(successResults.map((r) => r.articleAccuracy)),
         avgSourceRoutingAccuracy: avg(successResults.map((r) => r.sourceRoutingAccuracy)),
-        avgKbHitRate: avg(successResults.map((r) => r.kbHitRate)),
+        avgKbHitRate: avg(successResults.map((r) => r.kbHitRate).filter((v): v is number => v !== undefined)),
       };
     });
 

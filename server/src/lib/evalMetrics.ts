@@ -2,7 +2,7 @@
  * 离线评估指标计算模块（nf5）
  *
  * 实现 golden-set-spec.md §5 定义的全部指标：
- * - 检索质量：NDCG@K（chunk 级）、Recall@K、KB Hit Rate
+ * - 检索质量：NDCG@K（chunk 级）、Recall@K、KB Hit Rate（实时 LLM judge 评估）
  * - 生成质量：Faithfulness、Answer Correctness、Fact Coverage（multi-judge）
  * - 确定性指标：Article Accuracy、Source Routing/Attribution Accuracy
  * - 跨源特有：Conflict Resolution、Refusal Accuracy
@@ -15,131 +15,155 @@ import {
   type MultiJudgeResult,
 } from "./multiJudge.js";
 import { logger } from "./logger.js";
-import type { RelevanceGrade, SourceType, ExpectedSource } from "../../../shared/src/types/metrics.js";
+import type { SourceType, ExpectedSource } from "../../../shared/src/types/metrics.js";
 
-// ── 检索质量指标（chunk 级，基于 relevance grading） ──
-
-/**
- * NDCG@K — 位置感知的排序质量（chunk 级 graded relevance）
- *
- * 公式：DCG@K / IDCG@K
- * DCG@K = Σᵢ₌₁ᴷ (2^relᵢ - 1) / log₂(i + 1)
- *
- * @param retrievedChunks - 检索到的 chunk 列表（按排序顺序）
- * @param relevanceGrading - golden set 中的 chunk 级 relevance grading
- * @param k - top-K（默认 5）
- */
-export function computeNDCGChunkLevel(
-  retrievedChunks: Array<{ id: string; text?: string }>,
-  relevanceGrading: RelevanceGrade[],
-  k: number = 5,
-  gradedChunkTexts?: Map<string, string>,
-): number {
-  if (relevanceGrading.length === 0) return 1;
-  const topK = retrievedChunks.slice(0, k);
-
-  // 构建 chunkId → grade 映射
-  const gradeMap = new Map<string, number>();
-  for (const g of relevanceGrading) {
-    gradeMap.set(g.chunkId, g.grade);
-  }
-
-  // 为每个检索到的 chunk 分配 relevance
-  const relevances: number[] = topK.map((chunk) => {
-    // 1. 精确 ID 匹配
-    if (gradeMap.has(chunk.id)) return gradeMap.get(chunk.id)!;
-    // 2. 内容相似度 fallback：不同 chunk ID 但内容相同
-    if (chunk.text && gradedChunkTexts) {
-      let bestSim = 0;
-      let bestGrade = 0;
-      for (const [gid, grade] of gradeMap) {
-        const gtext = gradedChunkTexts.get(gid);
-        if (gtext) {
-          const sim = textSimilarity(chunk.text, gtext);
-          if (sim > bestSim) { bestSim = sim; bestGrade = grade; }
-        }
-      }
-      if (bestSim >= TEXT_SIM_THRESHOLD) return bestGrade;
-    }
-    return 0;
-  });
-
-  // DCG
-  let dcg = 0;
-  for (let i = 0; i < relevances.length; i++) {
-    dcg += (Math.pow(2, relevances[i]!) - 1) / Math.log2(i + 2);
-  }
-
-  // IDCG：按 grade 降序排列的理想 DCG
-  const idealGrades = relevanceGrading
-    .map((g) => g.grade)
-    .sort((a, b) => b - a)
-    .slice(0, k);
-  let idcg = 0;
-  for (let i = 0; i < idealGrades.length; i++) {
-    idcg += (Math.pow(2, idealGrades[i]!) - 1) / Math.log2(i + 2);
-  }
-
-  // Cap at 1.0: textSimilarity fallback 可能导致同一 golden chunk 被多个 retrieved chunk 匹配，
-  // 使 DCG 略超 IDCG。NDCG 理论上限是 1.0。
-  return idcg > 0 ? Math.min(1, dcg / idcg) : 0;
-}
+// ── 检索质量指标（chunk 级，实时 LLM judge 评估） ──
 
 /**
- * Recall@K — 检索覆盖率
+ * 批量评估多个题目的检索 chunk 相关性（0-3）
  *
- * 公式：relevant_in_topK / total_relevant
- * relevant = grade >= gradeThreshold（默认 2）
+ * 优化：把所有 kb_only 题目的 chunk 全部合并到 1 个 prompt，2 个 judge 并行评估。
+ * 原来：每题单独调用 → 5 题 × 2 judge = 10 次
+ * 优化后：所有 chunks 合并到 1 个 prompt → 2 次
  */
-export function computeRecallChunkLevel(
-  retrievedChunks: Array<{ id: string; text?: string }>,
-  relevanceGrading: RelevanceGrade[],
+export async function computeRetrievalMetricsBatch(
+  questions: Array<{
+    questionId: string;
+    query: string;
+    chunks: Array<{ id: string; text?: string }>;
+  }>,
+  judgeApiKeys: Record<string, string>,
   k: number = 10,
-  gradeThreshold: number = 2,
-  gradedChunkTexts?: Map<string, string>,
-): number {
-  if (relevanceGrading.length === 0) return 1;
-  const topK = retrievedChunks.slice(0, k);
+): Promise<Map<string, { ndcg: number; recall: number; grades: Array<{ chunkId: string; grade: number }> }>> {
+  const result = new Map<string, { ndcg: number; recall: number; grades: Array<{ chunkId: string; grade: number }> }>();
 
-  const relevantGrades = relevanceGrading.filter((g) => g.grade >= gradeThreshold);
-  if (relevantGrades.length === 0) return 1;
+  if (questions.length === 0) return result;
 
-  const gradeMap = new Map<string, number>();
-  for (const g of relevantGrades) {
-    gradeMap.set(g.chunkId, g.grade);
-  }
+  // 构建合并 prompt：一次评估所有题目的所有 chunk
+  const allChunksParts: string[] = [];
+  const chunkIndexMap: Array<{ questionId: string; chunkId: string; index: number }> = [];
 
-  let found = 0;
-  for (const chunk of topK) {
-    // 1. 精确 ID 匹配
-    if (gradeMap.has(chunk.id)) { found++; continue; }
-    // 2. 内容相似度 fallback
-    if (chunk.text && gradedChunkTexts) {
-      for (const [gid, _grade] of gradeMap) {
-        const gtext = gradedChunkTexts.get(gid);
-        if (gtext && textSimilarity(chunk.text, gtext) >= TEXT_SIM_THRESHOLD) {
-          found++;
-          break;
-        }
-      }
+  for (const q of questions) {
+    const topK = q.chunks.slice(0, k);
+    if (topK.length === 0) continue;
+
+    allChunksParts.push(`## 问题：${q.query}`);
+    for (const chunk of topK) {
+      const text = chunk.text?.slice(0, 300) || "";
+      const globalIndex = chunkIndexMap.length;
+      allChunksParts.push(`### Chunk ${globalIndex + 1} (ID: ${chunk.id}, Question: ${q.questionId})\n${text}`);
+      chunkIndexMap.push({ questionId: q.questionId, chunkId: chunk.id, index: globalIndex });
     }
   }
 
-  return found / relevantGrades.length;
+  if (chunkIndexMap.length === 0) return result;
+
+  const system = "你是专利复审领域的评估专家。请判断每个文本片段与问题的相关程度。只输出 JSON，不要输出其他内容。";
+  const user = `${allChunksParts.join("\n\n")}
+
+请对每个 chunk 判断相关程度，输出 JSON 数组：
+{"grades": [{"chunkId": "chunk_id", "grade": 0|1|2|3, "rationale": "打分理由"}, ...]}
+
+评分标准：
+- 0分：完全不相关，内容与问题无关
+- 1分：边际相关，提及了相关主题但不直接回答问题
+- 2分：部分相关，包含回答问题所需的部分信息
+- 3分：高度相关，直接且完整地回答了问题
+
+必须为每个 chunk 输出一个 grade，数量必须等于 ${chunkIndexMap.length}。`;
+
+  // 2 个 judge 并行评估
+  const { callMultiJudge } = await import("./multiJudge.js");
+  const outputs = await callMultiJudge(
+    { system, user },
+    judgeApiKeys,
+    { temperature: 0, maxTokens: 4000 },
+  );
+
+  // 解析每个 judge 的结果
+  const judgeGrades: Array<Array<{ chunkId: string; grade: number }>> = [];
+
+  for (const output of outputs) {
+    if (!output.success || !output.rawText) continue;
+
+    try {
+      const match = output.rawText.match(/\{[^}]*"grades"\s*:\s*\[([\s\S]*?)\][^}]*\}/);
+      if (match) {
+        const gradesStr = match[1]!;
+        const grades = JSON.parse(`[${gradesStr}]`);
+        if (Array.isArray(grades) && grades.length === chunkIndexMap.length) {
+          judgeGrades.push(grades.map((g: { chunkId: string; grade: number }) => ({
+            chunkId: g.chunkId,
+            grade: Math.max(0, Math.min(3, g.grade || 0)),
+          })));
+        }
+      }
+    } catch (e) {
+      logger.warn(`[EvalMetrics] Failed to parse judge output: ${e}`);
+    }
+  }
+
+  // 聚合结果：多个 judge 取平均
+  const aggregatedGrades: Array<{ chunkId: string; grade: number }> = [];
+
+  if (judgeGrades.length > 0) {
+    for (let i = 0; i < chunkIndexMap.length; i++) {
+      const gradesForChunk = judgeGrades.map(jg => jg[i]?.grade ?? 0);
+      const avgGrade = gradesForChunk.reduce((a, b) => a + b, 0) / gradesForChunk.length;
+      aggregatedGrades.push({ chunkId: chunkIndexMap[i]!.chunkId, grade: Math.round(avgGrade) });
+    }
+  } else {
+    logger.warn(`[EvalMetrics] Batch chunk grading failed, all chunks graded 0`);
+    for (const item of chunkIndexMap) {
+      aggregatedGrades.push({ chunkId: item.chunkId, grade: 0 });
+    }
+  }
+
+  // 按 questionId 分组，计算每个题目的 NDCG 和 Recall
+  for (const q of questions) {
+    const topK = q.chunks.slice(0, k);
+    const questionGrades = aggregatedGrades
+      .filter(g => topK.some(c => c.id === g.chunkId))
+      .slice(0, k);
+
+    // 计算 NDCG
+    let dcg = 0;
+    for (let i = 0; i < questionGrades.length; i++) {
+      dcg += (Math.pow(2, questionGrades[i]!.grade) - 1) / Math.log2(i + 2);
+    }
+
+    let idcg = 0;
+    for (let i = 0; i < Math.min(k, questionGrades.length); i++) {
+      idcg += (Math.pow(2, 3) - 1) / Math.log2(i + 2);
+    }
+
+    const ndcg = idcg > 0 ? Math.min(1, dcg / idcg) : 0;
+
+    // 计算 Recall
+    const relevantInTopK = questionGrades.filter(g => g.grade >= 2).length;
+    const recall = questionGrades.length > 0 ? relevantInTopK / questionGrades.length : 0;
+
+    result.set(q.questionId, { ndcg, recall, grades: questionGrades });
+  }
+
+  return result;
 }
 
 /**
- * KB Hit Rate — KB 专属题的 Recall@K
+ * 单题检索指标评估（向后兼容）
  */
-export function computeKBHitRate(
+export async function computeRetrievalMetricsRealtime(
   retrievedChunks: Array<{ id: string; text?: string }>,
-  relevanceGrading: RelevanceGrade[],
+  query: string,
+  judgeApiKeys: Record<string, string>,
   k: number = 10,
-  gradedChunkTexts?: Map<string, string>,
-): number {
-  const kbGrades = relevanceGrading.filter((g) => g.source === "kb");
-  if (kbGrades.length === 0) return 1;
-  return computeRecallChunkLevel(retrievedChunks, kbGrades, k, 2, gradedChunkTexts);
+): Promise<{ ndcg: number; recall: number; grades: Array<{ chunkId: string; grade: number }> }> {
+  const results = await computeRetrievalMetricsBatch(
+    [{ questionId: "single", query, chunks: retrievedChunks }],
+    judgeApiKeys,
+    k,
+  );
+  return results.get("single") ?? { ndcg: 0, recall: 0, grades: [] };
 }
 
 // ── 生成质量指标（multi-judge） ──
@@ -646,9 +670,6 @@ export function textSimilarity(a: string, b: string): number {
   return union > 0 ? intersection / union : 0;
 }
 
-/** 文本相似度阈值：超过此值视为同一内容的不同 chunk */
-const TEXT_SIM_THRESHOLD = 0.4;
-
 /** Source name 归一化（去扩展名、折叠空白）— 用于 source attribution 匹配 */
 function normalizeDocId(docId: string): string {
   return docId
@@ -668,4 +689,347 @@ function fuzzyDocMatch(a: string, b: string): boolean {
   if (tokensB.length === 0) return false;
   const matched = tokensB.filter((t) => tokensA.has(t)).length;
   return matched / tokensB.length > 0.5;
+}
+
+// ── 合并指标函数（优化 LLM 调用次数） ──
+
+/**
+ * 合并评估 M5/M6/M7 三个语义指标（单次 LLM 调用）
+ *
+ * 优化：把 Faithfulness + Answer Correctness + Fact Coverage 合并到 1 个 prompt
+ * 原来：3 指标 × 2 providers = 6 次/题
+ * 优化后：1 prompt × 2 providers = 2 次/题
+ */
+export async function computeSemanticMetricsCombined(
+  answer: string,
+  context: string,
+  expectedAnswer: string | undefined,
+  mustIncludeFacts: string[],
+  judgeApiKeys: Record<string, string>,
+  judgeOpts?: { modelFallbacks?: Record<string, string[]>; enableModelFallback?: boolean }
+): Promise<{
+  faithfulness: MultiJudgeResult<number>;
+  answerCorrectness: MultiJudgeResult<number>;
+  factCoverage: MultiJudgeResult<number>;
+}> {
+  // 空答案处理
+  if (!answer) {
+    const emptyResult = { aggregated: 0, individualResults: [], judgeCount: 0 };
+    return { faithfulness: emptyResult, answerCorrectness: emptyResult, factCoverage: emptyResult };
+  }
+
+  const system = `你是专利复审评估专家。请一次性评估以下三个维度，输出 JSON。
+
+评估维度：
+1. **Faithfulness (0.0-1.0)**：回答是否忠实于参考文档，所有声明都有文档支撑
+2. **Answer Correctness (0.0-1.0)**：回答与参考答案的正确性（如有参考答案）
+3. **Fact Coverage (0.0-1.0)**：必须包含的关键事实点是否被覆盖（如有事实点）
+
+输出 JSON 格式：
+{
+  "faithfulness": {"score": 0.0-1.0, "reasoning": "理由"},
+  "answerCorrectness": {"score": 0.0-1.0, "reasoning": "理由"},
+  "factCoverage": {"score": 0.0-1.0, "reasoning": "理由", "covered_facts": ["事实点1", "事实点2"]}
+}
+
+评分标准：
+- Faithfulness: 1.0=完全忠实，0.0=严重幻觉
+- Answer Correctness: 1.0=完全正确，0.0=完全错误
+- Fact Coverage: score = 被覆盖的事实点数 / 总事实点数
+
+严格按 JSON 格式输出，不要输出 markdown 代码块。`;
+
+  // 构建 user prompt
+  const userParts = ["## 参考文档", context.slice(0, 6000)];
+
+  if (expectedAnswer) {
+    userParts.push("", "## 参考答案", expectedAnswer);
+  }
+
+  if (mustIncludeFacts.length > 0) {
+    const factsList = mustIncludeFacts.map((f, i) => `${i + 1}. ${f}`).join("\n");
+    userParts.push("", "## 必须包含的关键事实点", factsList);
+  }
+
+  userParts.push("", "## AI 生成的回答", answer.slice(0, 4000), "", "请一次性评估以上三个维度。");
+
+  const user = userParts.join("\n");
+
+  // 2 个 judge 并行评估
+  const result = await multiJudgeContinuous(
+    { system, user },
+    judgeApiKeys,
+    (rawText: string) => {
+      try {
+        const json = extractJsonFromLLM(rawText);
+        if (json && typeof json === "object") {
+          // 返回整个 JSON 对象，后续解析各维度分数
+          return json as unknown as number;
+        }
+      } catch {}
+      return null;
+    },
+    { defaultValue: 0, ...judgeOpts }
+  );
+
+  // 解析各维度分数
+  const parseResult = (json: Record<string, unknown> | null, field: string): number => {
+    if (!json) return 0;
+    const obj = json[field];
+    if (obj && typeof obj === "object" && "score" in obj) {
+      return Math.max(0, Math.min(1, (obj as { score: number }).score || 0));
+    }
+    return 0;
+  };
+
+  // 从 judge 结果中提取各维度分数
+  const individualResults = result.individualResults.map(r => {
+    if (r.success && r.value && typeof r.value === "object") {
+      const json = r.value as Record<string, unknown>;
+      return {
+        providerId: r.providerId,
+        value: json, // 保持原始 JSON
+        success: true,
+      };
+    }
+    return { providerId: r.providerId, value: null, success: false };
+  });
+
+  // 聚合各维度分数
+  const faithfulnessScores = individualResults
+    .filter(r => r.success && r.value)
+    .map(r => parseResult(r.value as Record<string, unknown>, "faithfulness"));
+  const acScores = individualResults
+    .filter(r => r.success && r.value)
+    .map(r => parseResult(r.value as Record<string, unknown>, "answerCorrectness"));
+  const fcScores = individualResults
+    .filter(r => r.success && r.value)
+    .map(r => parseResult(r.value as Record<string, unknown>, "factCoverage"));
+
+  const aggregateScores = (scores: number[]): number => {
+    if (scores.length === 0) return 0;
+    return scores.reduce((a, b) => a + b, 0) / scores.length;
+  };
+
+  return {
+    faithfulness: {
+      aggregated: aggregateScores(faithfulnessScores),
+      individualResults: individualResults.map(r => ({
+        providerId: r.providerId,
+        value: r.success ? parseResult(r.value as Record<string, unknown>, "faithfulness") : 0,
+        success: r.success,
+      })),
+      judgeCount: faithfulnessScores.length,
+    },
+    answerCorrectness: {
+      aggregated: aggregateScores(acScores),
+      individualResults: individualResults.map(r => ({
+        providerId: r.providerId,
+        value: r.success ? parseResult(r.value as Record<string, unknown>, "answerCorrectness") : 0,
+        success: r.success,
+      })),
+      judgeCount: acScores.length,
+    },
+    factCoverage: {
+      aggregated: aggregateScores(fcScores),
+      individualResults: individualResults.map(r => ({
+        providerId: r.providerId,
+        value: r.success ? parseResult(r.value as Record<string, unknown>, "factCoverage") : 0,
+        success: r.success,
+      })),
+      judgeCount: fcScores.length,
+    },
+  };
+}
+
+/**
+ * 批量评估多个题目的语义指标（M5/M6/M7）
+ *
+ * 优化：把多个题目合并到 1 个 prompt，2 个 judge 并行评估。
+ * 原来：每题单独调用 → 21 题 × 2 judge = 42 次
+ * 优化后：分 3 批（每批 7 题）→ 3 批 × 2 judge = 6 次
+ */
+export async function computeSemanticMetricsBatch(
+  questions: Array<{
+    questionId: string;
+    answer: string;
+    context: string;
+    expectedAnswer?: string;
+    mustIncludeFacts?: string[];
+  }>,
+  judgeApiKeys: Record<string, string>,
+  judgeOpts?: { modelFallbacks?: Record<string, string[]>; enableModelFallback?: boolean }
+): Promise<Map<string, {
+  faithfulness: MultiJudgeResult<number>;
+  answerCorrectness: MultiJudgeResult<number>;
+  factCoverage: MultiJudgeResult<number>;
+}>> {
+  const result = new Map<string, {
+    faithfulness: MultiJudgeResult<number>;
+    answerCorrectness: MultiJudgeResult<number>;
+    factCoverage: MultiJudgeResult<number>;
+  }>();
+
+  if (questions.length === 0) return result;
+
+  // 构建合并 prompt：一次评估多个题目
+  const system = `你是专利复审评估专家。请一次性评估多个题目的三个维度，输出 JSON 数组。
+
+评估维度：
+1. **Faithfulness (0.0-1.0)**：回答是否忠实于参考文档，所有声明都有文档支撑
+2. **Answer Correctness (0.0-1.0)**：回答与参考答案的正确性（如有参考答案）
+3. **Fact Coverage (0.0-1.0)**：必须包含的关键事实点是否被覆盖（如有事实点）
+
+输出 JSON 格式：
+{
+  "results": [
+    {
+      "questionId": "题目ID",
+      "faithfulness": {"score": 0.0-1.0, "reasoning": "理由"},
+      "answerCorrectness": {"score": 0.0-1.0, "reasoning": "理由"},
+      "factCoverage": {"score": 0.0-1.0, "reasoning": "理由"}
+    },
+    ...
+  ]
+}
+
+评分标准：
+- Faithfulness: 1.0=完全忠实，0.0=严重幻觉
+- Answer Correctness: 1.0=完全正确，0.0=完全错误（无参考答案时给 0）
+- Fact Coverage: score = 被覆盖的事实点数 / 总事实点数（无事实点时给 1）
+
+严格按 JSON 格式输出，不要输出 markdown 代码块。`;
+
+  // 构建 user prompt
+  const userParts: string[] = [];
+
+  for (const q of questions) {
+    userParts.push(`## 题目：${q.questionId}`);
+    userParts.push("### 参考文档");
+    userParts.push(q.context.slice(0, 4000));
+
+    if (q.expectedAnswer) {
+      userParts.push("", "### 参考答案");
+      userParts.push(q.expectedAnswer);
+    }
+
+    if (q.mustIncludeFacts && q.mustIncludeFacts.length > 0) {
+      userParts.push("", "### 必须包含的关键事实点");
+      userParts.push(q.mustIncludeFacts.map((f, i) => `${i + 1}. ${f}`).join("\n"));
+    }
+
+    userParts.push("", "### AI 生成的回答");
+    userParts.push(q.answer.slice(0, 3000));
+    userParts.push("");
+  }
+
+  userParts.push("请一次性评估以上所有题目的三个维度。");
+
+  const user = userParts.join("\n");
+
+  // 2 个 judge 并行评估
+  const { callMultiJudge } = await import("./multiJudge.js");
+  const outputs = await callMultiJudge(
+    { system, user },
+    judgeApiKeys,
+    { temperature: 0, maxTokens: 8000, ...judgeOpts },
+  );
+
+  // 解析每个 judge 的结果
+  const judgeResults: Array<Map<string, {
+    faithfulness: number;
+    answerCorrectness: number;
+    factCoverage: number;
+  }>> = [];
+
+  for (const output of outputs) {
+    if (!output.success || !output.rawText) continue;
+
+    try {
+      const json = extractJsonFromLLM(output.rawText);
+      if (json && Array.isArray(json.results)) {
+        const resultMap = new Map<string, {
+          faithfulness: number;
+          answerCorrectness: number;
+          factCoverage: number;
+        }>();
+
+        for (const r of json.results) {
+          if (r.questionId) {
+            resultMap.set(r.questionId, {
+              faithfulness: Math.max(0, Math.min(1, r.faithfulness?.score ?? 0)),
+              answerCorrectness: Math.max(0, Math.min(1, r.answerCorrectness?.score ?? 0)),
+              factCoverage: Math.max(0, Math.min(1, r.factCoverage?.score ?? 0)),
+            });
+          }
+        }
+
+        judgeResults.push(resultMap);
+      }
+    } catch (e) {
+      logger.warn(`[EvalMetrics] Failed to parse batch judge output: ${e}`);
+    }
+  }
+
+  // 聚合结果：多个 judge 取平均
+  for (const q of questions) {
+    const emptyResult = { aggregated: 0, individualResults: [], judgeCount: 0 };
+
+    if (judgeResults.length === 0) {
+      result.set(q.questionId, {
+        faithfulness: emptyResult,
+        answerCorrectness: emptyResult,
+        factCoverage: emptyResult,
+      });
+      continue;
+    }
+
+    // 只过滤掉 judge 调用失败的结果（undefined），不排除合法的 0.0 分数
+    const faithfulnessScores = judgeResults
+      .map(jr => jr.get(q.questionId)?.faithfulness)
+      .filter((s): s is number => s !== undefined);
+    const acScores = judgeResults
+      .map(jr => jr.get(q.questionId)?.answerCorrectness)
+      .filter((s): s is number => s !== undefined);
+    const fcScores = judgeResults
+      .map(jr => jr.get(q.questionId)?.factCoverage)
+      .filter((s): s is number => s !== undefined);
+
+    const aggregateScores = (scores: number[]): number => {
+      if (scores.length === 0) return 0;
+      return scores.reduce((a, b) => a + b, 0) / scores.length;
+    };
+
+    result.set(q.questionId, {
+      faithfulness: {
+        aggregated: aggregateScores(faithfulnessScores),
+        individualResults: judgeResults.map((jr, i) => ({
+          providerId: `judge-${i}`,
+          value: jr.get(q.questionId)?.faithfulness ?? 0,
+          success: jr.has(q.questionId),
+        })),
+        judgeCount: faithfulnessScores.length,
+      },
+      answerCorrectness: {
+        aggregated: aggregateScores(acScores),
+        individualResults: judgeResults.map((jr, i) => ({
+          providerId: `judge-${i}`,
+          value: jr.get(q.questionId)?.answerCorrectness ?? 0,
+          success: jr.has(q.questionId),
+        })),
+        judgeCount: acScores.length,
+      },
+      factCoverage: {
+        aggregated: aggregateScores(fcScores),
+        individualResults: judgeResults.map((jr, i) => ({
+          providerId: `judge-${i}`,
+          value: jr.get(q.questionId)?.factCoverage ?? 0,
+          success: jr.has(q.questionId),
+        })),
+        judgeCount: fcScores.length,
+      },
+    });
+  }
+
+  return result;
 }

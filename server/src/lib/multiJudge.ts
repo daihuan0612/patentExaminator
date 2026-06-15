@@ -33,10 +33,10 @@ export interface MultiJudgeResult<T> {
 
 // ── 默认配置 ──────────────────────────────────────────
 
-/** 默认 2-judge 配置（spec §5.2: MiMo + DeepSeek，取平均；doubao-seed 因 120s 超时频繁已移除） */
+/** 默认 2-judge 配置（spec §5.2: MiMo + GLM，取平均；doubao-seed 因 120s 超时频繁已移除） */
 export const DEFAULT_JUDGE_CONFIGS: Array<{ providerId: string; modelId: string }> = [
   { providerId: "mimo", modelId: "mimo-v2.5" },
-  { providerId: "volcengine", modelId: "deepseek-v3-2-251201" },
+  { providerId: "volcengine", modelId: "glm-4-7-251222" },
 ];
 
 /** 向后兼容：provider ID 列表 */

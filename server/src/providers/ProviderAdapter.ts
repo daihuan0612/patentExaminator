@@ -511,7 +511,9 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
       toolCalls = Array.from(toolCallsAccum.entries())
         .sort(([a], [b]) => a - b)
         .map(([, tc]) => tc);
-    } else if (!isSSE && Array.isArray(message?.tool_calls) && message.tool_calls.length > 0) {
+    } else if (Array.isArray(message?.tool_calls) && message.tool_calls.length > 0) {
+      // SSE 模式下 delta 没有 tool_calls 数据时，fallback 到 message.tool_calls
+      // VOLCENGINE 在少量 chunks 时可能将 tool_calls 放在 message 而非 delta 中
       toolCalls = (message.tool_calls as Array<Record<string, unknown>>).map((tc) => ({
         id: (tc.id as string) ?? "call_0",
         type: "function" as const,
@@ -520,6 +522,21 @@ export abstract class OpenAICompatibleAdapter implements ProviderAdapter {
           arguments: (tc.function as Record<string, unknown>)?.arguments as string ?? "",
         },
       }));
+    }
+    // 诊断：finishReason=tool_calls 但没有提取到任何 tool_calls
+    if (firstChoice?.finish_reason === "tool_calls" && (!toolCalls || toolCalls.length === 0)) {
+      const lastChoiceKeys = firstChoice ? Object.keys(firstChoice) : [];
+      const messageKeys = message ? Object.keys(message) : [];
+      logger.warn(`[${tag}] finishReason=tool_calls but no toolCalls extracted! ` +
+        `isSSE=${isSSE} toolCallsAccum.size=${toolCallsAccum.size} chunks=${sseChunkCount} ` +
+        `firstChoiceKeys=${JSON.stringify(lastChoiceKeys)} messageKeys=${JSON.stringify(messageKeys)}`);
+
+      // Bug fix: 当 finishReason=tool_calls 但没有提取到 toolCalls 时，重试一次
+      // 这是 VOLCENGINE SSE 解析的已知问题
+      if (!text && !toolCalls) {
+        logger.warn(`[${tag}] Retrying due to empty tool_calls response`);
+        throw new Error("Empty tool_calls response, retrying");
+      }
     }
 
     const resp: ChatResponse = {

@@ -310,10 +310,12 @@ export async function testGoldenEvalModelCombination() {
 
   const startTime = performance.now();
   // 每个 question 需要 20-90s（含 RAG + groundedness + multi-judge），maxConcurrency=3 并行
+  // batchDelayMs=8000: 批次间延迟 8s，避免触发 volcengine 429 rate limit
   const EVAL_API_TIMEOUT = 2_700_000; // 45 分钟
   const res = await postJSON("/metrics/eval/run", {
     configs,
     maxConcurrency: 3,
+    batchDelayMs: 8000,
     ...(Object.keys(judgeApiKeys).length > 0 && { judgeApiKeys }),
   }, undefined, EVAL_API_TIMEOUT);
   const report = await safeJson(res, "GoldenEval ModelCombination");

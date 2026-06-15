@@ -43,6 +43,11 @@ scripts/
 opencode.json
 
 # Docs (local only, entire directory)
+docs/
+
+# Eval reports (local only)
+tests/eval-reports/
+golden-set-review.json
 
 # Knowledge base samples (local only, too large for git)
 samples/knowledge-base/

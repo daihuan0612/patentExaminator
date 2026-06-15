@@ -52,9 +52,9 @@ const CAPABILITY_PRESETS: Record<string, Partial<ModelCapabilities>> = {
   // 参数与官方 API 一致：1024k 上下文，384k 输出，深度思考，工具调用
   "deepseek-v4-pro-260425":  { isReasoning: true, contextWindow: 1_048_576, maxOutputTokens: 393_216, temperature: { supported: true, range: [0, 2] }, supportsStructuredOutput: false, supportsVision: false, systemPromptMode: "message", recommendation: "DeepSeek V4 Pro (火山托管)", rpm: 15000, rpd: 0, tpm: "1.5M" },
   "deepseek-v4-flash-260425": { isReasoning: true, contextWindow: 1_048_576, maxOutputTokens: 393_216, temperature: { supported: true, range: [0, 2] }, supportsStructuredOutput: false, supportsVision: false, systemPromptMode: "message", recommendation: "DeepSeek V4 Flash (火山托管)", rpm: 15000, rpd: 0, tpm: "1.5M" },
-  // ── DeepSeek V3.2 — 火山引擎托管 ──
-  // 来源：火山引擎模型广场 deepseek-v3-2-251201，128k 上下文，32k 输出
-  "deepseek-v3-2-251201": { isReasoning: true, contextWindow: 131_072, maxOutputTokens: 32_768, temperature: { supported: true, range: [0, 2] }, supportsStructuredOutput: false, supportsVision: false, systemPromptMode: "message", recommendation: "V3.2 (深度思考)", rpm: 15000, rpd: 0, tpm: "1.5M" },
+  // ── DeepSeek V3.1 — 火山引擎托管 ──
+  // 来源：火山引擎模型广场 deepseek-v3-1-250821，128k 上下文，32k 输出
+  "deepseek-v3-1-250821": { isReasoning: true, contextWindow: 131_072, maxOutputTokens: 32_768, temperature: { supported: true, range: [0, 2] }, supportsStructuredOutput: false, supportsVision: false, systemPromptMode: "message", recommendation: "V3.1 (深度思考)", rpm: 15000, rpd: 0, tpm: "1.5M" },
   // ── DeepSeek R1 — 官方 API（2026-07-24 弃用 → deepseek-v4-flash 思考模式）──
   "deepseek-reasoner": { isReasoning: true, contextWindow: 65_536, maxOutputTokens: 16_384, temperature: { supported: false, range: [0, 1] }, supportsStructuredOutput: false, supportsVision: false, systemPromptMode: "message", recommendation: "R1 (2026-07弃用→v4-flash思考)" },
   "deepseek-chat":     { isReasoning: false, contextWindow: 65_536, maxOutputTokens: 8_192,  temperature: { supported: true, range: [0, 2] },  supportsStructuredOutput: false, supportsVision: false, systemPromptMode: "message", recommendation: "V3 (2026-07弃用→v4-flash非思考)" },
@@ -261,7 +261,7 @@ const PROVIDER_MODEL_IDS: Record<ProviderId, string[]> = {
   ],
   deepseek: [
     "deepseek-v4-pro", "deepseek-v4-flash",
-    "deepseek-v3-2-251201",
+    "deepseek-v3-1-250821",
     "deepseek-reasoner", "deepseek-chat",
   ],
   qwen: [
@@ -299,7 +299,7 @@ const PROVIDER_MODEL_IDS: Record<ProviderId, string[]> = {
     "doubao-seed-code-preview-251028",
     "doubao-seed-character-251128",
     "doubao-1-5-pro-32k-250115", "doubao-1-5-lite-32k-250115", "doubao-1-5-vision-pro-32k-250115",
-    "deepseek-v4-pro-260425", "deepseek-v4-flash-260425", "deepseek-v3-2-251201",
+    "deepseek-v4-pro-260425", "deepseek-v4-flash-260425", "deepseek-v3-1-250821",
   ],
 };
 

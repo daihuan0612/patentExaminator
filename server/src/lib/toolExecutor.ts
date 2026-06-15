@@ -267,6 +267,7 @@ export async function executeWithTools(input: ToolExecutorInput): Promise<ToolEx
       "2. 每句话末尾用 [N] 标注来源",
       "3. [N] 对应上方文档序号",
       "4. 无相关信息时说明'参考文档中未找到'",
+      "5. 讨论法律法规时，必须明确引用具体条款编号（如'《专利法》第二十二条第三款'）。不能只说'根据专利法'或'根据相关规定'而不给出具体条款号。如果参考文档中包含具体法条，必须引用。",
     ];
 
     if (finalAnswer) {

@@ -35,7 +35,7 @@ export class VolcengineAdapter extends OpenAICompatibleAdapter {
       "glm-4-7-251222",
       "deepseek-v4-pro-260425",
       "deepseek-v4-flash-260425",
-      "deepseek-v3-2-251201",
+      "deepseek-v3-1-250821",
     ];
   }
 }

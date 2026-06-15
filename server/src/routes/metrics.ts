@@ -674,11 +674,12 @@ metricsRouter.post("/metrics/golden-set/clean", async (_req, res) => {
 // Body: { configs: EvalConfig[], agentFilter?, judgeApiKeys?, maxConcurrency? }
 metricsRouter.post("/metrics/eval/run", async (req, res) => {
   try {
-    const { configs, agentFilter, judgeApiKeys, maxConcurrency } = req.body as {
+    const { configs, agentFilter, judgeApiKeys, maxConcurrency, batchDelayMs } = req.body as {
       configs?: unknown[];
       agentFilter?: string;
       judgeApiKeys?: Record<string, string>;
       maxConcurrency?: number;
+      batchDelayMs?: number;
     };
     if (!configs || !Array.isArray(configs) || configs.length === 0) {
       return res.status(400).json({ error: "需要提供至少一个模型配置" });
@@ -688,6 +689,7 @@ metricsRouter.post("/metrics/eval/run", async (req, res) => {
       agentFilter,
       judgeApiKeys,
       maxConcurrency,
+      batchDelayMs,
       // 不传 apiKey、knowledgeEmbedding、knowledgeReranker、searchApiKey、webSearchEnabled
       // orchestrator 从 DB 自动读取所有 production 配置
     });

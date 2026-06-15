@@ -14,7 +14,7 @@ import type { ProviderId } from "@shared/types/agents";
 
 // ── Types ──────────────────────────────────────────────
 
-import type { SourceType, ExpectedSource, RelevanceGrade } from "@shared/types/metrics";
+import type { SourceType, ExpectedSource } from "@shared/types/metrics";
 
 export interface GoldenQuestion {
   id: string;
@@ -32,9 +32,8 @@ export interface GoldenQuestion {
   expectedSource: ExpectedSource;
   sourceRoutingRationale: string;
   mustIncludeFacts: string[];
-  relevanceGrading: RelevanceGrade[];
   verifiedBy: string;
-  contextChunkIds: string[];  // A.1 生成时使用的 KB chunk IDs（A.2 grading 正样本，仅 kb_only）
+  contextChunkIds?: string[];  // 调试用：记录生成时使用的 chunk IDs
 }
 
 // ── Matrix Allocation (spec §4.4) ──────────────────────
@@ -267,7 +266,7 @@ export function resolveGoldenSetProviders(): GoldenSetProviderConfig[] {
   // DeepSeek 只从火山引擎 provider 取，不从 deepseek provider 取
   if (apiKeys["volcengine"]) {
     configs.push({
-      providerId: "volcengine", model: "deepseek-v3-2-251201", apiKey: apiKeys["volcengine"], label: "DeepSeek",
+      providerId: "volcengine", model: "deepseek-v3-1-250821", apiKey: apiKeys["volcengine"], label: "DeepSeek",
       ...(fallbacks["volcengine"] && { modelFallbacks: fallbacks["volcengine"] }),
       ...(enableFallback["volcengine"] && { enableModelFallback: true }),
     });
@@ -317,8 +316,8 @@ function insertGoldenQuestion(q: GoldenQuestion): void {
       (id, agent, query, expected_answer, expected_sources, expected_articles,
        category, difficulty, generated_by,
        source_type, expected_source, source_routing_rationale,
-       must_include_facts, relevance_grading, verified_by, context_chunk_ids)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       must_include_facts, verified_by, context_chunk_ids)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     q.id,
     q.agent,
@@ -333,15 +332,13 @@ function insertGoldenQuestion(q: GoldenQuestion): void {
     q.expectedSource,
     q.sourceRoutingRationale,
     JSON.stringify(q.mustIncludeFacts),
-    JSON.stringify(q.relevanceGrading),
     q.verifiedBy,
     JSON.stringify(q.contextChunkIds),
   );
 }
 
 /**
- * Import golden questions from JSON array (用于 C 阶段验证前的数据准备).
- * Accepts the same shape as the golden-set JSON file exported by A.2.
+ * Import golden questions from JSON array (用于导入预生成的 golden set).
  */
 export function importGoldenQuestions(raw: Array<Record<string, unknown>>): number {
   const db = getSyncDb();
@@ -364,7 +361,6 @@ export function importGoldenQuestions(raw: Array<Record<string, unknown>>): numb
       expectedSource: String(r.expectedSource ?? "kb"),
       sourceRoutingRationale: String(r.sourceRoutingRationale ?? ""),
       mustIncludeFacts: (r.mustIncludeFacts ?? []) as string[],
-      relevanceGrading: (r.relevanceGrading ?? []) as RelevanceGrade[],
       verifiedBy: String(r.verifiedBy ?? "auto"),
       contextChunkIds: (r.contextChunkIds ?? []) as string[],
     };
@@ -382,7 +378,7 @@ function loadAllGoldenQuestions(): GoldenQuestion[] {
     `SELECT id, agent, query, expected_answer, expected_sources, expected_articles,
             category, difficulty, generated_by,
             source_type, expected_source, source_routing_rationale,
-            must_include_facts, relevance_grading, verified_by, context_chunk_ids
+            must_include_facts, verified_by, context_chunk_ids
      FROM metrics_golden_set ORDER BY created_at`
   ).all() as Array<{
     id: string;
@@ -398,7 +394,6 @@ function loadAllGoldenQuestions(): GoldenQuestion[] {
     expected_source: string;
     source_routing_rationale: string;
     must_include_facts: string;
-    relevance_grading: string;
     verified_by: string;
     context_chunk_ids: string;
   }>;
@@ -418,7 +413,6 @@ function loadAllGoldenQuestions(): GoldenQuestion[] {
     expectedSource: (r.expected_source || "kb") as ExpectedSource,
     sourceRoutingRationale: r.source_routing_rationale || "",
     mustIncludeFacts: safeParseJson(r.must_include_facts, []),
-    relevanceGrading: safeParseJson(r.relevance_grading, []),
     verifiedBy: r.verified_by || "auto",
     contextChunkIds: safeParseJson(r.context_chunk_ids, []),
   }));
@@ -1014,7 +1008,7 @@ async function searchWebForQuestion(
  * @param providerConfigs - Provider 配置数组（由 resolveGoldenSetProviders() 生成）
  * @param searchApiKey - 搜索 API key（web_only/cross_source/conflict 需要）
  * @param searchProviderId - 搜索 provider ID（spec §8.1: 默认 "serpapi"，与 MCP 路径一致）
- * @returns The generated golden questions（relevanceGrading = []）
+ * @returns The generated golden questions
  */
 export async function generateGoldenSet(
   providerConfigs: GoldenSetProviderConfig[],
@@ -1095,7 +1089,7 @@ export async function generateGoldenSet(
       questions.map(q => repairQuestionConstraints(q, llmConfig)),
     );
 
-    // 构建 GoldenQuestion 对象并存储（spec §5.1: relevanceGrading 留空由 A.2 填充）
+    // 构建 GoldenQuestion 对象并存储
     const goldenQuestions: GoldenQuestion[] = [];
     for (let i = 0; i < repairedQuestions.length; i++) {
       const q = repairedQuestions[i]!;
@@ -1119,9 +1113,8 @@ export async function generateGoldenSet(
         expectedSource: mapExpectedSource(cell.sourceType),
         sourceRoutingRationale: mapSourceRoutingRationale(cell.sourceType),
         mustIncludeFacts: q.must_include_facts || [],
-        relevanceGrading: [],  // A.2 阶段独立填充
         verifiedBy: "auto",
-        contextChunkIds: ctx.kbChunks.map(c => c.chunk.id),  // A.2 grading 正样本
+        contextChunkIds: ctx.kbChunks.map(c => c.chunk.id),  // 调试用
       };
       insertGoldenQuestion(goldenQuestion);
       goldenQuestions.push(goldenQuestion);

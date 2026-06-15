@@ -24,8 +24,10 @@ loadEnvFile();
 
 let BASE; // http://localhost:PORT/api
 
-// 通过 QUESTION_COUNT 环境变量控制导入题数，默认全部
-// 例: QUESTION_COUNT=1 node tests/d-phase-eval.mjs
+// 通过 QUESTION_START/QUESTION_COUNT 环境变量控制导入范围，默认全部
+// 例: QUESTION_COUNT=1 node tests/d-phase-eval.mjs          (第1题)
+// 例: QUESTION_START=1 QUESTION_COUNT=5 node tests/d-phase-eval.mjs  (第2~6题)
+const QUESTION_START = process.env.QUESTION_START ? parseInt(process.env.QUESTION_START, 10) : 0;
 const QUESTION_COUNT = process.env.QUESTION_COUNT ? parseInt(process.env.QUESTION_COUNT, 10) : Infinity;
 
 function timestamp() {
@@ -83,9 +85,11 @@ async function main() {
     log(`❌ 无法读取文件: ${err.message}`);
     process.exit(1);
   }
-  if (QUESTION_COUNT < goldenSet.length) {
-    goldenSet = goldenSet.slice(0, QUESTION_COUNT);
-    log(`Golden set: ${gsPath} (取前 ${QUESTION_COUNT} 题)`);
+  const startIdx = Math.min(QUESTION_START, goldenSet.length);
+  const endIdx = QUESTION_COUNT === Infinity ? goldenSet.length : Math.min(startIdx + QUESTION_COUNT, goldenSet.length);
+  if (startIdx > 0 || endIdx < goldenSet.length) {
+    goldenSet = goldenSet.slice(startIdx, endIdx);
+    log(`Golden set: ${gsPath} (取第 ${startIdx + 1}~${endIdx} 题，共 ${goldenSet.length} 题)`);
   } else {
     log(`Golden set: ${gsPath} (${goldenSet.length} 题)`);
   }
@@ -109,6 +113,7 @@ async function main() {
     {
       configs: [{ label: "production", providerId: "auto", modelId: "auto" }],
       maxConcurrency: 3,
+      batchDelayMs: 8000,
       // judge API keys 从 .env 读取（自动测试场景，不依赖 DB）
       judgeApiKeys: {
         ...(getApiKey("mimo") ? { mimo: getApiKey("mimo") } : {}),

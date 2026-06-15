@@ -171,8 +171,8 @@ export interface GoldenQuestion {
   expectedSource: ExpectedSource;
   sourceRoutingRationale: string;
   mustIncludeFacts: string[];
-  relevanceGrading: RelevanceGrade[];
   verifiedBy: VerificationMethod;
+  contextChunkIds?: string[];   // 调试用：记录生成时使用的 chunk IDs
 }
 
 export interface GoldenRunResult {
