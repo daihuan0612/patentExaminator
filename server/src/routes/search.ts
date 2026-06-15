@@ -47,8 +47,9 @@ function extractFallbackCandidates(rawText: string): SearchReferencesCandidate[]
 function normalizeRelevanceScore(raw: unknown): number {
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return 0;
-  // LLM 有时返回 0-1 范围的概率值，有时返回 0-100 的整数
+  // LLM 有时返回 0-1 概率值、0-10 整数、或 0-100 整数
   if (n > 0 && n <= 1) return Math.round(n * 100);
+  if (n > 0 && n <= 10) return Math.round(n * 10);
   return Math.round(Math.min(n, 100));
 }
 
